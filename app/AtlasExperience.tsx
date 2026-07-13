@@ -981,20 +981,22 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
 
       <div className="dragHint"><Move size={13} /><span>Drag to rotate · Scroll or pinch to zoom</span></div>
 
-      <div className="layerControl glassPanel" role="group" aria-label="Attention layer">
-        <span>VIEW</span>
-        {layers.map((item) => (
-          <button key={item} className={layer === item ? "active" : ""} onClick={() => setLayer(item)}>
-            <i style={{ background: layerColors[item] }} />{item}
-          </button>
-        ))}
-      </div>
+      <div className="bottomDock">
+        <div className="layerControl glassPanel" role="group" aria-label="Attention layer">
+          <span>VIEW</span>
+          {layers.map((item) => (
+            <button key={item} className={layer === item ? "active" : ""} onClick={() => setLayer(item)}>
+              <i style={{ background: layerColors[item] }} />{item}
+            </button>
+          ))}
+        </div>
 
-      <button className="searchBar glassPanel" onClick={() => { setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 40); }}>
-        <Search size={17} />
-        <span>Search the living world</span>
-        <kbd><Command size={11} /> K</kbd>
-      </button>
+        <button className="searchBar glassPanel" onClick={() => { setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 40); }}>
+          <Search size={17} />
+          <span>Search the living world</span>
+          <kbd><Command size={11} /> K</kbd>
+        </button>
+      </div>
 
       <div className="coordinates">
         {Math.abs(selectedCity.lat).toFixed(2)}°{selectedCity.lat >= 0 ? "N" : "S"} · {Math.abs(selectedCity.lng).toFixed(2)}°{selectedCity.lng >= 0 ? "E" : "W"}

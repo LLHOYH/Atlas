@@ -592,8 +592,6 @@ button {
 }
 
 .layerControl {
-  bottom: 62px;
-  left: 30px;
   display: flex;
   gap: 3px;
   align-items: center;
@@ -641,14 +639,11 @@ button {
 }
 
 .searchBar {
-  bottom: 58px;
-  left: 50%;
   display: grid;
   grid-template-columns: 22px 1fr auto;
   align-items: center;
   width: min(390px, calc(100vw - 40px));
   padding: 11px 12px 11px 15px;
-  transform: translateX(-50%);
   border-radius: 13px;
   color: #87949d;
   text-align: left;
@@ -661,6 +656,29 @@ button {
 }
 
 .searchBar span { font-size: 11px; }
+
+.bottomDock {
+  position: absolute;
+  z-index: 11;
+  right: 30px;
+  bottom: 58px;
+  left: 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 390px) minmax(0, 1fr);
+  align-items: center;
+  pointer-events: none;
+}
+
+.bottomDock .layerControl,
+.bottomDock .searchBar {
+  position: relative;
+  inset: auto;
+  pointer-events: auto;
+  transform: none;
+}
+
+.bottomDock .layerControl { grid-column: 1; justify-self: start; }
+.bottomDock .searchBar { grid-column: 2; width: 100%; }
 
 kbd {
   display: inline-flex;
@@ -1032,6 +1050,16 @@ kbd {
 .broadcastButton:hover { border-color: rgba(166, 140, 255, 0.48); background: rgba(166, 140, 255, 0.2); }
 .broadcastButton:disabled { cursor: wait; opacity: 0.58; }
 
+@media (max-width: 1180px) {
+  .bottomDock { grid-template-columns: auto minmax(240px, 390px) minmax(155px, 1fr); gap: 12px; }
+  .bottomDock .layerControl { grid-column: 1; }
+  .bottomDock .searchBar { grid-column: 2; }
+  .layerControl > span { display: none; }
+  .layerControl button { padding: 7px; }
+  .layerControl button:not(.active) { font-size: 0; }
+  .layerControl button:not(.active) i { width: 8px; height: 8px; }
+}
+
 @media (max-width: 900px) {
   .topBar { grid-template-columns: 1fr auto; height: 68px; padding: 0 18px; }
   .topNav { display: none; }
@@ -1040,12 +1068,9 @@ kbd {
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
-  .layerControl { right: auto; bottom: 18px; left: 16px; }
-  .layerControl > span { display: none; }
-  .layerControl button { padding: 7px; }
-  .layerControl button:not(.active) { font-size: 0; }
-  .layerControl button:not(.active) i { width: 8px; height: 8px; }
-  .searchBar { bottom: 17px; width: min(330px, calc(100vw - 170px)); }
+  .bottomDock { right: 16px; bottom: 17px; left: 16px; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+  .bottomDock .layerControl { grid-column: 1; }
+  .bottomDock .searchBar { grid-column: 2; width: 100%; }
   .dragHint { bottom: 76px; }
   .coordinates { display: none; }
   .lodIndicator { right: 16px; bottom: 68px; }
@@ -1063,8 +1088,7 @@ kbd {
   .topicList button { display: block; width: auto; flex: 0 0 auto; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; background: rgba(255, 255, 255, 0.03); }
   .topicList button span, .topicList button svg { display: none; }
   .entityStrip { display: none; }
-  .layerControl { bottom: 16px; left: 12px; }
-  .searchBar { right: 12px; bottom: 16px; left: auto; width: calc(100vw - 174px); transform: none; }
+  .bottomDock { right: 12px; bottom: 16px; left: 12px; gap: 8px; }
   .searchBar span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .searchBar kbd { display: none; }
   .dragHint { top: 86px; bottom: auto; }
