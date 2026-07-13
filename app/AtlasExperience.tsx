@@ -6,6 +6,7 @@ import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import atlasGeoData from "./atlas-geo-data.json";
+import atlasLabelData from "./atlas-label-data.json";
 import {
   ArrowUpRight,
   Bot,
@@ -67,54 +68,36 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
 
 type LabelKind = "country" | "region" | "city" | "street";
 
-type CountryLabel = {
+type GeographicLabel = {
+  id: string;
   name: string;
   position: THREE.Vector3;
-  weight: number;
 };
 
-const countryAliases: Record<string, string> = {
-  "United States of America": "United States",
-};
+const globalCountryLabels: GeographicLabel[] = atlasLabelData.countries.map((label) => ({
+  id: label.id,
+  name: label.name,
+  position: latLngToVector3(label.lat, label.lng, 3.105),
+}));
 
-const geoCountryLabels = (() => {
-  const countries = new Map<string, { vector: THREE.Vector3; weight: number }>();
-  atlasGeoData.cells.forEach((cell) => {
-    if (cell.name === "Antarctica") return;
-    const name = countryAliases[cell.name] ?? cell.name;
-    const entry = countries.get(name) ?? { vector: new THREE.Vector3(), weight: 0 };
-    entry.vector.add(latLngToVector3(cell.lat, cell.lng, 1));
-    entry.weight += 1;
-    countries.set(name, entry);
-  });
+const globalRegionLabels: GeographicLabel[] = atlasLabelData.regions.map((label) => ({
+  id: label.id,
+  name: label.name,
+  position: latLngToVector3(label.lat, label.lng, 3.12),
+}));
 
-  return countries;
-})();
+const globalCityLabels: GeographicLabel[] = atlasLabelData.cities.map((label) => ({
+  id: label.id,
+  name: label.name,
+  position: latLngToVector3(label.lat, label.lng, 3.135),
+}));
 
-function getCountryLabels(cities: City[]): CountryLabel[] {
-  const labels = new Map<string, CountryLabel>();
+function normalizeLabelName(value: string) {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
+}
 
-  geoCountryLabels.forEach((country, name) => {
-    if (country.weight < 2) return;
-    labels.set(name, {
-      name,
-      position: country.vector.clone().normalize().multiplyScalar(3.105),
-      weight: country.weight,
-    });
-  });
-
-  cities.forEach((city) => {
-    const geoCountry = geoCountryLabels.get(city.country);
-    labels.set(city.country, {
-      name: city.country,
-      position: geoCountry
-        ? geoCountry.vector.clone().normalize().multiplyScalar(3.105)
-        : latLngToVector3(city.lat, city.lng, 3.105),
-      weight: Math.max(geoCountry?.weight ?? 0, 2),
-    });
-  });
-
-  return [...labels.values()].sort((left, right) => right.weight - left.weight);
+function nearestEquivalentAngle(target: number, reference: number) {
+  return target + Math.round((reference - target) / (Math.PI * 2)) * Math.PI * 2;
 }
 
 function GlobeLabel({
@@ -563,7 +546,12 @@ function Earth({
   const globe = useRef<THREE.Group>(null);
   const drag = useRef({ active: false, x: 0, y: 0 });
   const velocity = useRef({ x: 0, y: 0 });
-  const focus = useRef<THREE.Quaternion | null>(null);
+  const orientation = useRef({ pitch: 0, yaw: 0 });
+  const focus = useRef<{ pitch: number; yaw: number } | null>(null);
+  const pitchRotation = useRef(new THREE.Quaternion());
+  const yawRotation = useRef(new THREE.Quaternion());
+  const pitchAxis = useRef(new THREE.Vector3(1, 0, 0));
+  const yawAxis = useRef(new THREE.Vector3(0, 1, 0));
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const cityMaterial = useRef<THREE.MeshBasicMaterial>(null);
@@ -571,25 +559,38 @@ function Earth({
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
   const cityMarkers = useRef<THREE.Group>(null);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
-  const countryLabels = useMemo(() => getCountryLabels(cities), [cities]);
+  const cityLabelColors = useMemo(
+    () => new Map(cities.map((city) => [normalizeLabelName(city.name), city.color])),
+    [cities],
+  );
+
+  const applyOrientation = () => {
+    if (!globe.current) return;
+    pitchRotation.current.setFromAxisAngle(pitchAxis.current, orientation.current.pitch);
+    yawRotation.current.setFromAxisAngle(yawAxis.current, orientation.current.yaw);
+    globe.current.quaternion.copy(pitchRotation.current).multiply(yawRotation.current);
+  };
 
   useLayoutEffect(() => {
     if (!globe.current) return;
-    const target = latLngToVector3(selectedCity.lat, selectedCity.lng, 1).normalize();
-    const targetRotation = new THREE.Quaternion().setFromUnitVectors(
-      target,
-      new THREE.Vector3(0.08, 0.08, 1).normalize(),
-    );
+    const targetOrientation = {
+      pitch: THREE.MathUtils.degToRad(selectedCity.lat),
+      yaw: nearestEquivalentAngle(
+        -Math.PI / 2 - THREE.MathUtils.degToRad(selectedCity.lng),
+        orientation.current.yaw,
+      ),
+    };
 
     velocity.current = { x: 0, y: 0 };
     if (!initialized.current) {
-      globe.current.quaternion.copy(targetRotation);
+      orientation.current = targetOrientation;
+      applyOrientation();
       initialized.current = true;
       focus.current = null;
       return;
     }
 
-    focus.current = targetRotation;
+    focus.current = targetOrientation;
   }, [selectedCity]);
 
   useFrame(({ camera }) => {
@@ -617,15 +618,28 @@ function Earth({
     if (cityMarkers.current) cityMarkers.current.visible = cityOpacity > 0.08;
 
     if (focus.current) {
-      globe.current.quaternion.slerp(focus.current, 0.055);
-      if (globe.current.quaternion.angleTo(focus.current) < 0.008) focus.current = null;
+      orientation.current.pitch = THREE.MathUtils.lerp(orientation.current.pitch, focus.current.pitch, 0.055);
+      orientation.current.yaw = THREE.MathUtils.lerp(orientation.current.yaw, focus.current.yaw, 0.055);
+      applyOrientation();
+      if (
+        Math.abs(orientation.current.pitch - focus.current.pitch) < 0.002
+        && Math.abs(orientation.current.yaw - focus.current.yaw) < 0.002
+      ) {
+        orientation.current = focus.current;
+        focus.current = null;
+        applyOrientation();
+      }
       return;
     }
     if (!drag.current.active) {
       if (velocity.current.x !== 0 || velocity.current.y !== 0) {
-        const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), velocity.current.x);
-        const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), velocity.current.y);
-        globe.current.quaternion.premultiply(qy).premultiply(qx);
+        orientation.current.yaw += velocity.current.x;
+        orientation.current.pitch = THREE.MathUtils.clamp(
+          orientation.current.pitch + velocity.current.y,
+          -Math.PI / 2 + 0.08,
+          Math.PI / 2 - 0.08,
+        );
+        applyOrientation();
       }
       velocity.current.x *= 0.88;
       velocity.current.y *= 0.88;
@@ -650,9 +664,13 @@ function Earth({
     drag.current.x = event.clientX;
     drag.current.y = event.clientY;
     velocity.current = { x: dx * 0.0035, y: dy * 0.0028 };
-    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), velocity.current.x);
-    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), velocity.current.y);
-    globe.current.quaternion.premultiply(qy).premultiply(qx);
+    orientation.current.yaw += velocity.current.x;
+    orientation.current.pitch = THREE.MathUtils.clamp(
+      orientation.current.pitch + velocity.current.y,
+      -Math.PI / 2 + 0.08,
+      Math.PI / 2 - 0.08,
+    );
+    applyOrientation();
   };
 
   const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
@@ -688,30 +706,29 @@ function Earth({
           <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} liveCount={liveCounts[city.name] ?? 0} onSelect={onSelect} />
         ))}
       </group>
-      {labelDetail === 1 && countryLabels.map((country) => (
+      {labelDetail === 1 && globalCountryLabels.map((country) => (
         <GlobeLabel
-          key={country.name}
+          key={country.id}
           label={country.name}
           kind="country"
           position={country.position}
         />
       ))}
-      {labelDetail === 2 && cities.map((city) => (
+      {labelDetail === 2 && globalRegionLabels.map((region) => (
         <GlobeLabel
-          key={`${city.id}-region`}
-          label={city.region}
+          key={region.id}
+          label={region.name}
           kind="region"
-          position={latLngToVector3(city.lat + 0.48, city.lng, 3.12)}
-          color={city.color}
+          position={region.position}
         />
       ))}
-      {(labelDetail === 3 || labelDetail === 4) && cities.map((city) => (
+      {(labelDetail === 3 || labelDetail === 4) && globalCityLabels.map((city) => (
         <GlobeLabel
-          key={`${city.id}-city`}
+          key={city.id}
           label={city.name}
           kind="city"
-          position={latLngToVector3(city.lat, city.lng, 3.135)}
-          color={city.color}
+          position={city.position}
+          color={cityLabelColors.get(normalizeLabelName(city.name))}
         />
       ))}
       {labelDetail === 4 && (
