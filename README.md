@@ -6,9 +6,9 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 2 — Identity & Presence**
+**Phase 2 — Identity, Presence & Database Integration · Complete**
 
-Phase 1 established Atlas's visual and interaction foundation. Phase 2 turns the prototype into a living identity layer: people can connect, define their public presence, pair it with an AI identity, and broadcast both to the globe in realtime.
+Phase 1 established Atlas's visual and interaction foundation. Phase 2 adds the database-backed living identity layer: Supabase-hosted world data, human and AI profiles, presence broadcasts, realtime map updates, and repeatable seed and verification tooling.
 
 The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
