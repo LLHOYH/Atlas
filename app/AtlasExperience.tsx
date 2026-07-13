@@ -133,7 +133,7 @@ function GlobeLabel({
   const worldPosition = useMemo(() => new THREE.Vector3(), []);
   const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
   const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 1.25 : 0.9;
+  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 2.5 : 0.9;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -705,7 +705,7 @@ function Earth({
           color={city.color}
         />
       ))}
-      {labelDetail === 3 && cities.map((city) => (
+      {(labelDetail === 3 || labelDetail === 4) && cities.map((city) => (
         <GlobeLabel
           key={`${city.id}-city`}
           label={city.name}
@@ -716,12 +716,6 @@ function Earth({
       ))}
       {labelDetail === 4 && (
         <>
-          <GlobeLabel
-            label={selectedCity.name}
-            kind="city"
-            position={latLngToVector3(selectedCity.lat, selectedCity.lng, 3.14)}
-            color={selectedCity.color}
-          />
           {selectedCity.streets.map((street) => (
             <GlobeLabel
               key={street.id}
