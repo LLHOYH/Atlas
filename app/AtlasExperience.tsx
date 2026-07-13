@@ -133,7 +133,7 @@ function GlobeLabel({
   const worldPosition = useMemo(() => new THREE.Vector3(), []);
   const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
   const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 6 : kind === "city" ? 5 : 3.6;
+  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 1.25 : 0.9;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
