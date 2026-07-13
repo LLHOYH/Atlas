@@ -115,10 +115,12 @@ button {
 }
 
 .mapLabel--country {
-  padding: 2px 4px;
-  font-size: 8px;
-  font-weight: 560;
-  letter-spacing: 0.16em;
+  padding: 1px 3px;
+  color: #d9b76b;
+  font-size: 6px;
+  font-weight: 540;
+  letter-spacing: 0.13em;
+  text-shadow: 0 1px 3px #020507, 0 0 7px #020507, 0 0 11px rgba(217, 183, 107, 0.42);
   text-transform: uppercase;
 }
 
