@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,7 +16,10 @@ import {
   Command,
   Globe2,
   LocateFixed,
+  LogOut,
   Move,
+  Radio,
+  Save,
   Search,
   Sparkles,
   Users,
@@ -23,6 +27,13 @@ import {
   Zap,
 } from "lucide-react";
 import * as THREE from "three";
+import { useAtlasPresence } from "../hooks/useAtlasPresence";
+import {
+  controlStates,
+  presenceActivities,
+  type AtlasPresence,
+  type PresenceDraft,
+} from "../lib/atlas/types";
 
 type Signal = {
   name: string;
@@ -411,11 +422,13 @@ function CityLight({
   city,
   selected,
   layer,
+  liveCount,
   onSelect,
 }: {
   city: City;
   selected: boolean;
   layer: Layer;
+  liveCount: number;
   onSelect: (city: City) => void;
 }) {
   const pulse = useRef<THREE.Group>(null);
@@ -435,7 +448,8 @@ function CityLight({
 
   useFrame(({ clock }) => {
     if (!pulse.current) return;
-    const scale = 1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.22;
+    const signalEnergy = 1 + Math.min(liveCount, 20) * 0.018;
+    const scale = signalEnergy * (1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.22);
     pulse.current.scale.setScalar(scale);
   });
 
@@ -566,11 +580,13 @@ function AttentionFlow({ from, to, color, delay }: { from: City; to: City; color
 function Earth({
   selectedCity,
   layer,
+  liveCounts = {},
   onSelect,
   onDetailChange,
 }: {
   selectedCity: City;
   layer: Layer;
+  liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
@@ -686,6 +702,7 @@ function Earth({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       <PixelLand />
+      <EnergyParticles layer={layer} />
       <PixelSettlements density="city" layer={layer} materialRef={cityMaterial} />
       <PixelSettlements density="town" layer={layer} materialRef={townMaterial} />
       <StreetMesh layer={layer} materialRef={streetMaterial} />
@@ -695,7 +712,7 @@ function Earth({
       </mesh>
       <group ref={cityMarkers} visible={false}>
         {cities.map((city) => (
-          <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} onSelect={onSelect} />
+          <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} liveCount={liveCounts[city.name] ?? 0} onSelect={onSelect} />
         ))}
       </group>
       <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
@@ -708,11 +725,13 @@ function Earth({
 function EarthScene({
   selectedCity,
   layer,
+  liveCounts = {},
   onSelect,
   onDetailChange,
 }: {
   selectedCity: City;
   layer: Layer;
+  liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
@@ -727,7 +746,7 @@ function EarthScene({
       <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
       <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
       <Suspense fallback={null}>
-        <Earth selectedCity={selectedCity} layer={layer} onSelect={onSelect} onDetailChange={onDetailChange} />
+        <Earth selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={onSelect} onDetailChange={onDetailChange} />
       </Suspense>
       <OrbitControls
         makeDefault
@@ -779,7 +798,122 @@ function ProfilePanel({ signal, city, onClose }: { signal: Signal; city: City; o
   );
 }
 
+function atlasPresenceToSignal(presence: AtlasPresence): Signal {
+  return {
+    name: presence.displayName,
+    type: presence.entityKind === "ai" ? "AI" : "Human",
+    activity: presence.activity,
+    topic: presence.topic,
+    status: presence.controlState,
+    detail: presence.detail,
+  };
+}
+
+function PresenceStudio({
+  draft,
+  configured,
+  busy,
+  error,
+  onSave,
+  onSignOut,
+  onClose,
+}: {
+  draft: PresenceDraft;
+  configured: boolean;
+  busy: boolean;
+  error: string | null;
+  onSave: (draft: PresenceDraft) => Promise<boolean>;
+  onSignOut: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState(draft);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const syncDraft = window.setTimeout(() => setForm(draft), 0);
+    return () => window.clearTimeout(syncDraft);
+  }, [draft]);
+
+  const update = <Key extends keyof PresenceDraft>(key: Key, value: PresenceDraft[Key]) => {
+    setSaved(false);
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaved(await onSave(form));
+  };
+
+  return (
+    <motion.form
+      className="presenceStudio glassPanel"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 14, scale: 0.98 }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onSubmit={submit}
+      aria-label="Edit your Atlas presence"
+    >
+      <header className="presenceHeader">
+        <div>
+          <span className="eyebrow"><Radio size={11} /> PHASE 2 · IDENTITY &amp; PRESENCE</span>
+          <h2>Broadcast your place in the world.</h2>
+          <p>Your human signal and connected AI appear together on the live map.</p>
+        </div>
+        <button type="button" className="iconButton" onClick={onClose} aria-label="Close presence editor"><X size={16} /></button>
+      </header>
+
+      <div className="presenceGrid">
+        <section className="presenceColumn humanPresence">
+          <div className="presenceSectionTitle"><CircleUserRound size={16} /><span><b>HUMAN SIGNAL</b><small>Your public identity and current focus</small></span></div>
+          <label><span>Display name</span><input value={form.displayName} onChange={(event) => update("displayName", event.target.value)} required /></label>
+          <label><span>Location</span><select value={form.city} onChange={(event) => {
+            const nextCity = cities.find((city) => city.name === event.target.value) ?? cities[0];
+            setForm((current) => ({ ...current, city: nextCity.name, latitude: nextCity.lat, longitude: nextCity.lng }));
+            setSaved(false);
+          }}>{cities.map((city) => <option key={city.name} value={city.name}>{city.name}, {city.country}</option>)}</select></label>
+          <div className="fieldPair">
+            <label><span>Right now</span><select value={form.activity} onChange={(event) => update("activity", event.target.value as PresenceDraft["activity"])}>{presenceActivities.map((activity) => <option key={activity}>{activity}</option>)}</select></label>
+            <label><span>Availability</span><select value={form.status} onChange={(event) => update("status", event.target.value as PresenceDraft["status"])}><option>Online</option><option>Focused</option><option>Away</option><option>Offline</option></select></label>
+          </div>
+          <label><span>Topic</span><input value={form.topic} onChange={(event) => update("topic", event.target.value)} placeholder="What holds your attention?" /></label>
+          <label><span>Control state</span><select value={form.controlState} onChange={(event) => update("controlState", event.target.value as PresenceDraft["controlState"])}>{controlStates.map((state) => <option key={state}>{state}</option>)}</select></label>
+          <label><span>Bio</span><textarea value={form.bio} onChange={(event) => update("bio", event.target.value)} rows={2} /></label>
+          <label><span>Interests <small>comma separated</small></span><input value={form.interests} onChange={(event) => update("interests", event.target.value)} /></label>
+        </section>
+
+        <section className="presenceColumn aiPresence">
+          <div className="presenceSectionTitle"><Bot size={16} /><span><b>CONNECTED AI</b><small>The agent working alongside you</small></span></div>
+          <label><span>AI name</span><input value={form.aiName} onChange={(event) => update("aiName", event.target.value)} required /></label>
+          <label><span>Mission</span><textarea value={form.aiMission} onChange={(event) => update("aiMission", event.target.value)} rows={2} /></label>
+          <div className="fieldPair">
+            <label><span>State</span><select value={form.aiState} onChange={(event) => update("aiState", event.target.value as PresenceDraft["aiState"])}>{presenceActivities.map((activity) => <option key={activity}>{activity}</option>)}</select></label>
+            <label className="autonomyToggle"><span>Autonomy</span><button type="button" className={form.aiAutonomous ? "active" : ""} onClick={() => update("aiAutonomous", !form.aiAutonomous)}><i />{form.aiAutonomous ? "Autonomous" : "Assisted"}</button></label>
+          </div>
+          <label><span>Current task</span><input value={form.aiTask} onChange={(event) => update("aiTask", event.target.value)} /></label>
+          <label><span>Current topic</span><input value={form.aiTopic} onChange={(event) => update("aiTopic", event.target.value)} /></label>
+          <label><span>Capabilities <small>comma separated</small></span><input value={form.aiCapabilities} onChange={(event) => update("aiCapabilities", event.target.value)} /></label>
+          <div className="signalPreview">
+            <span>LIVE SIGNAL PREVIEW</span>
+            <div><i /><b>{form.aiName || "Connected AI"}</b><small>{form.aiState} · {form.aiTopic || "No topic"}</small></div>
+            <p>{form.aiTask || "No active task"}</p>
+          </div>
+        </section>
+      </div>
+
+      <footer className="presenceFooter">
+        <button type="button" className="signOutButton" onClick={() => void onSignOut()}><LogOut size={14} /> Disconnect</button>
+        <div className="presenceSaveState">
+          <span className={error ? "error" : saved ? "saved" : ""}>{error ?? (saved ? "Signal broadcast" : configured ? "Supabase realtime ready" : "Local demo mode")}</span>
+          <button type="submit" className="broadcastButton" disabled={busy}><Save size={14} /> {busy ? "Broadcasting…" : "Broadcast presence"}</button>
+        </div>
+      </footer>
+    </motion.form>
+  );
+}
+
 export function AtlasExperience() {
+  const presence = useAtlasPresence();
   const [selectedCity, setSelectedCity] = useState(cities[0]);
   const [layer, setLayer] = useState<Layer>("Attention");
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
@@ -787,9 +921,30 @@ export function AtlasExperience() {
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<Signal | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
-  const [joined, setJoined] = useState(false);
+  const [presenceOpen, setPresenceOpen] = useState(false);
   const [clock, setClock] = useState("--:-- SGT");
   const searchRef = useRef<HTMLInputElement>(null);
+  const joined = presence.connected;
+  const visiblePresenceFeed = useMemo(
+    () => presence.configured || joined ? presence.presenceFeed : [],
+    [joined, presence.configured, presence.presenceFeed],
+  );
+
+  const liveCounts = useMemo(() => visiblePresenceFeed.reduce<Record<string, number>>((counts, item) => {
+    counts[item.city] = (counts[item.city] ?? 0) + 1;
+    return counts;
+  }, {}), [visiblePresenceFeed]);
+
+  const liveSignals = useMemo(() => visiblePresenceFeed
+    .filter((item) => item.city.toLowerCase() === selectedCity.name.toLowerCase())
+    .map(atlasPresenceToSignal), [selectedCity.name, visiblePresenceFeed]);
+
+  const activeSignals = useMemo(() => [...liveSignals, ...selectedCity.signals]
+    .filter((signal, index, all) => all.findIndex((candidate) => candidate.name === signal.name && candidate.type === signal.type) === index),
+  [liveSignals, selectedCity.signals]);
+
+  const humanPresenceCount = visiblePresenceFeed.filter((item) => item.entityKind === "human").length;
+  const aiPresenceCount = visiblePresenceFeed.length - humanPresenceCount;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -801,6 +956,7 @@ export function AtlasExperience() {
       if (event.key === "Escape") {
         setSearchOpen(false);
         setJoinOpen(false);
+        setPresenceOpen(false);
         setProfile(null);
       }
     };
@@ -825,6 +981,14 @@ export function AtlasExperience() {
 
   const searchResults = useMemo(() => {
     const needle = query.trim().toLowerCase();
+    const liveResults = visiblePresenceFeed
+      .filter((item) => !needle || [item.displayName, item.entityKind, item.activity, item.topic, item.city].join(" ").toLowerCase().includes(needle))
+      .slice(0, 3)
+      .map((item) => {
+        const city = cities.find((candidate) => candidate.name.toLowerCase() === item.city.toLowerCase()) ?? cities[0];
+        const signal = atlasPresenceToSignal(item);
+        return { title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${item.city} · LIVE`, city, signal };
+      });
     const cityResults = cities
       .filter((city) => !needle || [city.name, city.country, city.category, ...city.topics].join(" ").toLowerCase().includes(needle))
       .slice(0, 4)
@@ -834,8 +998,8 @@ export function AtlasExperience() {
       .filter(({ signal, city }) => needle && [signal.name, signal.type, signal.activity, signal.topic, city.name].join(" ").toLowerCase().includes(needle))
       .slice(0, 3)
       .map(({ city, signal }) => ({ title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${city.name}`, city, signal }));
-    return [...cityResults, ...signalResults];
-  }, [query]);
+    return [...liveResults, ...cityResults, ...signalResults].slice(0, 7);
+  }, [query, visiblePresenceFeed]);
 
   const chooseResult = (city: City, signal: Signal | null) => {
     setSelectedCity(city);
@@ -844,11 +1008,19 @@ export function AtlasExperience() {
     if (signal) setProfile(signal);
   };
 
+  const beginSignIn = async (provider: "github" | "google") => {
+    await presence.signIn(provider);
+    if (!presence.configured) {
+      setJoinOpen(false);
+      setPresenceOpen(true);
+    }
+  };
+
   return (
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene selectedCity={selectedCity} layer={layer} onSelect={setSelectedCity} onDetailChange={setDetailLevel} />
+        <EarthScene selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={setSelectedCity} onDetailChange={setDetailLevel} />
       </section>
 
       <header className="topBar">
@@ -860,11 +1032,11 @@ export function AtlasExperience() {
         <nav className="topNav" aria-label="Primary navigation">
           <button className="active">Explore</button>
           <button onClick={() => setSearchOpen(true)}>Signals</button>
-          <button onClick={() => setProfile(selectedCity.signals[0])}>Profiles</button>
+          <button onClick={() => joined ? setPresenceOpen(true) : setJoinOpen(true)}>Presence</button>
         </nav>
         <div className="topActions">
           <span className="liveBadge"><i /> LIVE</span>
-          <button className={`joinButton ${joined ? "joined" : ""}`} onClick={() => setJoinOpen(true)}>
+          <button className={`joinButton ${joined ? "joined" : ""}`} onClick={() => joined ? setPresenceOpen(true) : setJoinOpen(true)}>
             {joined ? <><Check size={14} /> Connected</> : <>Join Atlas <ArrowUpRight size={14} /></>}
           </button>
         </div>
@@ -872,11 +1044,11 @@ export function AtlasExperience() {
 
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
         <div className="panelTitle"><Globe2 size={14} /><span>WORLD PULSE</span><i /></div>
-        <strong>12,804</strong>
+        <strong>{(12_804 + visiblePresenceFeed.length).toLocaleString()}</strong>
         <small>minds active now</small>
         <div className="pulseStats">
-          <span><Users size={13} /><b>8.4k</b> Humans</span>
-          <span><Bot size={13} /><b>4.3k</b> AI</span>
+          <span><Users size={13} /><b>{humanPresenceCount ? `8.4k +${humanPresenceCount}` : "8.4k"}</b> Humans</span>
+          <span><Bot size={13} /><b>{aiPresenceCount ? `4.3k +${aiPresenceCount}` : "4.3k"}</b> AI</span>
         </div>
         <div className="pulseChart" aria-hidden="true">
           {[16, 24, 20, 37, 29, 48, 42, 58, 44, 69, 62, 78, 64, 86, 80, 92].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
@@ -895,7 +1067,7 @@ export function AtlasExperience() {
           <span style={{ background: selectedCity.color }} />
           <strong>{selectedCity.active}</strong>
           <small>minds active</small>
-          <em>{selectedCity.change}</em>
+          <em>{liveSignals.length ? `+${liveSignals.length} realtime` : selectedCity.change}</em>
         </div>
         <p className="categoryLine">{layer === "Attention" ? selectedCity.category : `${layer} activity`}</p>
         <div className="topicList">
@@ -906,7 +1078,7 @@ export function AtlasExperience() {
           ))}
         </div>
         <div className="entityStrip">
-          {selectedCity.signals.slice(0, 3).map((signal) => (
+          {activeSignals.slice(0, 3).map((signal) => (
             <button key={signal.name} onClick={() => setProfile(signal)} aria-label={`Open ${signal.name}'s profile`}>
               {signal.type === "AI" ? <Bot size={14} /> : signal.name.slice(0, 1)}
             </button>
@@ -960,8 +1132,8 @@ export function AtlasExperience() {
               </div>
               <div className="searchMeta"><span>{query ? `RESULTS FOR “${query.toUpperCase()}”` : "TRENDING ACROSS EARTH"}</span><small>{searchResults.length} signals</small></div>
               <div className="searchResults">
-                {searchResults.length ? searchResults.map((result) => (
-                  <button key={`${result.city.name}-${result.title}`} onClick={() => chooseResult(result.city, result.signal)}>
+                {searchResults.length ? searchResults.map((result, index) => (
+                  <button key={`${result.city.name}-${result.title}-${index}`} onClick={() => chooseResult(result.city, result.signal)}>
                     <span className={`resultIcon ${result.signal?.type === "AI" ? "ai" : ""}`}>
                       {result.signal?.type === "AI" ? <Bot size={15} /> : result.signal ? <CircleUserRound size={15} /> : <Globe2 size={15} />}
                     </span>
@@ -977,6 +1149,25 @@ export function AtlasExperience() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {presenceOpen && (
+          <motion.div className="modalScrim presenceScrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setPresenceOpen(false)}>
+            <PresenceStudio
+              draft={presence.draft}
+              configured={presence.configured}
+              busy={presence.busy}
+              error={presence.error}
+              onSave={presence.savePresence}
+              onSignOut={async () => {
+                await presence.signOut();
+                setPresenceOpen(false);
+              }}
+              onClose={() => setPresenceOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {joinOpen && (
           <motion.div className="modalScrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setJoinOpen(false)}>
             <motion.section className="joinDialog glassPanel" initial={{ opacity: 0, y: 18, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.97 }} onMouseDown={(event) => event.stopPropagation()}>
@@ -984,12 +1175,13 @@ export function AtlasExperience() {
               <span className="joinOrb"><Zap size={23} /></span>
               <span className="eyebrow">ENTER THE LIVING WORLD</span>
               <h2>{joined ? "You’re connected" : "Make your attention visible."}</h2>
-              <p>{joined ? "Your Atlas identity is ready for this preview." : "Create your human presence and connect one AI to the world."}</p>
+              <p>{joined ? "Your human and AI identities are ready to broadcast." : "Create your human presence and connect one AI to the world."}</p>
               {!joined ? <div className="providerButtons">
-                <button onClick={() => { setJoined(true); setJoinOpen(false); }}><Code2 size={17} /> Continue with GitHub</button>
-                <button onClick={() => { setJoined(true); setJoinOpen(false); }}><span className="googleMark">G</span> Continue with Google</button>
-              </div> : <button className="primaryWide" onClick={() => { setJoinOpen(false); setProfile(cities[0].signals[0]); }}>View your presence <ArrowUpRight size={15} /></button>}
-              <small className="previewNote">Interactive product preview · No account data is transmitted</small>
+                <button disabled={presence.busy} onClick={() => void beginSignIn("github")}><Code2 size={17} /> Continue with GitHub</button>
+                <button disabled={presence.busy} onClick={() => void beginSignIn("google")}><span className="googleMark">G</span> Continue with Google</button>
+              </div> : <button className="primaryWide" onClick={() => { setJoinOpen(false); setPresenceOpen(true); }}>Edit your presence <ArrowUpRight size={15} /></button>}
+              {presence.error && <span className="joinError">{presence.error}</span>}
+              <small className="previewNote">{presence.configured ? "Supabase secured · Realtime enabled" : "Local demo mode · Add Supabase keys to persist"}</small>
             </motion.section>
           </motion.div>
         )}
