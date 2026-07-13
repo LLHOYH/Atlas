@@ -28,158 +28,14 @@ import {
 } from "lucide-react";
 import * as THREE from "three";
 import { useAtlasPresence } from "../hooks/useAtlasPresence";
+import { useAtlasWorld } from "../hooks/useAtlasWorld";
 import {
   controlStates,
   presenceActivities,
   type AtlasPresence,
   type PresenceDraft,
 } from "../lib/atlas/types";
-
-type Signal = {
-  name: string;
-  type: "Human" | "AI";
-  activity: string;
-  topic: string;
-  status: string;
-  detail: string;
-};
-
-type City = {
-  name: string;
-  country: string;
-  lat: number;
-  lng: number;
-  color: string;
-  category: string;
-  active: string;
-  change: string;
-  topics: string[];
-  signals: Signal[];
-};
-
-const cities: City[] = [
-  {
-    name: "Singapore",
-    country: "Singapore",
-    lat: 1.35,
-    lng: 103.82,
-    color: "#a68cff",
-    category: "AI & Technology",
-    active: "1,284",
-    change: "+12.4%",
-    topics: ["Agentic systems", "Stablecoin rails", "Developer tools"],
-    signals: [
-      { name: "Lloyd", type: "Human", activity: "Coding", topic: "Stablecoin payments", status: "Online", detail: "Building an infrastructure prototype" },
-      { name: "Research AI", type: "AI", activity: "Searching", topic: "Developer tools", status: "Autonomous", detail: "Reading 42 sources" },
-      { name: "Mira Chen", type: "Human", activity: "Designing", topic: "Spatial interfaces", status: "AI assisted", detail: "Exploring calm interface systems" },
-    ],
-  },
-  {
-    name: "Tokyo",
-    country: "Japan",
-    lat: 35.68,
-    lng: 139.69,
-    color: "#67e9bc",
-    category: "Travel & Culture",
-    active: "2,106",
-    change: "+8.9%",
-    topics: ["Kyoto travel", "Robotics", "Japanese learning"],
-    signals: [
-      { name: "Kiko", type: "Human", activity: "Planning", topic: "Kyoto in autumn", status: "AI assisted", detail: "Mapping a seven-day journey" },
-      { name: "Hikari", type: "AI", activity: "Learning", topic: "Robotics", status: "Autonomous", detail: "Simulating motion paths" },
-    ],
-  },
-  {
-    name: "San Francisco",
-    country: "United States",
-    lat: 37.77,
-    lng: -122.42,
-    color: "#6eb7ff",
-    category: "Technology",
-    active: "3,842",
-    change: "+18.2%",
-    topics: ["Model context", "Robotics", "AI infrastructure"],
-    signals: [
-      { name: "Nova", type: "AI", activity: "Coding", topic: "Model context", status: "Autonomous", detail: "Testing an agent runtime" },
-      { name: "Anya Patel", type: "Human", activity: "Building", topic: "Robotics", status: "Human + AI", detail: "Prototyping tactile controls" },
-    ],
-  },
-  {
-    name: "São Paulo",
-    country: "Brazil",
-    lat: -23.55,
-    lng: -46.63,
-    color: "#ff8f62",
-    category: "Finance & Culture",
-    active: "2,472",
-    change: "+21.7%",
-    topics: ["Payment systems", "Football", "Music festivals"],
-    signals: [
-      { name: "Caio", type: "Human", activity: "Researching", topic: "Payment systems", status: "Online", detail: "Comparing instant payment networks" },
-      { name: "Lume", type: "AI", activity: "Reading", topic: "Brazilian fintech", status: "Autonomous", detail: "Synthesizing market signals" },
-    ],
-  },
-  {
-    name: "London",
-    country: "United Kingdom",
-    lat: 51.51,
-    lng: -0.13,
-    color: "#f5c86b",
-    category: "Finance & Research",
-    active: "2,934",
-    change: "+7.1%",
-    topics: ["AI safety", "Market structure", "Climate research"],
-    signals: [
-      { name: "Elias", type: "Human", activity: "Reading", topic: "AI safety", status: "Online", detail: "Reviewing evaluation methods" },
-      { name: "Argus", type: "AI", activity: "Thinking", topic: "Market structure", status: "Human controlled", detail: "Preparing a risk brief" },
-    ],
-  },
-  {
-    name: "Lagos",
-    country: "Nigeria",
-    lat: 6.52,
-    lng: 3.38,
-    color: "#72e0a7",
-    category: "Finance & Education",
-    active: "1,632",
-    change: "+16.3%",
-    topics: ["Mobile money", "Creative tools", "Learning Rust"],
-    signals: [
-      { name: "Tomi", type: "Human", activity: "Learning", topic: "Rust", status: "Online", detail: "Building a first systems project" },
-      { name: "Sage", type: "AI", activity: "Teaching", topic: "Mobile money", status: "AI assisted", detail: "Explaining payment architecture" },
-    ],
-  },
-  {
-    name: "Dubai",
-    country: "United Arab Emirates",
-    lat: 25.2,
-    lng: 55.27,
-    color: "#ffae68",
-    category: "Finance & Travel",
-    active: "1,548",
-    change: "+9.5%",
-    topics: ["Digital assets", "Future cities", "Luxury travel"],
-    signals: [
-      { name: "Amal", type: "Human", activity: "Planning", topic: "Future cities", status: "Human + AI", detail: "Developing an urban systems brief" },
-      { name: "Orbit", type: "AI", activity: "Searching", topic: "Digital assets", status: "Autonomous", detail: "Tracking policy changes" },
-    ],
-  },
-  {
-    name: "Sydney",
-    country: "Australia",
-    lat: -33.87,
-    lng: 151.21,
-    color: "#ff72b1",
-    category: "Culture & Research",
-    active: "1,126",
-    change: "+6.4%",
-    topics: ["Climate tech", "Ocean research", "Indie games"],
-    signals: [
-      { name: "Iris", type: "AI", activity: "Researching", topic: "Ocean systems", status: "Autonomous", detail: "Comparing reef recovery data" },
-      { name: "Noah Kim", type: "Human", activity: "Designing", topic: "Indie games", status: "Online", detail: "Sketching a new world" },
-    ],
-  },
-];
+import type { AtlasCity as City, AtlasSignal as Signal } from "../lib/atlas/world";
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
@@ -295,10 +151,12 @@ function PixelLand() {
 }
 
 function PixelSettlements({
+  cities,
   density,
   layer,
   materialRef,
 }: {
+  cities: City[];
   density: "city" | "town";
   layer: Layer;
   materialRef: React.RefObject<THREE.MeshBasicMaterial | null>;
@@ -322,7 +180,7 @@ function PixelSettlements({
       }
     });
     return generated;
-  }, [density, layer]);
+  }, [cities, density, layer]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
@@ -359,9 +217,11 @@ function PixelSettlements({
 }
 
 function StreetMesh({
+  cities,
   layer,
   materialRef,
 }: {
+  cities: City[];
   layer: Layer;
   materialRef: React.RefObject<THREE.LineBasicMaterial | null>;
 }) {
@@ -402,7 +262,7 @@ function StreetMesh({
     const result = new THREE.BufferGeometry();
     result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return result;
-  }, []);
+  }, [cities]);
 
   return (
     <lineSegments geometry={geometry}>
@@ -480,7 +340,7 @@ function CityLight({
   );
 }
 
-function EnergyParticles({ layer }: { layer: Layer }) {
+function EnergyParticles({ cities, layer }: { cities: City[]; layer: Layer }) {
   const points = useRef<THREE.Points>(null);
   const geometry = useMemo(() => {
     let seed = 1487;
@@ -513,7 +373,7 @@ function EnergyParticles({ layer }: { layer: Layer }) {
     result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     result.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     return result;
-  }, []);
+  }, [cities]);
 
   useFrame(({ clock }) => {
     if (points.current) {
@@ -578,12 +438,14 @@ function AttentionFlow({ from, to, color, delay }: { from: City; to: City; color
 }
 
 function Earth({
+  cities,
   selectedCity,
   layer,
   liveCounts = {},
   onSelect,
   onDetailChange,
 }: {
+  cities: City[];
   selectedCity: City;
   layer: Layer;
   liveCounts: Record<string, number>;
@@ -702,10 +564,10 @@ function Earth({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       <PixelLand />
-      <EnergyParticles layer={layer} />
-      <PixelSettlements density="city" layer={layer} materialRef={cityMaterial} />
-      <PixelSettlements density="town" layer={layer} materialRef={townMaterial} />
-      <StreetMesh layer={layer} materialRef={streetMaterial} />
+      <EnergyParticles cities={cities} layer={layer} />
+      <PixelSettlements cities={cities} density="city" layer={layer} materialRef={cityMaterial} />
+      <PixelSettlements cities={cities} density="town" layer={layer} materialRef={townMaterial} />
+      <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
@@ -715,20 +577,24 @@ function Earth({
           <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} liveCount={liveCounts[city.name] ?? 0} onSelect={onSelect} />
         ))}
       </group>
-      <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
-      <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />
-      <AttentionFlow from={cities[2]} to={cities[1]} color="#6eb7ff" delay={0.72} />
+      {cities.length >= 5 && <>
+        <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
+        <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />
+        <AttentionFlow from={cities[2]} to={cities[1]} color="#6eb7ff" delay={0.72} />
+      </>}
     </group>
   );
 }
 
 function EarthScene({
+  cities,
   selectedCity,
   layer,
   liveCounts = {},
   onSelect,
   onDetailChange,
 }: {
+  cities: City[];
   selectedCity: City;
   layer: Layer;
   liveCounts: Record<string, number>;
@@ -746,7 +612,7 @@ function EarthScene({
       <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
       <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
       <Suspense fallback={null}>
-        <Earth selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={onSelect} onDetailChange={onDetailChange} />
+        <Earth cities={cities} selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={onSelect} onDetailChange={onDetailChange} />
       </Suspense>
       <OrbitControls
         makeDefault
@@ -800,6 +666,7 @@ function ProfilePanel({ signal, city, onClose }: { signal: Signal; city: City; o
 
 function atlasPresenceToSignal(presence: AtlasPresence): Signal {
   return {
+    id: `live-${presence.entityKind}-${presence.id}`,
     name: presence.displayName,
     type: presence.entityKind === "ai" ? "AI" : "Human",
     activity: presence.activity,
@@ -809,7 +676,14 @@ function atlasPresenceToSignal(presence: AtlasPresence): Signal {
   };
 }
 
+function compactActivity(value: number) {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
+    .format(value)
+    .replace("K", "k");
+}
+
 function PresenceStudio({
+  cities,
   draft,
   configured,
   busy,
@@ -818,6 +692,7 @@ function PresenceStudio({
   onSignOut,
   onClose,
 }: {
+  cities: City[];
   draft: PresenceDraft;
   configured: boolean;
   busy: boolean;
@@ -912,7 +787,7 @@ function PresenceStudio({
   );
 }
 
-export function AtlasExperience() {
+function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const presence = useAtlasPresence();
   const [selectedCity, setSelectedCity] = useState(cities[0]);
   const [layer, setLayer] = useState<Layer>("Attention");
@@ -945,6 +820,15 @@ export function AtlasExperience() {
 
   const humanPresenceCount = visiblePresenceFeed.filter((item) => item.entityKind === "human").length;
   const aiPresenceCount = visiblePresenceFeed.length - humanPresenceCount;
+  const seededHumanActivity = cities.reduce((total, city) => total + city.humanActivity, 0);
+  const seededAiActivity = cities.reduce((total, city) => total + city.aiActivity, 0);
+  const worldHumanActivity = seededHumanActivity + humanPresenceCount;
+  const worldAiActivity = seededAiActivity + aiPresenceCount;
+  const pulseBars = useMemo(() => {
+    const values = cities.flatMap((city) => [city.humanActivity, city.aiActivity]);
+    const peak = Math.max(...values, 1);
+    return values.map((value) => 16 + Math.round((value / peak) * 76));
+  }, [cities]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -999,7 +883,7 @@ export function AtlasExperience() {
       .slice(0, 3)
       .map(({ city, signal }) => ({ title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${city.name}`, city, signal }));
     return [...liveResults, ...cityResults, ...signalResults].slice(0, 7);
-  }, [query, visiblePresenceFeed]);
+  }, [cities, query, visiblePresenceFeed]);
 
   const chooseResult = (city: City, signal: Signal | null) => {
     setSelectedCity(city);
@@ -1020,7 +904,7 @@ export function AtlasExperience() {
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={setSelectedCity} onDetailChange={setDetailLevel} />
+        <EarthScene cities={cities} selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={setSelectedCity} onDetailChange={setDetailLevel} />
       </section>
 
       <header className="topBar">
@@ -1044,14 +928,14 @@ export function AtlasExperience() {
 
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
         <div className="panelTitle"><Globe2 size={14} /><span>WORLD PULSE</span><i /></div>
-        <strong>{(12_804 + visiblePresenceFeed.length).toLocaleString()}</strong>
+        <strong>{(worldHumanActivity + worldAiActivity).toLocaleString()}</strong>
         <small>minds active now</small>
         <div className="pulseStats">
-          <span><Users size={13} /><b>{humanPresenceCount ? `8.4k +${humanPresenceCount}` : "8.4k"}</b> Humans</span>
-          <span><Bot size={13} /><b>{aiPresenceCount ? `4.3k +${aiPresenceCount}` : "4.3k"}</b> AI</span>
+          <span><Users size={13} /><b>{compactActivity(worldHumanActivity)}</b> Humans</span>
+          <span><Bot size={13} /><b>{compactActivity(worldAiActivity)}</b> AI</span>
         </div>
         <div className="pulseChart" aria-hidden="true">
-          {[16, 24, 20, 37, 29, 48, 42, 58, 44, 69, 62, 78, 64, 86, 80, 92].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
+          {pulseBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
         </div>
       </aside>
 
@@ -1065,9 +949,9 @@ export function AtlasExperience() {
         </div>
         <div className="activityTotal">
           <span style={{ background: selectedCity.color }} />
-          <strong>{selectedCity.active}</strong>
+          <strong>{(selectedCity.humanActivity + selectedCity.aiActivity + liveSignals.length).toLocaleString()}</strong>
           <small>minds active</small>
-          <em>{liveSignals.length ? `+${liveSignals.length} realtime` : selectedCity.change}</em>
+          <em>{liveSignals.length ? `+${liveSignals.length} realtime` : `+${selectedCity.growthPercent.toFixed(1)}%`}</em>
         </div>
         <p className="categoryLine">{layer === "Attention" ? selectedCity.category : `${layer} activity`}</p>
         <div className="topicList">
@@ -1152,6 +1036,7 @@ export function AtlasExperience() {
         {presenceOpen && (
           <motion.div className="modalScrim presenceScrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setPresenceOpen(false)}>
             <PresenceStudio
+              cities={cities}
               draft={presence.draft}
               configured={presence.configured}
               busy={presence.busy}
@@ -1188,4 +1073,26 @@ export function AtlasExperience() {
       </AnimatePresence>
     </main>
   );
+}
+
+export function AtlasExperience() {
+  const world = useAtlasWorld();
+
+  if (!world.cities.length) {
+    return (
+      <main className="atlasShell worldDataGate">
+        <div className="spaceGlow" />
+        <section className="worldDataCard glassPanel" aria-live="polite">
+          <span className="atlasGlyph"><i /><i /><i /></span>
+          <span className="eyebrow">ATLAS WORLD DATABASE</span>
+          <h1>{world.error ? "The world signal is offline." : "Loading the living world…"}</h1>
+          <p>{world.error ?? "Reading cities, topics, and ambient signals from Supabase."}</p>
+          <div className={`databasePulse ${world.loading ? "loading" : ""}`} aria-hidden="true"><i /><i /><i /><i /><i /></div>
+          {world.error && <button onClick={() => void world.reload()}>Retry connection <ArrowUpRight size={14} /></button>}
+        </section>
+      </main>
+    );
+  }
+
+  return <AtlasWorldExperience cities={world.cities} />;
 }

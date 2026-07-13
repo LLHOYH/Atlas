@@ -21,8 +21,8 @@ test("server-renders the Atlas product shell", async () => {
   const html = await response.text();
   assert.match(html, /<title>Atlas — A living map of humanity and AI<\/title>/i);
   assert.match(html, /ATLAS/);
-  assert.match(html, /WORLD PULSE/);
-  assert.match(html, /Search the living world/);
-  assert.match(html, /Singapore/);
+  assert.match(html, /ATLAS WORLD DATABASE/);
+  assert.match(html, /Loading the living world/);
+  assert.doesNotMatch(html, /Building an infrastructure prototype|Mapping a seven-day journey/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
