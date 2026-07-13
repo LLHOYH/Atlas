@@ -13,6 +13,7 @@ test("Supabase exposes the complete seeded Atlas world", { skip: !config }, asyn
     cities: 8,
     topics: 24,
     signals: 17,
+    streets: 32,
     humanActivity: 11_524,
     aiActivity: 5_420,
   });
@@ -21,4 +22,5 @@ test("Supabase exposes the complete seeded Atlas world", { skip: !config }, asyn
   assert.equal(world.cities.at(-1)?.name, "Sydney");
   assert.ok(world.signals.some((signal) => signal.entity_kind === "ai"));
   assert.ok(world.signals.some((signal) => signal.entity_kind === "human"));
+  assert.ok(world.streets.some((street) => street.name === "Orchard Road"));
 });

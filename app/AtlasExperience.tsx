@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
-import { OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
+import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import atlasGeoData from "./atlas-geo-data.json";
 import {
@@ -42,10 +42,10 @@ type Layer = (typeof layers)[number];
 type DetailLevel = 1 | 2 | 3 | 4;
 
 const detailLabels: Record<DetailLevel, { title: string; note: string }> = {
-  1: { title: "COUNTRIES", note: "National grid cells" },
-  2: { title: "CITIES", note: "Urban activity blocks" },
-  3: { title: "TOWNS", note: "Local presence clusters" },
-  4: { title: "STREETS", note: "Street-level signal mesh" },
+  1: { title: "COUNTRIES", note: "Country names" },
+  2: { title: "REGIONS", note: "State & region names" },
+  3: { title: "CITIES", note: "City names" },
+  4: { title: "STREETS", note: "Named street mesh" },
 };
 
 const layerColors: Record<Layer, string> = {
@@ -62,6 +62,97 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
     -radius * Math.sin(phi) * Math.cos(theta),
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta),
+  );
+}
+
+type LabelKind = "country" | "region" | "city" | "street";
+
+type CountryLabel = {
+  name: string;
+  position: THREE.Vector3;
+  weight: number;
+};
+
+const countryAliases: Record<string, string> = {
+  "United States of America": "United States",
+};
+
+const geoCountryLabels = (() => {
+  const countries = new Map<string, { vector: THREE.Vector3; weight: number }>();
+  atlasGeoData.cells.forEach((cell) => {
+    if (cell.name === "Antarctica") return;
+    const name = countryAliases[cell.name] ?? cell.name;
+    const entry = countries.get(name) ?? { vector: new THREE.Vector3(), weight: 0 };
+    entry.vector.add(latLngToVector3(cell.lat, cell.lng, 1));
+    entry.weight += 1;
+    countries.set(name, entry);
+  });
+
+  return countries;
+})();
+
+function getCountryLabels(cities: City[]): CountryLabel[] {
+  const labels = new Map<string, CountryLabel>();
+
+  geoCountryLabels.forEach((country, name) => {
+    if (country.weight < 2) return;
+    labels.set(name, {
+      name,
+      position: country.vector.clone().normalize().multiplyScalar(3.105),
+      weight: country.weight,
+    });
+  });
+
+  cities.forEach((city) => {
+    const geoCountry = geoCountryLabels.get(city.country);
+    labels.set(city.country, {
+      name: city.country,
+      position: geoCountry
+        ? geoCountry.vector.clone().normalize().multiplyScalar(3.105)
+        : latLngToVector3(city.lat, city.lng, 3.105),
+      weight: Math.max(geoCountry?.weight ?? 0, 2),
+    });
+  });
+
+  return [...labels.values()].sort((left, right) => right.weight - left.weight);
+}
+
+function GlobeLabel({
+  label,
+  kind,
+  position,
+  color,
+}: {
+  label: string;
+  kind: LabelKind;
+  position: THREE.Vector3;
+  color?: string;
+}) {
+  const anchor = useRef<THREE.Group>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const worldPosition = useMemo(() => new THREE.Vector3(), []);
+  const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
+  const towardCamera = useMemo(() => new THREE.Vector3(), []);
+  const distanceFactor = kind === "country" ? 7.5 : kind === "region" ? 6 : kind === "city" ? 5 : 3.6;
+
+  useFrame(({ camera }) => {
+    if (!anchor.current || !content.current) return;
+    anchor.current.getWorldPosition(worldPosition);
+    surfaceNormal.copy(worldPosition).normalize();
+    towardCamera.copy(camera.position).sub(worldPosition).normalize();
+    const visible = surfaceNormal.dot(towardCamera) > 0.035;
+    content.current.style.opacity = visible ? "1" : "0";
+    content.current.style.visibility = visible ? "visible" : "hidden";
+  });
+
+  return (
+    <group ref={anchor} position={position}>
+      <Html transform sprite center distanceFactor={distanceFactor} zIndexRange={[8, 0]}>
+        <div ref={content} className={`mapLabel mapLabel--${kind}`} style={color ? { color } : undefined}>
+          {label}
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -257,6 +348,23 @@ function StreetMesh({
         city.lat + halfSpan * 0.75,
         city.lng + halfSpan * longitudeScale,
       );
+
+      city.streets.forEach((street) => {
+        const centerLat = city.lat + street.offsetLatitude;
+        const centerLng = city.lng + street.offsetLongitude;
+        const bearing = THREE.MathUtils.degToRad(street.bearingDegrees);
+        const halfLength = street.lengthDegrees / 2;
+        const latitudeDelta = Math.cos(bearing) * halfLength;
+        const longitudeDelta = (
+          Math.sin(bearing) * halfLength
+        ) / Math.max(0.28, Math.cos((centerLat * Math.PI) / 180));
+        addSegment(
+          centerLat - latitudeDelta,
+          centerLng - longitudeDelta,
+          centerLat + latitudeDelta,
+          centerLng + longitudeDelta,
+        );
+      });
     });
 
     const result = new THREE.BufferGeometry();
@@ -462,6 +570,8 @@ function Earth({
   const townMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
   const cityMarkers = useRef<THREE.Group>(null);
+  const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
+  const countryLabels = useMemo(() => getCountryLabels(cities), [cities]);
 
   useLayoutEffect(() => {
     if (!globe.current) return;
@@ -494,6 +604,7 @@ function Earth({
           : 4;
     if (nextDetail !== currentDetail.current) {
       currentDetail.current = nextDetail;
+      setLabelDetail(nextDetail);
       onDetailChange(nextDetail);
     }
 
@@ -577,6 +688,55 @@ function Earth({
           <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} liveCount={liveCounts[city.name] ?? 0} onSelect={onSelect} />
         ))}
       </group>
+      {labelDetail === 1 && countryLabels.map((country) => (
+        <GlobeLabel
+          key={country.name}
+          label={country.name}
+          kind="country"
+          position={country.position}
+        />
+      ))}
+      {labelDetail === 2 && cities.map((city) => (
+        <GlobeLabel
+          key={`${city.id}-region`}
+          label={city.region}
+          kind="region"
+          position={latLngToVector3(city.lat + 0.48, city.lng, 3.12)}
+          color={city.color}
+        />
+      ))}
+      {labelDetail === 3 && cities.map((city) => (
+        <GlobeLabel
+          key={`${city.id}-city`}
+          label={city.name}
+          kind="city"
+          position={latLngToVector3(city.lat, city.lng, 3.135)}
+          color={city.color}
+        />
+      ))}
+      {labelDetail === 4 && (
+        <>
+          <GlobeLabel
+            label={selectedCity.name}
+            kind="city"
+            position={latLngToVector3(selectedCity.lat, selectedCity.lng, 3.14)}
+            color={selectedCity.color}
+          />
+          {selectedCity.streets.map((street) => (
+            <GlobeLabel
+              key={street.id}
+              label={street.name}
+              kind="street"
+              position={latLngToVector3(
+                selectedCity.lat + street.offsetLatitude,
+                selectedCity.lng + street.offsetLongitude,
+                3.145,
+              )}
+              color={selectedCity.color}
+            />
+          ))}
+        </>
+      )}
       {cities.length >= 5 && <>
         <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
         <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />

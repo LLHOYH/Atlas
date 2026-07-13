@@ -101,6 +101,69 @@ button {
   height: 100% !important;
 }
 
+.mapLabel {
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  color: rgba(215, 239, 243, 0.92);
+  font-family: var(--font-geist-mono), monospace;
+  line-height: 1;
+  text-shadow: 0 1px 3px #020507, 0 0 8px #020507, 0 0 14px rgba(74, 203, 220, 0.34);
+}
+
+.mapLabel--country {
+  padding: 2px 4px;
+  font-size: 8px;
+  font-weight: 560;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.mapLabel--region {
+  padding: 3px 5px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: rgba(3, 10, 14, 0.78);
+  box-shadow: 0 0 12px rgba(2, 7, 10, 0.75);
+  font-size: 7px;
+  font-weight: 560;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.mapLabel--city {
+  padding: 3px 5px 3px 10px;
+  font-size: 9px;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mapLabel--city::before {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 4px;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+  content: "";
+}
+
+.mapLabel--street {
+  padding: 2px 4px;
+  border-left: 1px solid currentColor;
+  background: rgba(2, 9, 13, 0.76);
+  font-size: 6.5px;
+  font-weight: 520;
+  letter-spacing: 0.04em;
+}
+
 .glassPanel {
   border: 1px solid var(--line);
   background: linear-gradient(145deg, rgba(14, 23, 30, 0.76), rgba(5, 10, 15, 0.64));

@@ -8,10 +8,21 @@ export type AtlasSignal = {
   detail: string;
 };
 
+export type AtlasStreet = {
+  id: string;
+  name: string;
+  roadClass: "primary" | "secondary" | "local";
+  offsetLatitude: number;
+  offsetLongitude: number;
+  bearingDegrees: number;
+  lengthDegrees: number;
+};
+
 export type AtlasCity = {
   id: string;
   name: string;
   country: string;
+  region: string;
   lat: number;
   lng: number;
   color: string;
@@ -21,12 +32,14 @@ export type AtlasCity = {
   growthPercent: number;
   topics: string[];
   signals: AtlasSignal[];
+  streets: AtlasStreet[];
 };
 
 export type AtlasCityRow = {
   id: string;
   name: string;
   country: string;
+  region: string;
   latitude: number;
   longitude: number;
   color: string;
@@ -55,10 +68,23 @@ export type AtlasAmbientSignalRow = {
   display_order: number;
 };
 
+export type AtlasStreetRow = {
+  id: string;
+  city_id: string;
+  name: string;
+  road_class: "primary" | "secondary" | "local";
+  offset_latitude: number;
+  offset_longitude: number;
+  bearing_degrees: number;
+  length_degrees: number;
+  display_order: number;
+};
+
 export function mapAtlasWorld(
   cityRows: AtlasCityRow[],
   topicRows: AtlasTopicRow[],
   signalRows: AtlasAmbientSignalRow[],
+  streetRows: AtlasStreetRow[],
 ): AtlasCity[] {
   return [...cityRows]
     .sort((left, right) => left.display_order - right.display_order)
@@ -66,6 +92,7 @@ export function mapAtlasWorld(
       id: city.id,
       name: city.name,
       country: city.country,
+      region: city.region,
       lat: Number(city.latitude),
       lng: Number(city.longitude),
       color: city.color,
@@ -88,6 +115,18 @@ export function mapAtlasWorld(
           topic: signal.topic,
           status: signal.control_state,
           detail: signal.detail,
+        })),
+      streets: streetRows
+        .filter((street) => street.city_id === city.id)
+        .sort((left, right) => left.display_order - right.display_order)
+        .map((street) => ({
+          id: street.id,
+          name: street.name,
+          roadClass: street.road_class,
+          offsetLatitude: Number(street.offset_latitude),
+          offsetLongitude: Number(street.offset_longitude),
+          bearingDegrees: Number(street.bearing_degrees),
+          lengthDegrees: Number(street.length_degrees),
         })),
     }));
 }

@@ -7,6 +7,7 @@ import {
   type AtlasAmbientSignalRow,
   type AtlasCity,
   type AtlasCityRow,
+  type AtlasStreetRow,
   type AtlasTopicRow,
 } from "../lib/atlas/world";
 
@@ -23,12 +24,13 @@ export function useAtlasWorld() {
       return;
     }
 
-    const [cityResult, topicResult, signalResult] = await Promise.all([
+    const [cityResult, topicResult, signalResult, streetResult] = await Promise.all([
       client.from("atlas_cities").select("*").order("display_order"),
       client.from("atlas_city_topics").select("*").order("city_id").order("rank"),
       client.from("atlas_ambient_signals").select("*").order("city_id").order("display_order"),
+      client.from("atlas_city_streets").select("*").order("city_id").order("display_order"),
     ]);
-    const queryError = cityResult.error ?? topicResult.error ?? signalResult.error;
+    const queryError = cityResult.error ?? topicResult.error ?? signalResult.error ?? streetResult.error;
     if (queryError) {
       setError(queryError.message);
       setLoading(false);
@@ -39,6 +41,7 @@ export function useAtlasWorld() {
       (cityResult.data ?? []) as AtlasCityRow[],
       (topicResult.data ?? []) as AtlasTopicRow[],
       (signalResult.data ?? []) as AtlasAmbientSignalRow[],
+      (streetResult.data ?? []) as AtlasStreetRow[],
     );
     setCities(nextCities);
     setError(nextCities.length ? null : "Atlas connected, but the world catalog is empty. Run the seed script.");
