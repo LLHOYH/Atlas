@@ -113,6 +113,10 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
 type LabelKind = "country" | "region" | "city" | "street";
 type GeoCenter = { lat: number; lng: number };
 type CountrySelection = GeoCenter & { name: string; key: string; distance: number };
+type AtlasSearchResult =
+  | { id: string; kind: "country"; title: string; subtitle: string; country: CountrySelection }
+  | { id: string; kind: "city"; title: string; subtitle: string; city: City }
+  | { id: string; kind: "signal"; title: string; subtitle: string; city: City; signal: Signal };
 
 type GeographicLabel = {
   id: string;
@@ -1684,6 +1688,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchSelectionIndex, setSearchSelectionIndex] = useState(0);
   const [profile, setProfile] = useState<Signal | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
   const [presenceOpen, setPresenceOpen] = useState(false);
@@ -1732,12 +1737,18 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     return values.map((value) => 16 + Math.round((value / peak) * 76));
   }, [cities, liveCounts]);
 
+  const openSearch = useCallback((nextQuery?: string) => {
+    if (nextQuery !== undefined) setQuery(nextQuery);
+    setSearchSelectionIndex(0);
+    setSearchOpen(true);
+    window.setTimeout(() => searchRef.current?.focus(), 40);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setSearchOpen(true);
-        window.setTimeout(() => searchRef.current?.focus(), 40);
+        openSearch();
       }
       if (event.key === "Escape") {
         setSearchOpen(false);
@@ -1748,7 +1759,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [openSearch]);
 
   useEffect(() => {
     const updateClock = () => {
@@ -1765,25 +1776,55 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const searchResults = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  const searchResults = useMemo<AtlasSearchResult[]>(() => {
+    const needle = normalizeLabelName(query.trim());
+    const matchesSearch = (...values: Array<string | number>) => (
+      !needle || normalizeLabelName(values.join(" ")).includes(needle)
+    );
+    const countryResults = needle
+      ? atlasLabelData.countries
+        .filter((country) => matchesSearch(country.name, country.id))
+        .sort((left, right) => {
+          const leftName = normalizeLabelName(left.name);
+          const rightName = normalizeLabelName(right.name);
+          const leftRank = leftName === needle ? 0 : leftName.startsWith(needle) ? 1 : 2;
+          const rightRank = rightName === needle ? 0 : rightName.startsWith(needle) ? 1 : 2;
+          return leftRank - rightRank || left.rank - right.rank || left.name.localeCompare(right.name);
+        })
+        .slice(0, 5)
+        .map((country): AtlasSearchResult => ({
+          id: `country:${country.id}`,
+          kind: "country",
+          title: country.name,
+          subtitle: "Country · focus globe and open live network",
+          country: {
+            name: country.name,
+            key: countryEnergyKey(country.name),
+            lat: country.lat,
+            lng: country.lng,
+            distance: 6.15,
+          },
+        }))
+      : [];
     const liveResults = visiblePresenceFeed
-      .filter((item) => !needle || [item.displayName, item.entityKind, item.activity, item.topic, item.city].join(" ").toLowerCase().includes(needle))
+      .filter((item) => matchesSearch(item.displayName, item.entityKind, item.activity, item.topic, item.city))
       .slice(0, 3)
-      .map((item) => {
-        const city = cities.find((candidate) => candidate.name.toLowerCase() === item.city.toLowerCase()) ?? cities[0];
+      .map((item): AtlasSearchResult => {
+        const city = cities.find((candidate) => normalizeLabelName(candidate.name) === normalizeLabelName(item.city)) ?? cities[0];
         const signal = atlasPresenceToSignal(item);
-        return { title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${item.city} · LIVE`, city, signal };
+        return { id: `live:${item.id}`, kind: "signal", title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${item.city} · LIVE`, city, signal };
       });
     const cityResults = cities
-      .filter((city) => !needle || [city.name, city.country, city.category, ...city.topics, ...city.hotTopics.map((topic) => topic.topic)].join(" ").toLowerCase().includes(needle))
-      .slice(0, 3)
-      .map((city) => ({ title: city.name, subtitle: `${city.country} · ${city.agentEnergy} agent energy`, city, signal: null as Signal | null }));
+      .filter((city) => matchesSearch(city.name, city.country, city.category, ...city.topics, ...city.hotTopics.map((topic) => topic.topic)))
+      .slice(0, 4)
+      .map((city): AtlasSearchResult => ({ id: `city:${city.id}`, kind: "city", title: city.name, subtitle: `${city.country} · city · ${city.agentEnergy} agent energy`, city }));
     const agentResults = cities
       .flatMap((city) => city.agents.map((agent) => ({ city, agent })))
-      .filter(({ city, agent }) => !needle || [agent.name, agent.runtime, agent.status, agent.activity, agent.topic, city.name, city.country].join(" ").toLowerCase().includes(needle))
+      .filter(({ city, agent }) => matchesSearch(agent.name, agent.runtime, agent.status, agent.activity, agent.topic, city.name, city.country))
       .slice(0, 4)
-      .map(({ city, agent }) => ({
+      .map(({ city, agent }): AtlasSearchResult => ({
+        id: `agent:${agent.id}`,
+        kind: "signal",
         title: agent.name,
         subtitle: `${agent.status.toUpperCase()} · ${agent.activity} · ${city.name}`,
         city,
@@ -1791,16 +1832,18 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       }));
     const signalResults = cities
       .flatMap((city) => city.signals.map((signal) => ({ city, signal })))
-      .filter(({ signal, city }) => needle && [signal.name, signal.type, signal.activity, signal.topic, city.name].join(" ").toLowerCase().includes(needle))
+      .filter(({ signal, city }) => needle && matchesSearch(signal.name, signal.type, signal.activity, signal.topic, city.name))
       .slice(0, 3)
-      .map(({ city, signal }) => ({ title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${city.name}`, city, signal }));
-    return [...liveResults, ...agentResults, ...cityResults, ...signalResults].slice(0, 8);
+      .map(({ city, signal }): AtlasSearchResult => ({ id: `signal:${signal.id}`, kind: "signal", title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${city.name}`, city, signal }));
+    return [...countryResults, ...cityResults, ...liveResults, ...agentResults, ...signalResults].slice(0, 8);
   }, [cities, query, visiblePresenceFeed]);
 
   const focusCity = useCallback((city: City) => {
+    setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(null);
     setSelectedCountry(null);
     setSelectedCityId(city.id);
+    setProfile(null);
   }, []);
 
   const focusCountry = useCallback((country: CountrySelection) => {
@@ -1820,11 +1863,17 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     if (anchorCity) setSelectedCityId(anchorCity.id);
   };
 
-  const chooseResult = (city: City, signal: Signal | null) => {
-    focusCity(city);
+  const chooseResult = (result: AtlasSearchResult) => {
     setSearchOpen(false);
     setQuery("");
-    if (signal) setProfile(signal);
+    setSearchSelectionIndex(0);
+    setNetworkCollapsed(false);
+    if (result.kind === "country") {
+      focusCountry(result.country);
+      return;
+    }
+    focusCity(result.city);
+    if (result.kind === "signal") setProfile(result.signal);
   };
 
   const chooseAgent = useCallback((city: City, agent: Agent) => {
@@ -1855,7 +1904,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         </button>
         <nav className="topNav" aria-label="Primary navigation">
           <button className="active">Explore</button>
-          <button onClick={() => setSearchOpen(true)}>Signals</button>
+          <button onClick={() => openSearch()}>Signals</button>
           <button onClick={() => joined ? setPresenceOpen(true) : setJoinOpen(true)}>Presence</button>
         </nav>
         <div className="topActions">
@@ -1945,8 +1994,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
           onCollapse={() => setNetworkCollapsed(true)}
           onCitySelect={focusCity}
           onTopicSelect={(topic) => {
-            setQuery(topic);
-            setSearchOpen(true);
+            openSearch(topic);
           }}
         />
       ) : (
@@ -1977,7 +2025,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         <p className="categoryLine">{selectedLiveAgents} live · {selectedObservedAgents} observed · right now</p>
         <div className="topicList">
           {selectedHotTopics.map((topic, index) => (
-            <button key={topic.topic} onClick={() => { setQuery(topic.topic); setSearchOpen(true); }}>
+            <button key={topic.topic} onClick={() => openSearch(topic.topic)}>
               <span>0{index + 1}</span>{topic.topic}<small>{topic.events || "LIVE"}</small><ChevronRight size={13} />
             </button>
           ))}
@@ -1991,7 +2039,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
             </button>
           ))}
         </div>
-        <button className="viewSignals agentSearchLink" onClick={() => { setQuery(selectedCity.name); setSearchOpen(true); }}>View all city signals <ArrowUpRight size={12} /></button>
+        <button className="viewSignals agentSearchLink" onClick={() => openSearch(selectedCity.name)}>View all city signals <ArrowUpRight size={12} /></button>
       </aside>
       )}
 
@@ -2034,7 +2082,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
           </div>
         </div>
 
-        <button className="searchBar glassPanel" onClick={() => { setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 40); }}>
+        <button className="searchBar glassPanel" onClick={() => openSearch()}>
           <Search size={17} />
           <span>Search the living world</span>
           <kbd><Command size={11} /> K</kbd>
@@ -2056,22 +2104,51 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
             <motion.section className="searchDialog glassPanel" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} onMouseDown={(event) => event.stopPropagation()} aria-label="Search Atlas">
               <div className="searchInputRow">
                 <Search size={19} />
-                <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="People, AI, cities or topics…" aria-label="Search people, AI, cities or topics" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setSearchSelectionIndex(0);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setSearchSelectionIndex((index) => searchResults.length ? (index + 1) % searchResults.length : 0);
+                    } else if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setSearchSelectionIndex((index) => searchResults.length ? (index - 1 + searchResults.length) % searchResults.length : 0);
+                    } else if (event.key === "Enter") {
+                      const result = searchResults[searchSelectionIndex] ?? searchResults[0];
+                      if (result) {
+                        event.preventDefault();
+                        chooseResult(result);
+                      }
+                    }
+                  }}
+                  placeholder="Countries, cities, people, AI or topics…"
+                  aria-label="Search countries, cities, people, AI or topics"
+                />
                 <button onClick={() => setSearchOpen(false)} aria-label="Close search"><X size={16} /></button>
               </div>
-              <div className="searchMeta"><span>{query ? `RESULTS FOR “${query.toUpperCase()}”` : "TRENDING ACROSS EARTH"}</span><small>{searchResults.length} signals</small></div>
+              <div className="searchMeta"><span>{query ? `RESULTS FOR “${query.toUpperCase()}”` : "TRENDING ACROSS EARTH"}</span><small>{searchResults.length} results</small></div>
               <div className="searchResults">
                 {searchResults.length ? searchResults.map((result, index) => (
-                  <button key={`${result.city.name}-${result.title}-${index}`} onClick={() => chooseResult(result.city, result.signal)}>
-                    <span className={`resultIcon ${result.signal?.type === "AI" ? "ai" : ""}`}>
-                      {result.signal?.type === "AI" ? <Bot size={15} /> : result.signal ? <CircleUserRound size={15} /> : <Globe2 size={15} />}
+                  <button
+                    key={result.id}
+                    className={index === searchSelectionIndex ? "active" : ""}
+                    onMouseEnter={() => setSearchSelectionIndex(index)}
+                    onClick={() => chooseResult(result)}
+                  >
+                    <span className={`resultIcon ${result.kind === "signal" && result.signal.type === "AI" ? "ai" : ""}`}>
+                      {result.kind === "country" ? <Globe2 size={15} /> : result.kind === "city" ? <LocateFixed size={15} /> : result.signal.type === "AI" ? <Bot size={15} /> : <CircleUserRound size={15} />}
                     </span>
                     <span><b>{result.title}</b><small>{result.subtitle}</small></span>
                     <ChevronRight size={15} />
                   </button>
-                )) : <div className="emptySearch"><Sparkles size={18} /><span>No signal yet. Try “AI”, “travel” or “coding”.</span></div>}
+                )) : <div className="emptySearch"><Sparkles size={18} /><span>No result yet. Try a country, city, agent or topic.</span></div>}
               </div>
-              <div className="searchFooter"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>ESC</kbd> close</span></div>
+              <div className="searchFooter"><span><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>ENTER</kbd> focus</span><span><kbd>ESC</kbd> close</span></div>
             </motion.section>
           </motion.div>
         )}

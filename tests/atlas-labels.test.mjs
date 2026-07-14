@@ -110,6 +110,17 @@ test("side cards collapse into independent square icon controls", () => {
   assert.match(experienceSource, /sideCardToggle--network/);
 });
 
+test("Command-K search indexes countries and focuses geographic results", () => {
+  assert.match(experienceSource, /atlasLabelData\.countries/);
+  assert.match(experienceSource, /kind: "country"/);
+  assert.match(experienceSource, /focusCountry\(result\.country\)/);
+  assert.match(experienceSource, /focusCity\(result\.city\)/);
+  assert.match(experienceSource, /setRegionViewRevision\(\(revision\) => revision \+ 1\)/);
+  assert.match(experienceSource, /event\.key === "Enter"/);
+  assert.match(experienceSource, /chooseResult\(result\)/);
+  assert.match(experienceSource, /Countries, cities, people, AI or topics/);
+});
+
 test("country background energy uses six live-agent levels with one top tier above one million", () => {
   for (const range of ["0–100", "101–1K", "1K–10K", "10K–100K", "100K–1M", ">1M"]) {
     assert.match(experienceSource, new RegExp(`label: "${range}"`));

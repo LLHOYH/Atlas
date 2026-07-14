@@ -1544,7 +1544,8 @@ kbd {
 .searchMeta small { font-size: inherit; letter-spacing: 0; }
 .searchResults { padding: 4px 8px 10px; }
 .searchResults > button { display: grid; grid-template-columns: 37px 1fr 20px; gap: 10px; align-items: center; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: transparent; text-align: left; cursor: pointer; }
-.searchResults > button:hover { background: rgba(255, 255, 255, 0.055); }
+.searchResults > button:hover,
+.searchResults > button.active { background: rgba(255, 255, 255, 0.055); }
 .searchResults > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; }
 .searchResults b { font-size: 11px; font-weight: 500; }
 .searchResults small { overflow: hidden; margin-top: 3px; color: #65727b; font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
