@@ -168,7 +168,7 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
         container: container.current,
         style: "https://tiles.openfreemap.org/styles/dark",
         center: [center.lng, center.lat],
-        zoom: 11.5,
+        zoom: 15,
         minZoom: 3.5,
         maxZoom: 19,
         bearing: 0,
@@ -210,7 +210,7 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
             type: "fill-extrusion",
             source: "openmaptiles",
             "source-layer": "building",
-            minzoom: 13.5,
+            minzoom: 12,
             paint: {
               "fill-extrusion-color": [
                 "case",
@@ -238,12 +238,12 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
                 [
                   "case",
                   ["boolean", ["feature-state", "hover"], false],
-                  1.72,
-                  0.76,
+                  2.85,
+                  1,
                 ],
               ],
               "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-              "fill-extrusion-opacity": 0.88,
+              "fill-extrusion-opacity": 0.96,
             },
           };
           map.addLayer(buildingLayer, firstSymbolLayer?.id);
@@ -295,12 +295,12 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
       <div className="streetMapReadout glassPanel">
         <span>GLOBAL STREET GRID</span>
         <b>{Math.abs(center.lat).toFixed(3)}°{center.lat >= 0 ? "N" : "S"} · {Math.abs(center.lng).toFixed(3)}°{center.lng >= 0 ? "E" : "W"}</b>
-        <small>OpenStreetMap vector detail</small>
+        <small>3D blocks · north locked</small>
       </div>
       <button className="streetMapReturn glassPanel" onClick={exitStreetView}>
         <Globe2 size={13} /> Return to globe
       </button>
-      <div className="streetMapHint">Drag to move · Scroll to zoom · Zoom out to return</div>
+      <div className="streetMapHint">Hover a building to lift it · Drag to move · Scroll to zoom</div>
     </div>
   );
 }
@@ -322,128 +322,225 @@ function seededRandom(seedValue: number) {
   };
 }
 
-function PixelLand() {
-  const blocks = useRef<THREE.InstancedMesh>(null);
-  const landCells = atlasGeoData.cells;
-  const hoveredCountry = useRef<string | null>(null);
-  const hoverStrengths = useMemo(() => new Float32Array(landCells.length), [landCells.length]);
-  const gold = useMemo(() => new THREE.Color("#e6bf65"), []);
-  const instanceData = useMemo(() => {
-    const outward = new THREE.Vector3(0, 0, 1);
-    const palettes = ["#183941", "#1b4148", "#203a46", "#23444a", "#263a45", "#1c4650"];
+type CountryPoint = { lng: number; lat: number };
 
-    return landCells.map((cell) => {
-      const position = latLngToVector3(cell.lat, cell.lng, 3.018);
-      const normal = position.clone().normalize();
-      const countryHash = hashString(cell.name);
-      const latitudeScale = Math.max(0.42, Math.cos((cell.lat * Math.PI) / 180));
-      const variance = 0.88 + (countryHash % 17) / 100;
-      return {
-        country: cell.name,
-        position,
-        normal,
-        quaternion: new THREE.Quaternion().setFromUnitVectors(outward, normal),
-        scaleX: latitudeScale * variance,
-        scaleY: variance,
-        color: new THREE.Color(palettes[countryHash % palettes.length]),
-      };
-    });
-  }, [landCells]);
+const COUNTRY_BOTTOM_RADIUS = 3.003;
+const COUNTRY_TOP_RADIUS = 3.026;
+const COUNTRY_HOVER_RADIUS = 3.22;
 
-  const borderGeometry = useMemo(() => {
-    const positions: number[] = [];
-    for (let index = 0; index < atlasGeoData.borderPositions.length; index += 4) {
-      const start = latLngToVector3(
-        atlasGeoData.borderPositions[index],
-        atlasGeoData.borderPositions[index + 1],
-        3.052,
-      );
-      const end = latLngToVector3(
-        atlasGeoData.borderPositions[index + 2],
-        atlasGeoData.borderPositions[index + 3],
-        3.052,
-      );
-      positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
+function unpackCountryRing(flatRing: number[]) {
+  const ring: CountryPoint[] = [];
+  for (let index = 0; index < flatRing.length; index += 2) {
+    ring.push({ lng: flatRing[index], lat: flatRing[index + 1] });
+  }
+  const first = ring[0];
+  const last = ring.at(-1);
+  if (first && last && first.lng === last.lng && first.lat === last.lat) ring.pop();
+  for (let index = 1; index < ring.length; index += 1) {
+    while (ring[index].lng - ring[index - 1].lng > 180) ring[index].lng -= 360;
+    while (ring[index].lng - ring[index - 1].lng < -180) ring[index].lng += 360;
+  }
+  return ring;
+}
+
+function sphericalDirection(point: CountryPoint) {
+  return latLngToVector3(point.lat, point.lng, 1).normalize();
+}
+
+function appendSphericalTriangle(
+  positions: number[],
+  raisedPositions: number[],
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  depth = 0,
+) {
+  const edges = [
+    { length: a.angleTo(b), start: a, end: b, opposite: c },
+    { length: b.angleTo(c), start: b, end: c, opposite: a },
+    { length: c.angleTo(a), start: c, end: a, opposite: b },
+  ].sort((left, right) => right.length - left.length);
+  const longest = edges[0];
+  if (longest.length > 0.18 && depth < 8) {
+    const midpoint = longest.start.clone().add(longest.end).normalize();
+    appendSphericalTriangle(positions, raisedPositions, longest.start, midpoint, longest.opposite, depth + 1);
+    appendSphericalTriangle(positions, raisedPositions, midpoint, longest.end, longest.opposite, depth + 1);
+    return;
+  }
+
+  let second = b;
+  let third = c;
+  const outward = b.clone().sub(a).cross(c.clone().sub(a));
+  if (outward.dot(a) < 0) {
+    second = c;
+    third = b;
+  }
+  for (const point of [a, second, third]) {
+    const base = point.clone().multiplyScalar(COUNTRY_TOP_RADIUS);
+    const raised = point.clone().multiplyScalar(COUNTRY_HOVER_RADIUS);
+    positions.push(base.x, base.y, base.z);
+    raisedPositions.push(raised.x, raised.y, raised.z);
+  }
+}
+
+function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) {
+  const positions: number[] = [];
+  const raisedPositions: number[] = [];
+  const outlinePositions: number[] = [];
+
+  for (const polygon of country.polygons) {
+    const rings = polygon.map(unpackCountryRing).filter((ring) => ring.length >= 3);
+    if (!rings.length) continue;
+    const outerMean = rings[0].reduce((sum, point) => sum + point.lng, 0) / rings[0].length;
+    for (let index = 1; index < rings.length; index += 1) {
+      const holeMean = rings[index].reduce((sum, point) => sum + point.lng, 0) / rings[index].length;
+      const longitudeShift = Math.round((outerMean - holeMean) / 360) * 360;
+      rings[index].forEach((point) => {
+        point.lng += longitudeShift;
+      });
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    return geometry;
-  }, []);
 
-  useLayoutEffect(() => {
-    if (!blocks.current) return;
-    const matrix = new THREE.Matrix4();
-    const scale = new THREE.Vector3();
+    const contour = rings[0].map((point) => new THREE.Vector2(point.lng, point.lat));
+    const holes = rings.slice(1).map((ring) => ring.map((point) => new THREE.Vector2(point.lng, point.lat)));
+    const flattened = contour.concat(...holes);
+    const faces = THREE.ShapeUtils.triangulateShape(contour, holes);
+    for (const face of faces) {
+      appendSphericalTriangle(
+        positions,
+        raisedPositions,
+        sphericalDirection({ lng: flattened[face[0]].x, lat: flattened[face[0]].y }),
+        sphericalDirection({ lng: flattened[face[1]].x, lat: flattened[face[1]].y }),
+        sphericalDirection({ lng: flattened[face[2]].x, lat: flattened[face[2]].y }),
+      );
+    }
 
-    instanceData.forEach((cell, index) => {
-      scale.set(cell.scaleX, cell.scaleY, 1);
-      matrix.compose(cell.position, cell.quaternion, scale);
-      blocks.current?.setMatrixAt(index, matrix);
-      blocks.current?.setColorAt(index, cell.color);
-    });
-    blocks.current.instanceMatrix.needsUpdate = true;
-    if (blocks.current.instanceColor) blocks.current.instanceColor.needsUpdate = true;
-  }, [instanceData]);
+    for (const ring of rings) {
+      for (let index = 0; index < ring.length; index += 1) {
+        const start = sphericalDirection(ring[index]);
+        const end = sphericalDirection(ring[(index + 1) % ring.length]);
+        const divisions = Math.max(1, Math.ceil(start.angleTo(end) / 0.08));
+        for (let division = 0; division < divisions; division += 1) {
+          const from = start.clone().lerp(end, division / divisions).normalize();
+          const to = start.clone().lerp(end, (division + 1) / divisions).normalize();
+          const bottomFrom = from.clone().multiplyScalar(COUNTRY_BOTTOM_RADIUS);
+          const bottomTo = to.clone().multiplyScalar(COUNTRY_BOTTOM_RADIUS);
+          const topFrom = from.clone().multiplyScalar(COUNTRY_TOP_RADIUS);
+          const topTo = to.clone().multiplyScalar(COUNTRY_TOP_RADIUS);
+          const raisedTopFrom = from.clone().multiplyScalar(COUNTRY_HOVER_RADIUS);
+          const raisedTopTo = to.clone().multiplyScalar(COUNTRY_HOVER_RADIUS);
+
+          for (const point of [bottomFrom, bottomTo, topTo, bottomFrom, topTo, topFrom]) {
+            positions.push(point.x, point.y, point.z);
+          }
+          for (const point of [bottomFrom, bottomTo, raisedTopTo, bottomFrom, raisedTopTo, raisedTopFrom]) {
+            raisedPositions.push(point.x, point.y, point.z);
+          }
+          outlinePositions.push(topFrom.x, topFrom.y, topFrom.z, topTo.x, topTo.y, topTo.z);
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.morphAttributes.position = [new THREE.Float32BufferAttribute(raisedPositions, 3)];
+  geometry.morphTargetsRelative = false;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+
+  const outline = new THREE.BufferGeometry();
+  outline.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
+  outline.computeBoundingSphere();
+  return { geometry, outline };
+}
+
+function CountrySurfaces() {
+  const meshes = useRef<Array<THREE.Mesh | null>>([]);
+  const outlines = useRef<Array<THREE.LineSegments | null>>([]);
+  const hoveredCountry = useRef<number | null>(null);
+  const hoverStrengths = useMemo(() => new Float32Array(atlasGeoData.countries.length), []);
+  const palette = useMemo(() => ["#174049", "#1b4b53", "#20535a", "#285963", "#1d4650"].map((color) => new THREE.Color(color)), []);
+  const gold = useMemo(() => new THREE.Color("#f0c75e"), []);
+  const dark = useMemo(() => new THREE.Color("#000000"), []);
+  const countries = useMemo(() => atlasGeoData.countries.map((country) => ({
+    name: country.name,
+    ...buildCountryGeometry(country),
+    color: palette[hashString(country.name) % palette.length],
+  })), [palette]);
 
   useFrame((_, delta) => {
-    if (!blocks.current) return;
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const scale = new THREE.Vector3();
-    const color = new THREE.Color();
-    let changed = false;
-
-    instanceData.forEach((cell, index) => {
-      const target = hoveredCountry.current === cell.country ? 1 : 0;
+    countries.forEach((country, index) => {
+      const target = hoveredCountry.current === index ? 1 : 0;
       const current = hoverStrengths[index];
-      const next = THREE.MathUtils.damp(current, target, 11, delta);
+      const next = THREE.MathUtils.damp(current, target, 12, delta);
       if (Math.abs(next - current) < 0.0001) return;
       hoverStrengths[index] = next;
-      position.copy(cell.position).addScaledVector(cell.normal, next * 0.07);
-      scale.set(cell.scaleX, cell.scaleY, 1 + next * 4.2);
-      matrix.compose(position, cell.quaternion, scale);
-      color.copy(cell.color).lerp(gold, next * 0.9);
-      blocks.current?.setMatrixAt(index, matrix);
-      blocks.current?.setColorAt(index, color);
-      changed = true;
+      const mesh = meshes.current[index];
+      const outline = outlines.current[index];
+      if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = next;
+      if (mesh?.material instanceof THREE.MeshStandardMaterial) {
+        mesh.material.color.copy(country.color).lerp(gold, next * 0.96);
+        mesh.material.emissive.copy(dark).lerp(gold, next);
+        mesh.material.emissiveIntensity = next * 1.25;
+      }
+      if (outline) {
+        const radiusScale = 1 + next * (COUNTRY_HOVER_RADIUS / COUNTRY_TOP_RADIUS - 1);
+        outline.scale.setScalar(radiusScale);
+        if (outline.material instanceof THREE.LineBasicMaterial) {
+          outline.material.color.set(next > 0.02 ? "#ffe39a" : "#68cbd1");
+          outline.material.opacity = 0.5 + next * 0.48;
+        }
+      }
     });
-
-    if (changed) {
-      blocks.current.instanceMatrix.needsUpdate = true;
-      if (blocks.current.instanceColor) blocks.current.instanceColor.needsUpdate = true;
-    }
   });
 
   return (
     <>
       <mesh>
         <sphereGeometry args={[2.995, 72, 72]} />
-        <meshStandardMaterial color="#020a0e" roughness={0.94} metalness={0.12} emissive="#031017" emissiveIntensity={0.8} />
+        <meshStandardMaterial color="#031419" roughness={0.94} metalness={0.12} emissive="#04151b" emissiveIntensity={0.72} />
       </mesh>
       <mesh scale={1.001}>
         <sphereGeometry args={[3, 36, 24]} />
-        <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.07} depthWrite={false} />
+        <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.035} depthWrite={false} />
       </mesh>
-      <instancedMesh
-        ref={blocks}
-        args={[undefined, undefined, landCells.length]}
-        frustumCulled={false}
-        onPointerMove={(event) => {
-          if (event.instanceId === undefined) return;
-          hoveredCountry.current = instanceData[event.instanceId]?.country ?? null;
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          hoveredCountry.current = null;
-          document.body.style.cursor = "grab";
-        }}
-      >
-        <boxGeometry args={[0.205, 0.205, 0.04]} />
-        <meshStandardMaterial color="#d9ffff" roughness={0.72} metalness={0.08} vertexColors />
-      </instancedMesh>
-      <lineSegments geometry={borderGeometry}>
-        <lineBasicMaterial color="#62c9d4" transparent opacity={0.38} depthWrite={false} />
-      </lineSegments>
+      {countries.map((country, index) => (
+        <group key={country.name}>
+          <mesh
+            ref={(node) => {
+              meshes.current[index] = node;
+              node?.updateMorphTargets();
+            }}
+            geometry={country.geometry}
+            frustumCulled={false}
+            onPointerOver={() => {
+              hoveredCountry.current = index;
+              document.body.style.cursor = "pointer";
+            }}
+            onPointerOut={() => {
+              if (hoveredCountry.current === index) hoveredCountry.current = null;
+              document.body.style.cursor = "grab";
+            }}
+          >
+            <meshStandardMaterial
+              color={country.color}
+              roughness={0.56}
+              metalness={0.16}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <lineSegments
+            ref={(node) => {
+              outlines.current[index] = node;
+            }}
+            geometry={country.outline}
+            frustumCulled={false}
+            raycast={() => undefined}
+          >
+            <lineBasicMaterial color="#68cbd1" transparent opacity={0.5} depthWrite={false} />
+          </lineSegments>
+        </group>
+      ))}
     </>
   );
 }
@@ -517,7 +614,7 @@ function PixelSettlements({
     const position = new THREE.Vector3();
     const scale = new THREE.Vector3();
     const color = new THREE.Color();
-    const extraHeight = density === "city" ? 0.22 : 0.1;
+    const extraHeight = density === "city" ? 0.34 : 0.17;
     let changed = false;
 
     blocks.forEach((block, index) => {
@@ -528,7 +625,7 @@ function PixelSettlements({
       hoverStrengths[index] = next;
       const height = block.height + next * extraHeight;
       position.copy(block.normal).multiplyScalar(3.032 + height / 2);
-      scale.set(1 + next * 0.2, 1 + next * 0.2, height);
+      scale.set(1 + next * 0.42, 1 + next * 0.42, height);
       matrix.compose(position, block.quaternion, scale);
       color.copy(block.color).lerp(gold, next * 0.92);
       meshRef.current?.setMatrixAt(index, matrix);
@@ -557,7 +654,7 @@ function PixelSettlements({
         document.body.style.cursor = "grab";
       }}
     >
-      <boxGeometry args={[density === "city" ? 0.055 : 0.024, density === "city" ? 0.055 : 0.024, 1]} />
+      <boxGeometry args={[density === "city" ? 0.085 : 0.045, density === "city" ? 0.085 : 0.045, 1]} />
       <meshBasicMaterial
         ref={materialRef}
         color="#ffffff"
@@ -593,7 +690,7 @@ function GlobalCityBlocks({
       return {
         normal,
         quaternion: new THREE.Quaternion().setFromUnitVectors(outward, normal),
-        height: 0.055 + populationHeight,
+        height: 0.09 + populationHeight,
         color: new THREE.Color(palette[hashString(city.name) % palette.length]),
       };
     });
@@ -630,9 +727,9 @@ function GlobalCityBlocks({
       const next = THREE.MathUtils.damp(current, target, 13, delta);
       if (Math.abs(next - current) < 0.0001) return;
       hoverStrengths[index] = next;
-      const height = city.height + next * 0.2;
+      const height = city.height + next * 0.36;
       position.copy(city.normal).multiplyScalar(3.036 + height / 2);
-      scale.set(1 + next * 0.28, 1 + next * 0.28, height);
+      scale.set(1 + next * 0.48, 1 + next * 0.48, height);
       matrix.compose(position, city.quaternion, scale);
       color.copy(city.color).lerp(gold, next * 0.94);
       meshRef.current?.setMatrixAt(index, matrix);
@@ -662,7 +759,7 @@ function GlobalCityBlocks({
         document.body.style.cursor = "grab";
       }}
     >
-      <boxGeometry args={[0.045, 0.045, 1]} />
+      <boxGeometry args={[0.105, 0.105, 1]} />
       <meshBasicMaterial
         ref={materialRef}
         color="#ffffff"
@@ -1101,7 +1198,7 @@ function Earth({
         <sphereGeometry args={[3, 128, 128]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      <PixelLand />
+      <CountrySurfaces />
       <EnergyParticles cities={cities} layer={layer} />
       <PixelSettlements cities={cities} density="city" layer={layer} meshRef={cityBlocks} materialRef={cityMaterial} />
       <PixelSettlements cities={cities} density="town" layer={layer} meshRef={townBlocks} materialRef={townMaterial} />

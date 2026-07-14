@@ -5,6 +5,9 @@ import test from "node:test";
 const labelData = JSON.parse(
   await readFile(new URL("../app/atlas-label-data.json", import.meta.url), "utf8"),
 );
+const geoData = JSON.parse(
+  await readFile(new URL("../app/atlas-geo-data.json", import.meta.url), "utf8"),
+);
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -18,5 +21,18 @@ test("world map labels cover countries, regions, and major cities globally", () 
   for (const label of [...labelData.countries, ...labelData.regions, ...labelData.cities]) {
     assert.ok(label.lat >= -90 && label.lat <= 90, `${label.name} has invalid latitude`);
     assert.ok(label.lng >= -180 && label.lng <= 180, `${label.name} has invalid longitude`);
+  }
+});
+
+test("globe land is built from complete country silhouettes instead of sampling cells", () => {
+  assert.equal("cells" in geoData, false);
+  assert.ok(geoData.countries.length >= 175);
+  for (const country of geoData.countries) {
+    assert.ok(country.name);
+    assert.ok(country.polygons.length > 0, `${country.name} has no polygon`);
+    for (const polygon of country.polygons) {
+      assert.ok(polygon[0].length >= 8, `${country.name} has an invalid outer border`);
+      assert.equal(polygon[0].length % 2, 0, `${country.name} has an invalid coordinate pair`);
+    }
   }
 });
