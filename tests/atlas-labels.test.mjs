@@ -64,10 +64,12 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });
 
-test("country background energy uses discrete live-agent population levels through 100 million", () => {
-  for (const range of ["0", "1–100", "101–1K", "1K–10K", "10K–100K", "100K–1M", "1M–10M", "10M–100M"]) {
+test("country background energy uses six live-agent levels with one top tier above one million", () => {
+  for (const range of ["0–100", "101–1K", "1K–10K", "10K–100K", "100K–1M", ">1M"]) {
     assert.match(experienceSource, new RegExp(`label: "${range}"`));
   }
+  assert.doesNotMatch(experienceSource, /label: "0"|1M–10M|10M–100M/);
+  assert.match(experienceSource, /max: Number\.POSITIVE_INFINITY/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
   assert.match(experienceSource, /mesh\.material\.color\.copy\(densityColor\)/);
   assert.match(experienceSource, /Energy level = agents live now/);

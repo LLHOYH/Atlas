@@ -82,14 +82,12 @@ function normalizedAgentEnergy(value: number) {
 }
 
 const agentDensityLevels = [
-  { level: 0, max: 0, label: "0", color: "#10282f" },
-  { level: 1, max: 100, label: "1–100", color: "#1d5964" },
-  { level: 2, max: 1_000, label: "101–1K", color: "#287982" },
-  { level: 3, max: 10_000, label: "1K–10K", color: "#319b91" },
-  { level: 4, max: 100_000, label: "10K–100K", color: "#6eb16f" },
-  { level: 5, max: 1_000_000, label: "100K–1M", color: "#b6b75d" },
-  { level: 6, max: 10_000_000, label: "1M–10M", color: "#e2a04b" },
-  { level: 7, max: 100_000_000, label: "10M–100M", color: "#ffd36f" },
+  { level: 0, max: 100, label: "0–100", color: "#163d46" },
+  { level: 1, max: 1_000, label: "101–1K", color: "#287982" },
+  { level: 2, max: 10_000, label: "1K–10K", color: "#319b91" },
+  { level: 3, max: 100_000, label: "10K–100K", color: "#6eb16f" },
+  { level: 4, max: 1_000_000, label: "100K–1M", color: "#e2a04b" },
+  { level: 5, max: Number.POSITIVE_INFINITY, label: ">1M", color: "#ffd36f" },
 ] as const;
 
 function agentDensityLevel(liveAgentCount: number) {
@@ -98,7 +96,7 @@ function agentDensityLevel(liveAgentCount: number) {
 }
 
 function agentDensityBarWidth(level: (typeof agentDensityLevels)[number]) {
-  return level.level === 0 ? 3 : Math.round((level.level / (agentDensityLevels.length - 1)) * 100);
+  return Math.round(((level.level + 1) / agentDensityLevels.length) * 100);
 }
 
 function latLngToVector3(lat: number, lng: number, radius: number) {
