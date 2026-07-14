@@ -43,6 +43,19 @@ const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
 type DetailLevel = 1 | 2 | 3 | 4;
 
+const regionViews = [
+  { id: "world", label: "World", lat: 12, lng: 10, distance: 7.5 },
+  { id: "north-america", label: "North America", lat: 43, lng: -102, distance: 6.15, anchorCityId: "san-francisco" },
+  { id: "south-america", label: "South America", lat: -17, lng: -60, distance: 6.15, anchorCityId: "sao-paulo" },
+  { id: "europe", label: "Europe", lat: 50, lng: 15, distance: 6.05, anchorCityId: "london" },
+  { id: "africa", label: "Africa", lat: 5, lng: 20, distance: 6.15, anchorCityId: "lagos" },
+  { id: "asia", label: "Asia", lat: 34, lng: 96, distance: 6.15, anchorCityId: "tokyo" },
+  { id: "oceania", label: "Oceania", lat: -24, lng: 140, distance: 6.15, anchorCityId: "sydney" },
+] as const;
+
+type RegionViewId = (typeof regionViews)[number]["id"];
+type RegionView = (typeof regionViews)[number];
+
 const detailLabels: Record<DetailLevel, { title: string; note: string }> = {
   1: { title: "COUNTRIES", note: "Country names" },
   2: { title: "REGIONS", note: "State & region names" },
@@ -819,6 +832,7 @@ function Earth({
   cities,
   selectedCity,
   focusLocation,
+  focusDistance,
   layer,
   liveCounts = {},
   onSelect,
@@ -828,6 +842,7 @@ function Earth({
   cities: City[];
   selectedCity: City;
   focusLocation: GeoCenter;
+  focusDistance: number | null;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
@@ -844,6 +859,7 @@ function Earth({
   const pitchAxis = useRef(new THREE.Vector3(1, 0, 0));
   const yawAxis = useRef(new THREE.Vector3(0, 1, 0));
   const streetEntryLocked = useRef(false);
+  const focusDistanceTarget = useRef<number | null>(null);
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
@@ -872,6 +888,8 @@ function Earth({
     };
 
     velocity.current = { x: 0, y: 0 };
+    focusDistanceTarget.current = focusDistance;
+    if (focusDistance !== null) streetEntryLocked.current = true;
     if (!initialized.current) {
       orientation.current = targetOrientation;
       applyOrientation();
@@ -881,10 +899,23 @@ function Earth({
     }
 
     focus.current = targetOrientation;
-  }, [focusLocation.lat, focusLocation.lng]);
+  }, [focusDistance, focusLocation.lat, focusLocation.lng]);
 
-  useFrame(({ camera }) => {
+  useFrame(({ camera }, delta) => {
     if (!globe.current) return;
+    if (focusDistanceTarget.current !== null) {
+      const nextDistance = THREE.MathUtils.damp(
+        camera.position.length(),
+        focusDistanceTarget.current,
+        9,
+        delta,
+      );
+      camera.position.setLength(nextDistance);
+      if (Math.abs(nextDistance - focusDistanceTarget.current) < 0.006) {
+        camera.position.setLength(focusDistanceTarget.current);
+        focusDistanceTarget.current = null;
+      }
+    }
     const distance = camera.position.length();
     if (distance > 3.84) {
       streetEntryLocked.current = false;
@@ -914,8 +945,8 @@ function Earth({
     if (cityMarkers.current) cityMarkers.current.visible = cityOpacity > 0.08;
 
     if (focus.current) {
-      orientation.current.pitch = THREE.MathUtils.lerp(orientation.current.pitch, focus.current.pitch, 0.055);
-      orientation.current.yaw = THREE.MathUtils.lerp(orientation.current.yaw, focus.current.yaw, 0.055);
+      orientation.current.pitch = THREE.MathUtils.damp(orientation.current.pitch, focus.current.pitch, 9, delta);
+      orientation.current.yaw = THREE.MathUtils.damp(orientation.current.yaw, focus.current.yaw, 9, delta);
       applyOrientation();
       if (
         Math.abs(orientation.current.pitch - focus.current.pitch) < 0.002
@@ -1054,6 +1085,8 @@ function Earth({
 function EarthScene({
   cities,
   selectedCity,
+  viewTarget,
+  viewRevision,
   layer,
   liveCounts = {},
   onSelect,
@@ -1061,25 +1094,31 @@ function EarthScene({
 }: {
   cities: City[];
   selectedCity: City;
+  viewTarget: RegionView | null;
+  viewRevision: number;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
-  const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
-  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
-  const streetCenter = streetState?.cityId === selectedCity.id ? streetState.center : null;
-  const globeOverride = globeState?.cityId === selectedCity.id ? globeState.center : null;
-  const focusLocation = globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+  const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
+  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
+  const streetCenter = !viewTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
+    ? streetState.center
+    : null;
+  const globeOverride = !viewTarget && globeState?.cityId === selectedCity.id && globeState.viewRevision === viewRevision
+    ? globeState.center
+    : null;
+  const focusLocation = viewTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
 
   const enterStreetView = useCallback((center: GeoCenter) => {
-    setStreetState({ cityId: selectedCity.id, center });
-  }, [selectedCity.id]);
+    setStreetState({ cityId: selectedCity.id, center, viewRevision });
+  }, [selectedCity.id, viewRevision]);
 
   const exitStreetView = useCallback((center: GeoCenter) => {
-    setGlobeState({ cityId: selectedCity.id, center });
+    setGlobeState({ cityId: selectedCity.id, center, viewRevision });
     setStreetState(null);
-  }, [selectedCity.id]);
+  }, [selectedCity.id, viewRevision]);
 
   const selectActivityCity = useCallback((city: City) => {
     setStreetState(null);
@@ -1104,6 +1143,7 @@ function EarthScene({
               cities={cities}
               selectedCity={selectedCity}
               focusLocation={focusLocation}
+              focusDistance={viewTarget?.distance ?? null}
               layer={layer}
               liveCounts={liveCounts}
               onSelect={selectActivityCity}
@@ -1290,6 +1330,8 @@ function PresenceStudio({
 function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const presence = useAtlasPresence();
   const [selectedCity, setSelectedCity] = useState(cities[0]);
+  const [regionViewId, setRegionViewId] = useState<RegionViewId | "">("");
+  const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1300,6 +1342,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const [clock, setClock] = useState("--:-- SGT");
   const searchRef = useRef<HTMLInputElement>(null);
   const joined = presence.connected;
+  const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
     [joined, presence.configured, presence.presenceFeed],
@@ -1385,8 +1428,23 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     return [...liveResults, ...cityResults, ...signalResults].slice(0, 7);
   }, [cities, query, visiblePresenceFeed]);
 
-  const chooseResult = (city: City, signal: Signal | null) => {
+  const focusCity = useCallback((city: City) => {
+    setRegionViewId("");
     setSelectedCity(city);
+  }, []);
+
+  const chooseRegionView = (nextViewId: RegionViewId | "") => {
+    setRegionViewRevision((revision) => revision + 1);
+    setRegionViewId(nextViewId);
+    if (!nextViewId) return;
+    const nextView = regionViews.find((view) => view.id === nextViewId);
+    if (!nextView || !("anchorCityId" in nextView)) return;
+    const anchorCity = cities.find((city) => city.id === nextView.anchorCityId);
+    if (anchorCity) setSelectedCity(anchorCity);
+  };
+
+  const chooseResult = (city: City, signal: Signal | null) => {
+    focusCity(city);
     setSearchOpen(false);
     setQuery("");
     if (signal) setProfile(signal);
@@ -1404,11 +1462,11 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene cities={cities} selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={setSelectedCity} onDetailChange={setDetailLevel} />
+        <EarthScene cities={cities} selectedCity={selectedCity} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onDetailChange={setDetailLevel} />
       </section>
 
       <header className="topBar">
-        <button className="brand" aria-label="Atlas home" onClick={() => setSelectedCity(cities[0])}>
+        <button className="brand" aria-label="Atlas home" onClick={() => focusCity(cities[0])}>
           <span className="atlasGlyph"><i /><i /><i /></span>
           <span>ATLAS</span>
           <small>ALPHA</small>
@@ -1482,13 +1540,31 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       <div className="dragHint"><Move size={13} /><span>Drag to rotate · Scroll or pinch to zoom</span></div>
 
       <div className="bottomDock">
-        <div className="layerControl glassPanel" role="group" aria-label="Attention layer">
-          <span>VIEW</span>
-          {layers.map((item) => (
-            <button key={item} className={layer === item ? "active" : ""} onClick={() => setLayer(item)}>
-              <i style={{ background: layerColors[item] }} />{item}
-            </button>
-          ))}
+        <div className="leftDockControls">
+          <label className="regionControl glassPanel">
+            <span>VIEW</span>
+            <div className="regionSelect">
+              <Globe2 size={13} />
+              <select
+                value={regionViewId}
+                onChange={(event) => chooseRegionView(event.target.value as RegionViewId | "")}
+                aria-label="Jump to a world region"
+              >
+                <option value="">Current focus</option>
+                {regionViews.map((view) => <option key={view.id} value={view.id}>{view.label}</option>)}
+              </select>
+              <ChevronRight size={12} aria-hidden="true" />
+            </div>
+          </label>
+
+          <div className="layerControl glassPanel" role="group" aria-label="Attention layer">
+            <span>LAYER</span>
+            {layers.map((item) => (
+              <button key={item} className={layer === item ? "active" : ""} onClick={() => setLayer(item)}>
+                <i style={{ background: layerColors[item] }} />{item}
+              </button>
+            ))}
+          </div>
         </div>
 
         <button className="searchBar glassPanel" onClick={() => { setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 40); }}>
@@ -1499,7 +1575,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       </div>
 
       <div className="coordinates">
-        {Math.abs(selectedCity.lat).toFixed(2)}°{selectedCity.lat >= 0 ? "N" : "S"} · {Math.abs(selectedCity.lng).toFixed(2)}°{selectedCity.lng >= 0 ? "E" : "W"}
+        {Math.abs(activeRegionView?.lat ?? selectedCity.lat).toFixed(2)}°{(activeRegionView?.lat ?? selectedCity.lat) >= 0 ? "N" : "S"} · {Math.abs(activeRegionView?.lng ?? selectedCity.lng).toFixed(2)}°{(activeRegionView?.lng ?? selectedCity.lng) >= 0 ? "E" : "W"}
         <span /> {clock}
       </div>
 

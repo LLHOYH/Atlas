@@ -8,6 +8,10 @@ const labelData = JSON.parse(
 const geoData = JSON.parse(
   await readFile(new URL("../app/atlas-geo-data.json", import.meta.url), "utf8"),
 );
+const experienceSource = await readFile(
+  new URL("../app/AtlasExperience.tsx", import.meta.url),
+  "utf8",
+);
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -35,4 +39,12 @@ test("globe land is built from complete country silhouettes instead of sampling 
       assert.equal(polygon[0].length % 2, 0, `${country.name} has an invalid coordinate pair`);
     }
   }
+});
+
+test("regional view shortcuts cover the world and every continent", () => {
+  for (const region of ["World", "North America", "South America", "Europe", "Africa", "Asia", "Oceania"]) {
+    assert.match(experienceSource, new RegExp(`label: "${region}"`));
+  }
+  assert.match(experienceSource, /aria-label="Jump to a world region"/);
+  assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? null\}/);
 });
