@@ -10,6 +10,11 @@ const datasets = {
   cities: `${sourceRoot}/ne_110m_populated_places_simple.geojson`,
 };
 
+const countryLabelOverrides = new Map([
+  // Natural Earth's default point favors European Russia instead of the country's full landmass.
+  ["RUS", { lat: 66.0678, lng: 95.7853 }],
+]);
+
 async function readGeoJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Could not download ${url}: ${response.status}`);
@@ -31,13 +36,17 @@ const [countryGeoJson, regionGeoJson, cityGeoJson] = await Promise.all([
 ]);
 
 const countries = countryGeoJson.features
-  .map(({ properties }) => ({
-    id: String(properties.ADM0_A3 ?? properties.NE_ID),
-    name: String(properties.NAME_EN ?? properties.NAME),
-    lat: rounded(properties.LABEL_Y),
-    lng: rounded(properties.LABEL_X),
-    rank: Number(properties.LABELRANK ?? 9),
-  }))
+  .map(({ properties }) => {
+    const id = String(properties.ADM0_A3 ?? properties.NE_ID);
+    const labelOverride = countryLabelOverrides.get(id);
+    return {
+      id,
+      name: String(properties.NAME_EN ?? properties.NAME),
+      lat: labelOverride?.lat ?? rounded(properties.LABEL_Y),
+      lng: labelOverride?.lng ?? rounded(properties.LABEL_X),
+      rank: Number(properties.LABELRANK ?? 9),
+    };
+  })
   .filter((label) => label.name !== "Antarctica" && validCoordinate(label.lat, label.lng))
   .sort((left, right) => left.rank - right.rank || left.name.localeCompare(right.name));
 

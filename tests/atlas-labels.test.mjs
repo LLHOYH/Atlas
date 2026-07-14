@@ -13,6 +13,10 @@ const experienceSource = await readFile(
   new URL("../app/AtlasExperience.tsx", import.meta.url),
   "utf8",
 );
+const labelGeneratorSource = await readFile(
+  new URL("../scripts/generate-atlas-labels.mjs", import.meta.url),
+  "utf8",
+);
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -27,6 +31,13 @@ test("world map labels cover countries, regions, and major cities globally", () 
     assert.ok(label.lat >= -90 && label.lat <= 90, `${label.name} has invalid latitude`);
     assert.ok(label.lng >= -180 && label.lng <= 180, `${label.name} has invalid longitude`);
   }
+
+  const russiaLabel = labelData.countries.find((label) => label.name === "Russia");
+  assert.deepEqual(
+    { lat: russiaLabel?.lat, lng: russiaLabel?.lng },
+    { lat: 66.0678, lng: 95.7853 },
+  );
+  assert.match(labelGeneratorSource, /\["RUS", \{ lat: 66\.0678, lng: 95\.7853 \}\]/);
 });
 
 test("globe land is built from complete country silhouettes instead of sampling cells", () => {
