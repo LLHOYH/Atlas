@@ -81,12 +81,6 @@ const agentStatusColors = {
   offline: "#52616b",
 } as const;
 
-const CITY_ENERGY_REFERENCE = 320;
-
-function normalizedAgentEnergy(value: number) {
-  return THREE.MathUtils.clamp(value / CITY_ENERGY_REFERENCE, 0, 1);
-}
-
 const agentDensityLevels = [
   { level: 0, max: 100, label: "0–100", color: "#163d46" },
   { level: 1, max: 1_000, label: "101–1K", color: "#287982" },
@@ -181,7 +175,7 @@ function GlobeLabel({
   const worldPosition = useMemo(() => new THREE.Vector3(), []);
   const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
   const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 1.5 : 0.9;
+  const distanceFactor = kind === "country" || kind === "city" ? 1.875 : kind === "region" ? 1.5 : 0.9;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -370,6 +364,9 @@ type CountryPoint = { lng: number; lat: number };
 const COUNTRY_BOTTOM_RADIUS = 3.003;
 const COUNTRY_TOP_RADIUS = 3.026;
 const COUNTRY_HOVER_RADIUS = 3.22;
+const CITY_BOTTOM_RADIUS = 3.03;
+const CITY_TOP_RADIUS = 3.048;
+const CITY_HOVER_RADIUS = 3.14;
 
 function unpackCountryRing(flatRing: number[]) {
   const ring: CountryPoint[] = [];
@@ -398,6 +395,19 @@ function prepareCountryRings(polygon: number[][]) {
     });
   }
   return rings;
+}
+
+function countryToGeoJson(country: (typeof atlasGeoData.countries)[number]) {
+  const coordinates = country.polygons.map((polygon) => polygon.map((flatRing) => {
+    const ring: [number, number][] = [];
+    for (let index = 0; index < flatRing.length; index += 2) {
+      ring.push([flatRing[index], flatRing[index + 1]]);
+    }
+    return ring;
+  }));
+  return coordinates.length === 1
+    ? { type: "Polygon" as const, coordinates: coordinates[0] }
+    : { type: "MultiPolygon" as const, coordinates };
 }
 
 function vectorToGeoCenter(vector: THREE.Vector3): GeoCenter {
@@ -510,13 +520,112 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   return { geometry, outline };
 }
 
+type CountryHitArea = ReturnType<typeof countryToGeoJson>;
+type CityMapLabel = (typeof atlasLabelData.cities)[number];
+
+function stableCityHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function buildCityTerritoryRing(label: CityMapLabel, countryArea?: CountryHitArea) {
+  const population = Math.max(100_000, Number(label.population) || 100_000);
+  const populationScale = THREE.MathUtils.clamp((Math.log10(population) - 5) / 3, 0, 1);
+  const latitudeRadius = 0.2 + populationScale * 0.42;
+  const longitudeRadius = latitudeRadius / Math.max(0.32, Math.cos(THREE.MathUtils.degToRad(label.lat)));
+  const hash = stableCityHash(label.id);
+  const phase = ((hash % 360) * Math.PI) / 180;
+  const center: [number, number] = [normalizeLongitude(label.lng), label.lat];
+  const centerInsideCountry = countryArea ? geoContains(countryArea, center) : false;
+
+  return Array.from({ length: 10 }, (_, index) => {
+    const angle = phase + (index / 10) * Math.PI * 2;
+    const wobbleSeed = (hash >>> (index % 16)) & 15;
+    const wobble = 0.82 + (wobbleSeed / 15) * 0.28;
+    const targetLng = normalizeLongitude(label.lng + Math.cos(angle) * longitudeRadius * wobble);
+    const targetLat = THREE.MathUtils.clamp(label.lat + Math.sin(angle) * latitudeRadius * wobble, -89.5, 89.5);
+    if (!countryArea || !centerInsideCountry || geoContains(countryArea, [targetLng, targetLat])) {
+      return { lng: targetLng, lat: targetLat };
+    }
+
+    const longitudeDelta = normalizeLongitude(targetLng - label.lng);
+    let insideFraction = 0;
+    let outsideFraction = 1;
+    for (let iteration = 0; iteration < 10; iteration += 1) {
+      const fraction = (insideFraction + outsideFraction) / 2;
+      const candidate: [number, number] = [
+        normalizeLongitude(label.lng + longitudeDelta * fraction),
+        label.lat + (targetLat - label.lat) * fraction,
+      ];
+      if (geoContains(countryArea, candidate)) insideFraction = fraction;
+      else outsideFraction = fraction;
+    }
+    const clippedFraction = insideFraction * 0.94;
+    return {
+      lng: normalizeLongitude(label.lng + longitudeDelta * clippedFraction),
+      lat: label.lat + (targetLat - label.lat) * clippedFraction,
+    };
+  });
+}
+
+function buildCityTerritoryGeometry(label: CityMapLabel, countryArea?: CountryHitArea) {
+  const ring = buildCityTerritoryRing(label, countryArea);
+  const positions: number[] = [];
+  const raisedPositions: number[] = [];
+  const outlinePositions: number[] = [];
+  const center = sphericalDirection({ lng: label.lng, lat: label.lat });
+
+  for (let index = 0; index < ring.length; index += 1) {
+    const start = sphericalDirection(ring[index]);
+    const end = sphericalDirection(ring[(index + 1) % ring.length]);
+    for (const point of [center, start, end]) {
+      const base = point.clone().multiplyScalar(CITY_TOP_RADIUS);
+      const raised = point.clone().multiplyScalar(CITY_HOVER_RADIUS);
+      positions.push(base.x, base.y, base.z);
+      raisedPositions.push(raised.x, raised.y, raised.z);
+    }
+
+    const bottomStart = start.clone().multiplyScalar(CITY_BOTTOM_RADIUS);
+    const bottomEnd = end.clone().multiplyScalar(CITY_BOTTOM_RADIUS);
+    const topStart = start.clone().multiplyScalar(CITY_TOP_RADIUS);
+    const topEnd = end.clone().multiplyScalar(CITY_TOP_RADIUS);
+    const raisedTopStart = start.clone().multiplyScalar(CITY_HOVER_RADIUS);
+    const raisedTopEnd = end.clone().multiplyScalar(CITY_HOVER_RADIUS);
+    for (const point of [bottomStart, bottomEnd, topEnd, bottomStart, topEnd, topStart]) {
+      positions.push(point.x, point.y, point.z);
+    }
+    for (const point of [bottomStart, bottomEnd, raisedTopEnd, bottomStart, raisedTopEnd, raisedTopStart]) {
+      raisedPositions.push(point.x, point.y, point.z);
+    }
+    outlinePositions.push(topStart.x, topStart.y, topStart.z, topEnd.x, topEnd.y, topEnd.z);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.morphAttributes.position = [new THREE.Float32BufferAttribute(raisedPositions, 3)];
+  geometry.morphTargetsRelative = false;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+
+  const outline = new THREE.BufferGeometry();
+  outline.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
+  outline.computeBoundingSphere();
+  return { geometry, outline };
+}
+
 function CountrySurfaces({
   liveAgentsByCountry = {},
   selectedCountryKey,
+  detailLevel,
   onSelect,
 }: {
   liveAgentsByCountry?: Record<string, number>;
   selectedCountryKey: string | null;
+  detailLevel: DetailLevel;
   onSelect: (country: CountrySelection) => void;
 }) {
   const meshes = useRef<Array<THREE.Mesh | null>>([]);
@@ -529,18 +638,7 @@ function CountrySurfaces({
     energyKey: countryEnergyKey(country.name),
     ...buildCountryGeometry(country),
   })), []);
-  const countryHitAreas = useMemo(() => atlasGeoData.countries.map((country) => {
-    const coordinates = country.polygons.map((polygon) => polygon.map((flatRing) => {
-      const ring: [number, number][] = [];
-      for (let index = 0; index < flatRing.length; index += 2) {
-        ring.push([flatRing[index], flatRing[index + 1]]);
-      }
-      return ring;
-    }));
-    return coordinates.length === 1
-      ? { type: "Polygon" as const, coordinates: coordinates[0] }
-      : { type: "MultiPolygon" as const, coordinates };
-  }), []);
+  const countryHitAreas = useMemo(() => atlasGeoData.countries.map(countryToGeoJson), []);
   const countryCenters = useMemo(() => {
     const labelCenters = new Map(atlasLabelData.countries.map((country) => [
       countryEnergyKey(country.name),
@@ -568,10 +666,11 @@ function CountrySurfaces({
       const density = agentDensityLevel(liveAgentCount);
       const densityColor = densityColors[density.level];
       const isSelected = selectedCountryKey === country.energyKey;
-      const target = hoveredCountry.current === index ? 1 : isSelected ? 0.74 : 0;
+      const cityLayerActive = detailLevel >= 3;
+      const target = cityLayerActive ? 0 : hoveredCountry.current === index ? 1 : isSelected ? 0.74 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
-      const liveLift = liveAgentCount > 0 ? 0.08 + density.level * 0.025 : 0;
+      const liveLift = !cityLayerActive && liveAgentCount > 0 ? 0.08 + density.level * 0.025 : 0;
       const lift = Math.max(liveLift, next);
       hoverStrengths[index] = next;
       const mesh = meshes.current[index];
@@ -603,7 +702,7 @@ function CountrySurfaces({
         <sphereGeometry args={[3, 36, 24]} />
         <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.035} depthWrite={false} />
       </mesh>
-      <mesh
+      {detailLevel < 3 && <mesh
         onPointerMove={(event) => {
           const nextCountry = findCountryAtPoint(event.point, event.eventObject);
           hoveredCountry.current = nextCountry;
@@ -630,7 +729,7 @@ function CountrySurfaces({
       >
         <sphereGeometry args={[COUNTRY_HOVER_RADIUS + 0.025, 96, 64]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
-      </mesh>
+      </mesh>}
       {countries.map((country, index) => {
         const liveAgentCount = liveAgentsByCountry[country.energyKey] ?? 0;
         const density = agentDensityLevel(liveAgentCount);
@@ -668,6 +767,114 @@ function CountrySurfaces({
       })}
     </>
   );
+}
+
+function CityTerritories({
+  cities,
+  selectedCityId,
+  onSelect,
+}: {
+  cities: City[];
+  selectedCityId: string;
+  onSelect: (city: City) => void;
+}) {
+  const meshes = useRef<Array<THREE.Mesh | null>>([]);
+  const outlines = useRef<Array<THREE.LineSegments | null>>([]);
+  const hoveredCity = useRef<number | null>(null);
+  const hoverStrengths = useMemo(() => new Float32Array(atlasLabelData.cities.length), []);
+  const gold = useMemo(() => new THREE.Color("#ffd36f"), []);
+  const countryAreas = useMemo(() => new Map(atlasGeoData.countries.map((country) => [
+    countryEnergyKey(country.name),
+    countryToGeoJson(country),
+  ])), []);
+  const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
+  const territories = useMemo(() => atlasLabelData.cities.map((label) => {
+    const city = cityByName.get(normalizeLabelName(label.name)) ?? null;
+    const countryArea = countryAreas.get(countryEnergyKey(label.country));
+    const baseColor = new THREE.Color(city?.color ?? "#287982").lerp(new THREE.Color("#214f58"), city ? 0.3 : 0.55);
+    return {
+      id: label.id,
+      name: label.name,
+      city,
+      baseColor,
+      ...buildCityTerritoryGeometry(label, countryArea),
+    };
+  }), [cityByName, countryAreas]);
+
+  useFrame((_, delta) => {
+    territories.forEach((territory, index) => {
+      const isSelected = territory.city?.id === selectedCityId;
+      const target = hoveredCity.current === index ? 1 : isSelected ? 0.62 : 0;
+      const next = THREE.MathUtils.damp(hoverStrengths[index], target, 14, delta);
+      hoverStrengths[index] = next;
+      const mesh = meshes.current[index];
+      const outline = outlines.current[index];
+      if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = next;
+      if (mesh?.material instanceof THREE.MeshStandardMaterial) {
+        mesh.material.color.copy(territory.baseColor).lerp(gold, next * 0.72);
+        mesh.material.emissive.copy(territory.baseColor).lerp(gold, next);
+        mesh.material.emissiveIntensity = 0.26 + next * 1.15;
+      }
+      if (outline) {
+        const radiusScale = 1 + next * (CITY_HOVER_RADIUS / CITY_TOP_RADIUS - 1);
+        outline.scale.setScalar(radiusScale);
+        if (outline.material instanceof THREE.LineBasicMaterial) {
+          outline.material.color.copy(territory.baseColor).lerp(gold, 0.42 + next * 0.58);
+          outline.material.opacity = 0.56 + next * 0.34;
+        }
+      }
+    });
+  });
+
+  return territories.map((territory, index) => (
+    <group key={territory.id}>
+      <mesh
+        ref={(node) => {
+          meshes.current[index] = node;
+          node?.updateMorphTargets();
+        }}
+        geometry={territory.geometry}
+        frustumCulled={false}
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          hoveredCity.current = index;
+          document.body.style.cursor = territory.city ? "pointer" : "grab";
+        }}
+        onPointerMove={(event) => {
+          event.stopPropagation();
+          hoveredCity.current = index;
+        }}
+        onPointerOut={() => {
+          if (hoveredCity.current === index) hoveredCity.current = null;
+          document.body.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          if (!territory.city || event.delta > 5) return;
+          event.stopPropagation();
+          onSelect(territory.city);
+        }}
+      >
+        <meshStandardMaterial
+          color={territory.baseColor}
+          emissive={territory.baseColor}
+          emissiveIntensity={0.26}
+          roughness={0.5}
+          metalness={0.18}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <lineSegments
+        ref={(node) => {
+          outlines.current[index] = node;
+        }}
+        geometry={territory.outline}
+        frustumCulled={false}
+        raycast={() => undefined}
+      >
+        <lineBasicMaterial color="#d9b76b" transparent opacity={0.56} depthWrite={false} />
+      </lineSegments>
+    </group>
+  ));
 }
 
 function StreetMesh({
@@ -746,71 +953,6 @@ function StreetMesh({
         depthWrite={false}
       />
     </lineSegments>
-  );
-}
-
-function CityLight({
-  city,
-  selected,
-  layer,
-  onSelect,
-}: {
-  city: City;
-  selected: boolean;
-  layer: Layer;
-  onSelect: (city: City) => void;
-}) {
-  const position = useMemo(
-    () => latLngToVector3(city.lat, city.lng, 3.035),
-    [city.lat, city.lng],
-  );
-  const orientation = useMemo(
-    () =>
-      new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, 1),
-        position.clone().normalize(),
-      ),
-    [position],
-  );
-  const energy = normalizedAgentEnergy(city.agentEnergy ?? 0);
-  const towerHeight = 0.07 + energy * 0.27;
-  const color = useMemo(() => {
-    if (layer !== "Attention") return layerColors[layer];
-    return new THREE.Color("#368e96")
-      .lerp(new THREE.Color("#ffd36f"), Math.max(0.08, energy))
-      .getStyle();
-  }, [energy, layer]);
-
-  return (
-    <group position={position} quaternion={orientation}>
-      <mesh
-        position={[0, 0, towerHeight / 2]}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(city);
-        }}
-        onPointerOver={() => {
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = "grab";
-        }}
-      >
-        <boxGeometry args={[selected ? 0.09 : 0.066, selected ? 0.09 : 0.066, towerHeight]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={0.85 + energy * 1.25}
-          roughness={0.32}
-          metalness={0.18}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh position={[0, 0, towerHeight + 0.006]}>
-        <boxGeometry args={[selected ? 0.12 : 0.088, selected ? 0.12 : 0.088, 0.018]} />
-        <meshBasicMaterial color={color} transparent opacity={0.78 + energy * 0.2} toneMapped={false} />
-      </mesh>
-    </group>
   );
 }
 
@@ -1042,12 +1184,8 @@ function Earth({
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
-  const cityMarkers = useRef<THREE.Group>(null);
+  const cityTerritories = useRef<THREE.Group>(null);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
-  const cityLabelColors = useMemo(
-    () => new Map(cities.map((city) => [normalizeLabelName(city.name), city.color])),
-    [cities],
-  );
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
     const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
@@ -1124,10 +1262,9 @@ function Earth({
       onDetailChange(nextDetail);
     }
 
-    const cityOpacity = 1 - THREE.MathUtils.smoothstep(distance, 5.45, 6.2);
     const streetOpacity = 1 - THREE.MathUtils.smoothstep(distance, 3.88, 4.6);
     if (streetMaterial.current) streetMaterial.current.opacity = streetOpacity * 0.72;
-    if (cityMarkers.current) cityMarkers.current.visible = cityOpacity > 0.08;
+    if (cityTerritories.current) cityTerritories.current.visible = nextDetail >= 3;
 
     if (focus.current) {
       orientation.current.pitch = THREE.MathUtils.damp(orientation.current.pitch, focus.current.pitch, 9, delta);
@@ -1204,17 +1341,15 @@ function Earth({
         <sphereGeometry args={[3, 128, 128]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} onSelect={onCountrySelect} />
+      <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} detailLevel={labelDetail} onSelect={onCountrySelect} />
       <EnergyParticles cities={cities} layer={layer} />
       <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <group ref={cityMarkers} visible={false}>
-        {cities.map((city) => (
-          <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} onSelect={onSelect} />
-        ))}
+      <group ref={cityTerritories} visible={false}>
+        <CityTerritories cities={cities} selectedCityId={selectedCity.id} onSelect={onSelect} />
       </group>
       {labelDetail === 1 && globalCountryLabels.map((country) => (
         <GlobeLabel
@@ -1238,10 +1373,9 @@ function Earth({
           label={city.name}
           kind="city"
           position={city.position}
-          color={cityLabelColors.get(normalizeLabelName(city.name))}
         />
       ))}
-      {(labelDetail === 3 || labelDetail === 4) && cities.flatMap((city) => city.agents.map((agent) => (
+      {labelDetail === 4 && cities.flatMap((city) => city.agents.map((agent) => (
         <AgentLight
           key={agent.id}
           agent={agent}

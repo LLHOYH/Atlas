@@ -115,12 +115,17 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });
 
-test("country detail keeps city labels compact without an unexplained breathing ring", () => {
-  assert.match(experienceSource, /kind === "city" \? 1\.5/);
-  assert.doesNotMatch(experienceSource, /const signalEnergy =/);
-  assert.doesNotMatch(experienceSource, /ref=\{pulse\}>\s*<mesh position=\{\[0, 0, 0\.008\]\}/);
-  assert.match(globalStylesSource, /\.mapLabel--city \{[\s\S]*?font-size: 5px;/);
-  assert.match(globalStylesSource, /\.mapLabel--city::before \{[\s\S]*?width: 2px;[\s\S]*?height: 2px;/);
+test("city detail uses bordered territories and the country label style", () => {
+  assert.match(experienceSource, /function buildCityTerritoryGeometry\(/);
+  assert.match(experienceSource, /function CityTerritories\(/);
+  assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
+  assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
+  assert.match(experienceSource, /detailLevel >= 3/);
+  assert.match(experienceSource, /labelDetail === 4 && cities\.flatMap/);
+  assert.doesNotMatch(experienceSource, /function CityLight\(/);
+  assert.match(experienceSource, /kind === "country" \|\| kind === "city" \? 1\.875/);
+  assert.match(globalStylesSource, /\.mapLabel--country,\s*\.mapLabel--city \{[\s\S]*?color: #d9b76b;[\s\S]*?font-size: 6px;/);
+  assert.doesNotMatch(globalStylesSource, /\.mapLabel--city::before/);
 });
 
 test("Agent Pulse charts seven days of distinct live-agent history", () => {
