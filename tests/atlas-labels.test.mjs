@@ -77,6 +77,10 @@ test("country background energy uses six live-agent levels with one top tier abo
 
 test("country selection recenters the globe and opens an aggregated country profile", () => {
   assert.match(experienceSource, /geoCentroid\(country\)/);
+  assert.match(experienceSource, /geometry=\{country\.hitGeometry\}/);
+  assert.match(experienceSource, /hoveredCountry\.current = index/);
+  assert.match(experienceSource, /lat: countryCenters\[index\]\.lat/);
+  assert.doesNotMatch(experienceSource, /findCountryAt|geoContains/);
   assert.match(experienceSource, /onCountrySelect=\{focusCountry\}/);
   assert.match(experienceSource, /selectedCountryKey=\{countryTarget\?\.key \?\? null\}/);
   assert.match(experienceSource, /COUNTRY PROFILE · LIVE NETWORK/);
