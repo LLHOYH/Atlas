@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { geoContains } from "d3-geo";
 
 const labelData = JSON.parse(
   await readFile(new URL("../app/atlas-label-data.json", import.meta.url), "utf8"),
@@ -41,6 +42,29 @@ test("globe land is built from complete country silhouettes instead of sampling 
   }
 });
 
+test("Japan's geographic hit area does not overlap Russia at Japan's label center", () => {
+  const toGeoJson = (country) => {
+    const coordinates = country.polygons.map((polygon) => polygon.map((flatRing) => {
+      const ring = [];
+      for (let index = 0; index < flatRing.length; index += 2) {
+        ring.push([flatRing[index], flatRing[index + 1]]);
+      }
+      return ring;
+    }));
+    return coordinates.length === 1
+      ? { type: "Polygon", coordinates: coordinates[0] }
+      : { type: "MultiPolygon", coordinates };
+  };
+  const japan = geoData.countries.find((country) => country.name === "Japan");
+  const russia = geoData.countries.find((country) => country.name === "Russia");
+  const japanLabel = labelData.countries.find((country) => country.name === "Japan");
+
+  assert.ok(japan && russia && japanLabel);
+  const japanCenter = [japanLabel.lng, japanLabel.lat];
+  assert.equal(geoContains(toGeoJson(japan), japanCenter), true);
+  assert.equal(geoContains(toGeoJson(russia), japanCenter), false);
+});
+
 test("regional view tabs cover the six continental regions without dropdown-only views", () => {
   for (const region of ["North America", "South America", "Europe", "Africa", "Asia", "Oceania"]) {
     assert.match(experienceSource, new RegExp(`label: "${region}"`));
@@ -77,10 +101,11 @@ test("country background energy uses six live-agent levels with one top tier abo
 
 test("country selection recenters the globe and opens an aggregated country profile", () => {
   assert.match(experienceSource, /geoCentroid\(country\)/);
-  assert.match(experienceSource, /geometry=\{country\.hitGeometry\}/);
-  assert.match(experienceSource, /hoveredCountry\.current = index/);
-  assert.match(experienceSource, /lat: countryCenters\[index\]\.lat/);
-  assert.doesNotMatch(experienceSource, /findCountryAt|geoContains/);
+  assert.match(experienceSource, /findCountryAtPoint\(event\.point, event\.eventObject\)/);
+  assert.match(experienceSource, /hitSurface\.worldToLocal\(worldPoint\.clone\(\)\)/);
+  assert.match(experienceSource, /const countryIndex = hoveredCountry\.current \?\? findCountryAtPoint/);
+  assert.match(experienceSource, /geoContains\(countryHitAreas\[countryIndex\]/);
+  assert.doesNotMatch(experienceSource, /geometry=\{country\.hitGeometry\}/);
   assert.match(experienceSource, /onCountrySelect=\{focusCountry\}/);
   assert.match(experienceSource, /selectedCountryKey=\{countryTarget\?\.key \?\? null\}/);
   assert.match(experienceSource, /COUNTRY PROFILE · LIVE NETWORK/);

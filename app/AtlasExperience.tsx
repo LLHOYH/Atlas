@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { geoCentroid } from "d3-geo";
+import { geoCentroid, geoContains } from "d3-geo";
 import atlasGeoData from "./atlas-geo-data.json";
 import atlasLabelData from "./atlas-label-data.json";
 import {
@@ -390,6 +390,13 @@ function prepareCountryRings(polygon: number[][]) {
   return rings;
 }
 
+function vectorToGeoCenter(vector: THREE.Vector3): GeoCenter {
+  const unit = vector.clone().normalize();
+  const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(unit.y, -1, 1)));
+  const theta = THREE.MathUtils.radToDeg(Math.atan2(unit.z, -unit.x));
+  return { lat, lng: normalizeLongitude(theta - 180) };
+}
+
 function sphericalDirection(point: CountryPoint) {
   return latLngToVector3(point.lat, point.lng, 1).normalize();
 }
@@ -487,14 +494,10 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
 
-  const hitGeometry = new THREE.BufferGeometry();
-  hitGeometry.setAttribute("position", new THREE.Float32BufferAttribute(raisedPositions, 3));
-  hitGeometry.computeBoundingSphere();
-
   const outline = new THREE.BufferGeometry();
   outline.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
   outline.computeBoundingSphere();
-  return { geometry, hitGeometry, outline };
+  return { geometry, outline };
 }
 
 function CountrySurfaces({
@@ -541,6 +544,14 @@ function CountrySurfaces({
     });
   }, [countries, countryHitAreas]);
 
+  const findCountryAtPoint = (worldPoint: THREE.Vector3, hitSurface: THREE.Object3D) => {
+    const geo = vectorToGeoCenter(hitSurface.worldToLocal(worldPoint.clone()));
+    for (let countryIndex = 0; countryIndex < countryHitAreas.length; countryIndex += 1) {
+      if (geoContains(countryHitAreas[countryIndex], [geo.lng, geo.lat])) return countryIndex;
+    }
+    return null;
+  };
+
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
       const liveAgentCount = liveAgentsByCountry[country.energyKey] ?? 0;
@@ -582,38 +593,39 @@ function CountrySurfaces({
         <sphereGeometry args={[3, 36, 24]} />
         <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.035} depthWrite={false} />
       </mesh>
+      <mesh
+        onPointerMove={(event) => {
+          const nextCountry = findCountryAtPoint(event.point, event.eventObject);
+          hoveredCountry.current = nextCountry;
+          if (event.buttons === 0) document.body.style.cursor = nextCountry === null ? "grab" : "pointer";
+        }}
+        onPointerOut={() => {
+          hoveredCountry.current = null;
+          document.body.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          if (event.delta > 5) return;
+          const countryIndex = hoveredCountry.current ?? findCountryAtPoint(event.point, event.eventObject);
+          if (countryIndex === null) return;
+          event.stopPropagation();
+          const country = countries[countryIndex];
+          onSelect({
+            name: country.name,
+            key: country.energyKey,
+            lat: countryCenters[countryIndex].lat,
+            lng: countryCenters[countryIndex].lng,
+            distance: 6.15,
+          });
+        }}
+      >
+        <sphereGeometry args={[COUNTRY_HOVER_RADIUS + 0.025, 96, 64]} />
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
+      </mesh>
       {countries.map((country, index) => {
         const liveAgentCount = liveAgentsByCountry[country.energyKey] ?? 0;
         const density = agentDensityLevel(liveAgentCount);
         return (
         <group key={country.name}>
-          <mesh
-            geometry={country.hitGeometry}
-            frustumCulled={false}
-            onPointerMove={(event) => {
-              event.stopPropagation();
-              hoveredCountry.current = index;
-              if (event.buttons === 0) document.body.style.cursor = "pointer";
-            }}
-            onPointerOut={(event) => {
-              event.stopPropagation();
-              if (hoveredCountry.current === index) hoveredCountry.current = null;
-              document.body.style.cursor = "grab";
-            }}
-            onClick={(event) => {
-              if (event.delta > 5) return;
-              event.stopPropagation();
-              onSelect({
-                name: country.name,
-                key: country.energyKey,
-                lat: countryCenters[index].lat,
-                lng: countryCenters[index].lng,
-                distance: 6.15,
-              });
-            }}
-          >
-            <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
-          </mesh>
           <mesh
             ref={(node) => {
               meshes.current[index] = node;
