@@ -55,6 +55,10 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /<CountrySurfaces energyByCountry=\{energyByCountry\}/);
   assert.match(experienceSource, /function AgentLight\(/);
   assert.match(experienceSource, /AGENT PULSE · 24H/);
+  assert.match(experienceSource, /className="energyLegend glassPanel"/);
+  assert.match(experienceSource, /COUNTRY \/ CITY ENERGY/);
+  assert.match(experienceSource, /className="energyMeter"/);
+  assert.match(experienceSource, /selectedEnergyPercent/);
   assert.match(experienceSource, /className="agentRoster"/);
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });

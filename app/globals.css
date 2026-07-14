@@ -541,6 +541,7 @@ button {
 }
 
 .worldPulse,
+.energyLegend,
 .citySignal,
 .layerControl,
 .searchBar,
@@ -626,6 +627,96 @@ button {
   background: linear-gradient(to top, rgba(104, 191, 255, 0.16), rgba(127, 211, 255, 0.78));
 }
 
+.energyLegend {
+  top: 323px;
+  left: 30px;
+  width: 190px;
+  padding: 13px 14px;
+  border-radius: 13px;
+}
+
+.legendHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #83919a;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  letter-spacing: 0.13em;
+}
+
+.legendHeading small {
+  padding: 2px 4px;
+  border: 1px solid rgba(240, 198, 111, 0.2);
+  border-radius: 3px;
+  color: #d8b86e;
+  font-size: 6px;
+  letter-spacing: 0.08em;
+}
+
+.energyScale {
+  margin-top: 13px;
+}
+
+.energyScale > span,
+.statusLegend > span {
+  display: block;
+  color: #64727b;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6.5px;
+  letter-spacing: 0.1em;
+}
+
+.energyScale > i {
+  display: block;
+  height: 8px;
+  margin-top: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 3px;
+  background: linear-gradient(90deg, #17383f 0%, #3c9298 32%, #b58442 68%, #ffd36f 100%);
+  box-shadow: 0 0 12px rgba(240, 198, 111, 0.18);
+}
+
+.energyScale > div {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+}
+
+.energyScale small {
+  color: #5e6b74;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 5.5px;
+}
+
+.statusLegend {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.statusLegend > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 8px;
+  margin-top: 8px;
+}
+
+.statusLegend small {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #7d8991;
+  font-size: 7px;
+}
+
+.statusLegend small i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  box-shadow: 0 0 7px currentColor;
+}
+
 .citySignal {
   top: 112px;
   right: 30px;
@@ -696,6 +787,61 @@ button {
   font-family: var(--font-geist-mono), monospace;
   font-size: 9px;
   font-style: normal;
+}
+
+.energyMeter {
+  margin-top: 13px;
+  padding: 11px;
+  border: 1px solid rgba(240, 198, 111, 0.13);
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(240, 198, 111, 0.075), rgba(38, 124, 133, 0.035));
+}
+
+.energyMeter > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.energyMeter > div:first-child span {
+  color: #86724d;
+  font-size: 7px;
+  letter-spacing: 0.11em;
+}
+
+.energyMeter > div:first-child b {
+  color: #f1ca73;
+  font-size: 8px;
+  font-weight: 590;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(240, 198, 111, 0.3);
+}
+
+.energyMeterTrack {
+  height: 7px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(13, 43, 48, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.energyMeterTrack i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3c9298, #c9974b 68%, #ffd36f);
+  box-shadow: 0 0 12px rgba(255, 211, 111, 0.55);
+  transition: width 420ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.energyMeter > small {
+  display: block;
+  margin-top: 7px;
+  color: #68757d;
+  font-size: 7px;
 }
 
 .categoryLine {
@@ -1412,6 +1558,7 @@ kbd {
   .topNav { display: none; }
   .brand small, .liveBadge { display: none; }
   .worldPulse { display: none; }
+  .energyLegend { top: 86px; left: 16px; width: 180px; }
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
@@ -1430,6 +1577,8 @@ kbd {
   .citySignal { top: auto; right: 12px; bottom: 76px; left: 12px; width: auto; padding: 12px 14px; }
   .signalHeader h1 { font-size: 20px; }
   .activityTotal { margin-top: 8px; }
+  .energyMeter { margin-top: 8px; padding: 8px 10px; }
+  .energyMeter > small { display: none; }
   .categoryLine { margin: 5px 0 9px; }
   .topicList { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; border-bottom: 0; }
   .topicList button { display: block; width: auto; flex: 0 0 auto; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; background: rgba(255, 255, 255, 0.03); }
@@ -1450,6 +1599,9 @@ kbd {
   .searchBar kbd { display: none; }
   .dragHint { top: 86px; bottom: auto; }
   .lodIndicator { top: 108px; right: auto; bottom: auto; left: 12px; min-width: 139px; }
+  .energyLegend { top: 153px; left: 12px; width: 160px; padding: 10px 11px; }
+  .statusLegend { margin-top: 9px; padding-top: 8px; }
+  .statusLegend > div { gap: 5px 7px; margin-top: 6px; }
   .profilePanel { top: 80px; right: 12px; left: 12px; width: auto; }
   .modalScrim { padding: 12px; }
   .presenceStudio { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }

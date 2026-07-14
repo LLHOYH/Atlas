@@ -75,6 +75,19 @@ const agentStatusColors = {
   offline: "#52616b",
 } as const;
 
+const CITY_ENERGY_REFERENCE = 320;
+
+function normalizedAgentEnergy(value: number) {
+  return THREE.MathUtils.clamp(value / CITY_ENERGY_REFERENCE, 0, 1);
+}
+
+function agentEnergyLabel(value: number) {
+  if (value >= 0.78) return "INTENSE";
+  if (value >= 0.52) return "ACTIVE";
+  if (value >= 0.28) return "RISING";
+  return "LOW";
+}
+
 function latLngToVector3(lat: number, lng: number, radius: number) {
   const phi = ((90 - lat) * Math.PI) / 180;
   const theta = ((lng + 180) * Math.PI) / 180;
@@ -524,25 +537,26 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
 
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
-      const energy = (energyByCountry[country.energyKey] ?? 0) / peakEnergy;
+      const energy = THREE.MathUtils.clamp((energyByCountry[country.energyKey] ?? 0) / peakEnergy, 0, 1);
       const target = hoveredCountry.current === index ? 1 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
+      const lift = Math.max(energy * 0.38, next);
       hoverStrengths[index] = next;
       const mesh = meshes.current[index];
       const outline = outlines.current[index];
-      if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = next;
+      if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = lift;
       if (mesh?.material instanceof THREE.MeshStandardMaterial) {
-        mesh.material.color.copy(country.color).lerp(gold, energy * 0.38).lerp(gold, next * 0.96);
-        mesh.material.emissive.copy(dark).lerp(gold, Math.max(energy * 0.72, next));
-        mesh.material.emissiveIntensity = energy * 0.42 + next * 1.25;
+        mesh.material.color.copy(country.color).lerp(gold, energy * 0.82).lerp(gold, next * 0.98);
+        mesh.material.emissive.copy(dark).lerp(gold, Math.max(energy, next));
+        mesh.material.emissiveIntensity = energy * 1.08 + next * 1.3;
       }
       if (outline) {
-        const radiusScale = 1 + next * (COUNTRY_HOVER_RADIUS / COUNTRY_TOP_RADIUS - 1);
+        const radiusScale = 1 + lift * (COUNTRY_HOVER_RADIUS / COUNTRY_TOP_RADIUS - 1);
         outline.scale.setScalar(radiusScale);
         if (outline.material instanceof THREE.LineBasicMaterial) {
-          outline.material.color.set(next > 0.02 ? "#ffe39a" : "#68cbd1");
-          outline.material.opacity = 0.5 + next * 0.48;
+          outline.material.color.set(energy > 0.02 || next > 0.02 ? "#ffe19a" : "#4f919a");
+          outline.material.opacity = 0.42 + energy * 0.5 + next * 0.08;
         }
       }
     });
@@ -574,7 +588,7 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       {countries.map((country, index) => {
-        const energy = (energyByCountry[country.energyKey] ?? 0) / peakEnergy;
+        const energy = THREE.MathUtils.clamp((energyByCountry[country.energyKey] ?? 0) / peakEnergy, 0, 1);
         return (
         <group key={country.name}>
           <mesh
@@ -586,9 +600,9 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
             frustumCulled={false}
           >
             <meshStandardMaterial
-              color={country.color.clone().lerp(gold, energy * 0.38)}
+              color={country.color.clone().lerp(gold, energy * 0.82)}
               emissive={gold}
-              emissiveIntensity={energy * 0.42}
+              emissiveIntensity={energy * 1.08}
               roughness={0.56}
               metalness={0.16}
               side={THREE.DoubleSide}
@@ -602,7 +616,7 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
             frustumCulled={false}
             raycast={() => undefined}
           >
-            <lineBasicMaterial color={energy > 0 ? "#d7ad57" : "#68cbd1"} transparent opacity={0.5 + energy * 0.24} depthWrite={false} />
+            <lineBasicMaterial color={energy > 0 ? "#ffe19a" : "#4f919a"} transparent opacity={0.42 + energy * 0.5} depthWrite={false} />
           </lineSegments>
         </group>
         );
@@ -716,25 +730,32 @@ function CityLight({
       ),
     [position],
   );
-  const color = layer === "Attention" ? city.color : layerColors[layer];
+  const energy = normalizedAgentEnergy(city.agentEnergy ?? 0);
+  const towerHeight = 0.07 + energy * 0.27;
+  const color = useMemo(() => {
+    if (layer !== "Attention") return layerColors[layer];
+    return new THREE.Color("#368e96")
+      .lerp(new THREE.Color("#ffd36f"), Math.max(0.08, energy))
+      .getStyle();
+  }, [energy, layer]);
 
   useFrame(({ clock }) => {
     if (!pulse.current) return;
-    const seededEnergy = Math.min((city.agentEnergy ?? 0) / 360, 1);
-    const signalEnergy = 1 + seededEnergy * 0.52 + Math.min(liveCount, 20) * 0.018;
-    const scale = signalEnergy * (1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.22);
+    const signalEnergy = 1 + energy * 0.58 + Math.min(liveCount, 20) * 0.018;
+    const scale = signalEnergy * (1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.14);
     pulse.current.scale.setScalar(scale);
   });
 
   return (
     <group position={position} quaternion={orientation}>
       <group ref={pulse}>
-        <mesh>
-          <boxGeometry args={[selected ? 0.22 : 0.15, selected ? 0.22 : 0.15, 0.012]} />
-          <meshBasicMaterial color={color} wireframe transparent opacity={selected ? 0.58 : 0.28} blending={THREE.AdditiveBlending} />
+        <mesh position={[0, 0, 0.008]}>
+          <ringGeometry args={[selected ? 0.09 : 0.07, selected ? 0.145 : 0.11, 32]} />
+          <meshBasicMaterial color={color} transparent opacity={0.32 + energy * 0.38} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
       </group>
       <mesh
+        position={[0, 0, towerHeight / 2]}
         onClick={(event) => {
           event.stopPropagation();
           onSelect(city);
@@ -746,8 +767,19 @@ function CityLight({
           document.body.style.cursor = "grab";
         }}
       >
-        <boxGeometry args={[selected ? 0.075 : 0.052, selected ? 0.075 : 0.052, selected ? 0.07 : 0.05]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
+        <boxGeometry args={[selected ? 0.09 : 0.066, selected ? 0.09 : 0.066, towerHeight]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.85 + energy * 1.25}
+          roughness={0.32}
+          metalness={0.18}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh position={[0, 0, towerHeight + 0.006]}>
+        <boxGeometry args={[selected ? 0.12 : 0.088, selected ? 0.12 : 0.088, 0.018]} />
+        <meshBasicMaterial color={color} transparent opacity={0.78 + energy * 0.2} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -1510,6 +1542,9 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     + liveAiAgents.filter((agent) => agent.status !== "Offline").length;
   const selectedWorkingAgents = selectedCity.agents.filter((agent) => agent.status === "working").length;
   const selectedActiveAgents = selectedCity.agents.filter((agent) => agent.status !== "offline").length;
+  const selectedEnergyLevel = normalizedAgentEnergy(selectedCity.agentEnergy);
+  const selectedEnergyPercent = Math.round(selectedEnergyLevel * 100);
+  const selectedEnergyLabel = agentEnergyLabel(selectedEnergyLevel);
   const selectedHotTopics = selectedCity.hotTopics.length
     ? selectedCity.hotTopics
     : selectedCity.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
@@ -1659,6 +1694,24 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         </div>
       </aside>
 
+      <aside className="energyLegend glassPanel" aria-label="Map legend">
+        <div className="legendHeading"><span>MAP LEGEND</span><small>24H</small></div>
+        <div className="energyScale">
+          <span>COUNTRY / CITY ENERGY</span>
+          <i aria-hidden="true" />
+          <div><small>LOW</small><small>RISING</small><small>ACTIVE</small><small>INTENSE</small></div>
+        </div>
+        <div className="statusLegend">
+          <span>AGENT STATUS</span>
+          <div>
+            <small><i style={{ background: agentStatusColors.working, boxShadow: `0 0 7px ${agentStatusColors.working}` }} />Working</small>
+            <small><i style={{ background: agentStatusColors.online, boxShadow: `0 0 7px ${agentStatusColors.online}` }} />Online</small>
+            <small><i style={{ background: agentStatusColors.idle, boxShadow: `0 0 7px ${agentStatusColors.idle}` }} />Idle</small>
+            <small><i style={{ background: agentStatusColors.offline, boxShadow: `0 0 7px ${agentStatusColors.offline}` }} />Offline</small>
+          </div>
+        </div>
+      </aside>
+
       <aside className="citySignal glassPanel" aria-live="polite">
         <div className="signalHeader">
           <div>
@@ -1672,6 +1725,11 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
           <strong>{selectedCity.agentEnergy.toLocaleString()}</strong>
           <small>agent energy</small>
           <em>{selectedWorkingAgents} working</em>
+        </div>
+        <div className="energyMeter" aria-label={`${selectedCity.name} energy level ${selectedEnergyLabel}, ${selectedEnergyPercent} percent`}>
+          <div><span>ENERGY LEVEL</span><b>{selectedEnergyLabel} · {selectedEnergyPercent}%</b></div>
+          <div className="energyMeterTrack" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={selectedEnergyPercent}><i style={{ width: `${selectedEnergyPercent}%` }} /></div>
+          <small>24H signal intensity from {selectedCity.agents.length} connected agents</small>
         </div>
         <p className="categoryLine">{selectedActiveAgents} active · {selectedCity.agents.length} observed · last 24 hours</p>
         <div className="topicList">
