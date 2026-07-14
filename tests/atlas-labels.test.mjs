@@ -55,7 +55,8 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /<CountrySurfaces liveAgentsByCountry=\{liveAgentsByCountry\}/);
   assert.match(experienceSource, /function AgentLight\(/);
   assert.match(experienceSource, /AGENT PULSE · NOW/);
-  assert.match(experienceSource, /className="energyLegend glassPanel"/);
+  assert.match(experienceSource, /className="pulseLegend"/);
+  assert.doesNotMatch(experienceSource, /className="energyLegend/);
   assert.match(experienceSource, /LIVE AGENTS PER COUNTRY/);
   assert.match(experienceSource, /className="energyMeter"/);
   assert.match(experienceSource, /selectedDensityBarWidth/);

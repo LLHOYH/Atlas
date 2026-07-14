@@ -1861,37 +1861,40 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
 
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
         <div className="panelTitle"><Globe2 size={14} /><span>AGENT PULSE · NOW</span><i /></div>
-        <strong>{worldLiveAgentCount.toLocaleString()}</strong>
-        <small>live agents worldwide</small>
-        <div className="pulseStats">
-          <span><Bot size={13} /><b>{worldAgentCount}</b> Agents</span>
-          <span><Zap size={13} /><b>{workingAgentCount}</b> Working</span>
-          <span><Radio size={13} /><b>{onlineAgentCount}</b> Online</span>
-          <span><Globe2 size={13} /><b>{cities.length}</b> Cities</span>
-        </div>
-        <div className="pulseChart" aria-hidden="true">
-          {pulseBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
-        </div>
-      </aside>
-
-      <aside className="energyLegend glassPanel" aria-label="Map legend">
-        <div className="legendHeading"><span>MAP LEGEND</span><small>LIVE</small></div>
-        <div className="energyScale">
-          <span>LIVE AGENTS PER COUNTRY</span>
-          <p>Energy level = agents live now</p>
-          <div className="energyLevelLegend">
-            {agentDensityLevels.map((density) => (
-              <small key={density.level}><i style={{ background: density.color, boxShadow: `0 0 7px ${density.color}` }} /><b>{density.label}</b></small>
-            ))}
+        <div className="pulseOverview">
+          <div className="pulseTotal">
+            <strong>{worldLiveAgentCount.toLocaleString()}</strong>
+            <small>live agents worldwide</small>
+          </div>
+          <div className="pulseStats">
+            <span><Bot size={13} /><b>{worldAgentCount}</b> Agents</span>
+            <span><Zap size={13} /><b>{workingAgentCount}</b> Working</span>
+            <span><Radio size={13} /><b>{onlineAgentCount}</b> Online</span>
+            <span><Globe2 size={13} /><b>{cities.length}</b> Cities</span>
+          </div>
+          <div className="pulseChart" aria-hidden="true">
+            {pulseBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
           </div>
         </div>
-        <div className="statusLegend">
-          <span>AGENT STATUS</span>
-          <div>
-            <small><i style={{ background: agentStatusColors.working, boxShadow: `0 0 7px ${agentStatusColors.working}` }} />Working</small>
-            <small><i style={{ background: agentStatusColors.online, boxShadow: `0 0 7px ${agentStatusColors.online}` }} />Online</small>
-            <small><i style={{ background: agentStatusColors.idle, boxShadow: `0 0 7px ${agentStatusColors.idle}` }} />Idle</small>
-            <small><i style={{ background: agentStatusColors.offline, boxShadow: `0 0 7px ${agentStatusColors.offline}` }} />Offline</small>
+        <div className="pulseLegend" aria-label="Map legend">
+          <div className="legendHeading"><span>MAP LEGEND</span><small>LIVE</small></div>
+          <div className="energyScale">
+            <span>LIVE AGENTS PER COUNTRY</span>
+            <p>Energy level = agents live now</p>
+            <div className="energyLevelLegend">
+              {agentDensityLevels.map((density) => (
+                <small key={density.level}><i style={{ background: density.color, boxShadow: `0 0 7px ${density.color}` }} /><b>{density.label}</b></small>
+              ))}
+            </div>
+          </div>
+          <div className="statusLegend">
+            <span>AGENT STATUS</span>
+            <div>
+              <small><i style={{ background: agentStatusColors.working, boxShadow: `0 0 7px ${agentStatusColors.working}` }} />Working</small>
+              <small><i style={{ background: agentStatusColors.online, boxShadow: `0 0 7px ${agentStatusColors.online}` }} />Online</small>
+              <small><i style={{ background: agentStatusColors.idle, boxShadow: `0 0 7px ${agentStatusColors.idle}` }} />Idle</small>
+              <small><i style={{ background: agentStatusColors.offline, boxShadow: `0 0 7px ${agentStatusColors.offline}` }} />Offline</small>
+            </div>
           </div>
         </div>
       </aside>

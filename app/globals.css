@@ -541,7 +541,6 @@ button {
 }
 
 .worldPulse,
-.energyLegend,
 .citySignal,
 .layerControl,
 .searchBar,
@@ -555,10 +554,15 @@ button {
 .worldPulse {
   top: 112px;
   left: 30px;
-  width: 190px;
+  width: 208px;
+  max-height: calc(100vh - 205px);
+  overflow-y: auto;
   padding: 15px;
   border-radius: 13px;
+  scrollbar-width: none;
 }
+
+.worldPulse::-webkit-scrollbar { display: none; }
 
 .panelTitle {
   display: flex;
@@ -575,7 +579,7 @@ button {
   margin-left: auto;
 }
 
-.worldPulse > strong {
+.pulseTotal > strong {
   display: block;
   font-family: var(--font-geist-mono), monospace;
   font-size: 25px;
@@ -583,7 +587,7 @@ button {
   letter-spacing: -0.04em;
 }
 
-.worldPulse > small {
+.pulseTotal > small {
   color: #64727c;
   font-size: 10px;
 }
@@ -627,12 +631,10 @@ button {
   background: linear-gradient(to top, rgba(104, 191, 255, 0.16), rgba(127, 211, 255, 0.78));
 }
 
-.energyLegend {
-  top: 323px;
-  left: 30px;
-  width: 208px;
-  padding: 13px 14px;
-  border-radius: 13px;
+.pulseLegend {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
 }
 
 .legendHeading {
@@ -1702,8 +1704,7 @@ kbd {
   .topBar { grid-template-columns: 1fr auto; height: 68px; padding: 0 18px; }
   .topNav { display: none; }
   .brand small, .liveBadge { display: none; }
-  .worldPulse { display: none; }
-  .energyLegend { top: 86px; left: 16px; width: 198px; }
+  .worldPulse { top: 86px; left: 16px; width: 198px; max-height: calc(100vh - 171px); padding: 13px; }
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
@@ -1719,7 +1720,7 @@ kbd {
   .atlasShell { min-height: 560px; }
   .topBar { padding: 0 14px; }
   .joinButton { padding: 8px 10px; font-size: 10px; }
-  .citySignal { top: auto; right: 12px; bottom: 76px; left: 12px; width: auto; padding: 12px 14px; }
+  .citySignal { top: auto; right: 12px; bottom: 76px; left: 12px; width: auto; max-height: calc(100vh - 330px); padding: 12px 14px; }
   .signalHeader h1 { font-size: 20px; }
   .activityTotal { margin-top: 8px; }
   .energyMeter { margin-top: 8px; padding: 8px 10px; }
@@ -1742,11 +1743,17 @@ kbd {
   .regionTabs { width: 100%; }
   .searchBar span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .searchBar kbd { display: none; }
-  .dragHint { top: 86px; bottom: auto; }
-  .lodIndicator { top: 108px; right: auto; bottom: auto; left: 12px; min-width: 139px; }
-  .energyLegend { top: 153px; left: 12px; width: 190px; padding: 10px 11px; }
-  .statusLegend { margin-top: 9px; padding-top: 8px; }
-  .statusLegend > div { gap: 5px 7px; margin-top: 6px; }
+  .dragHint { display: none; }
+  .worldPulse { top: 80px; right: 12px; left: 12px; width: auto; max-height: none; padding: 10px 11px; }
+  .worldPulse .panelTitle { margin-bottom: 8px; }
+  .pulseOverview { display: none; }
+  .pulseLegend { margin-top: 0; padding-top: 0; border-top: 0; }
+  .legendHeading { display: none; }
+  .energyScale { margin-top: 0; }
+  .energyLevelLegend { grid-template-columns: repeat(4, 1fr); gap: 5px 8px; margin-top: 7px; }
+  .statusLegend { margin-top: 7px; padding-top: 7px; }
+  .statusLegend > div { grid-template-columns: repeat(4, 1fr); gap: 5px 7px; margin-top: 5px; }
+  .lodIndicator { top: 205px; right: auto; bottom: auto; left: 12px; min-width: 139px; }
   .profilePanel { top: 80px; right: 12px; left: 12px; width: auto; }
   .modalScrim { padding: 12px; }
   .presenceStudio { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
