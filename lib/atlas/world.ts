@@ -43,6 +43,12 @@ export type AtlasHotTopic = {
   energy: number;
 };
 
+export type AtlasDailyLiveAgent = {
+  date: string;
+  label: string;
+  count: number;
+};
+
 export type AtlasCity = {
   id: string;
   name: string;
@@ -137,6 +143,23 @@ export type AtlasAgentEventRow = {
   energy: number;
   occurred_at: string;
 };
+
+export type AtlasDailyLiveAgentRow = {
+  activity_date: string;
+  live_agents: number | string;
+};
+
+export function mapAtlasLiveAgentHistory(rows: AtlasDailyLiveAgentRow[]): AtlasDailyLiveAgent[] {
+  return [...rows]
+    .sort((left, right) => left.activity_date.localeCompare(right.activity_date))
+    .map((row) => ({
+      date: row.activity_date,
+      label: new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" })
+        .format(new Date(`${row.activity_date}T00:00:00Z`))
+        .toUpperCase(),
+      count: Number(row.live_agents),
+    }));
+}
 
 export function mapAtlasWorld(
   cityRows: AtlasCityRow[],

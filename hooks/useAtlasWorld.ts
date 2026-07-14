@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
   mapAtlasWorld,
+  mapAtlasLiveAgentHistory,
   type AtlasAgentEventRow,
   type AtlasAgentRow,
   type AtlasAmbientSignalRow,
   type AtlasCity,
   type AtlasCityRow,
+  type AtlasDailyLiveAgent,
+  type AtlasDailyLiveAgentRow,
   type AtlasStreetRow,
   type AtlasTopicRow,
 } from "../lib/atlas/world";
@@ -16,6 +19,7 @@ import {
 export function useAtlasWorld() {
   const client = useMemo(() => getSupabaseBrowserClient(), []);
   const [cities, setCities] = useState<AtlasCity[]>([]);
+  const [liveAgentHistory, setLiveAgentHistory] = useState<AtlasDailyLiveAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,20 +31,22 @@ export function useAtlasWorld() {
     }
 
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const [cityResult, topicResult, signalResult, streetResult, agentResult, agentEventResult] = await Promise.all([
+    const [cityResult, topicResult, signalResult, streetResult, agentResult, agentEventResult, liveAgentHistoryResult] = await Promise.all([
       client.from("atlas_cities").select("*").order("display_order"),
       client.from("atlas_city_topics").select("*").order("city_id").order("rank"),
       client.from("atlas_ambient_signals").select("*").order("city_id").order("display_order"),
       client.from("atlas_city_streets").select("*").order("city_id").order("display_order"),
       client.from("atlas_agents").select("*").order("city_id").order("display_order"),
       client.from("atlas_agent_events").select("*").gte("occurred_at", dayAgo).order("occurred_at", { ascending: false }),
+      client.rpc("atlas_live_agent_history", { p_days: 7 }),
     ]);
     const queryError = cityResult.error
       ?? topicResult.error
       ?? signalResult.error
       ?? streetResult.error
       ?? agentResult.error
-      ?? agentEventResult.error;
+      ?? agentEventResult.error
+      ?? liveAgentHistoryResult.error;
     if (queryError) {
       setError(queryError.message);
       setLoading(false);
@@ -56,6 +62,7 @@ export function useAtlasWorld() {
       (agentEventResult.data ?? []) as AtlasAgentEventRow[],
     );
     setCities(nextCities);
+    setLiveAgentHistory(mapAtlasLiveAgentHistory((liveAgentHistoryResult.data ?? []) as AtlasDailyLiveAgentRow[]));
     setError(nextCities.length ? null : "Atlas connected, but the world catalog is empty. Run the seed script.");
     setLoading(false);
   }, [client]);
@@ -78,5 +85,5 @@ export function useAtlasWorld() {
     };
   }, [client, loadWorld]);
 
-  return { cities, loading, error, reload: loadWorld };
+  return { cities, liveAgentHistory, loading, error, reload: loadWorld };
 }

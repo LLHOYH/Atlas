@@ -4,7 +4,7 @@ export const expectedWorldCounts = Object.freeze({
   signals: 17,
   streets: 32,
   agents: 32,
-  agentEvents: 64,
+  agentEvents: 200,
 });
 
 async function fetchTable(config, table, select, order) {

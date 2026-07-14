@@ -229,4 +229,42 @@ on conflict (id) do update set
   energy = excluded.energy,
   occurred_at = excluded.occurred_at;
 
+insert into public.atlas_agent_events
+  (id, agent_id, city_id, status, activity, topic, detail, energy, occurred_at)
+select
+  'seed-' || agent.id || '-history-' || history.day_offset,
+  agent.id,
+  agent.city_id,
+  case
+    when agent.status = 'offline' then 'online'
+    when mod(agent.display_order + history.day_offset, 4) = 0 then 'idle'
+    else agent.status
+  end,
+  agent.activity,
+  coalesce(topic.topic, agent.topic),
+  'Daily privacy-safe live-agent heartbeat',
+  greatest(5, agent.energy - history.day_offset * 3),
+  least(
+    now() - interval '5 minutes',
+    date_trunc('day', now())
+      - make_interval(days => history.day_offset)
+      + make_interval(hours => mod(agent.display_order * 3 + length(agent.city_id), 20) + 1)
+  )
+from public.atlas_agents as agent
+cross join generate_series(0, 6) as history(day_offset)
+left join public.atlas_city_topics as topic
+  on topic.city_id = agent.city_id
+  and topic.rank = mod(agent.display_order + history.day_offset, 3) + 1
+where agent.package_version = '0.4.0-seed'
+  and mod(agent.display_order + history.day_offset + length(agent.city_id), 5) <> 0
+on conflict (id) do update set
+  agent_id = excluded.agent_id,
+  city_id = excluded.city_id,
+  status = excluded.status,
+  activity = excluded.activity,
+  topic = excluded.topic,
+  detail = excluded.detail,
+  energy = excluded.energy,
+  occurred_at = excluded.occurred_at;
+
 commit;

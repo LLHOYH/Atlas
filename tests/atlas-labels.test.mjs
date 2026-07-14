@@ -17,6 +17,18 @@ const labelGeneratorSource = await readFile(
   new URL("../scripts/generate-atlas-labels.mjs", import.meta.url),
   "utf8",
 );
+const worldHookSource = await readFile(
+  new URL("../hooks/useAtlasWorld.ts", import.meta.url),
+  "utf8",
+);
+const liveHistoryMigrationSource = await readFile(
+  new URL("../supabase/migrations/202607140003_phase_4_live_agent_history.sql", import.meta.url),
+  "utf8",
+);
+const seedSource = await readFile(
+  new URL("../supabase/seed.sql", import.meta.url),
+  "utf8",
+);
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -97,6 +109,19 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedDensityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
   assert.match(experienceSource, /selectedCity\.hotTopics/);
+});
+
+test("Agent Pulse charts seven days of distinct live-agent history", () => {
+  assert.match(experienceSource, /7D LIVE AGENTS/);
+  assert.match(experienceSource, /past seven days/);
+  assert.match(experienceSource, /pulseBars\.map\(\(day\)/);
+  assert.match(worldHookSource, /atlas_live_agent_history/);
+  assert.match(worldHookSource, /p_days: 7/);
+  assert.match(liveHistoryMigrationSource, /generate_series/);
+  assert.match(liveHistoryMigrationSource, /count\(distinct events\.agent_id\)/);
+  assert.match(liveHistoryMigrationSource, /events\.status <> 'offline'/);
+  assert.match(seedSource, /generate_series\(0, 6\)/);
+  assert.match(seedSource, /Daily privacy-safe live-agent heartbeat/);
 });
 
 test("side cards collapse into independent square icon controls", () => {

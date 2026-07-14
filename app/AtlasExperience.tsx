@@ -37,7 +37,12 @@ import {
   type AtlasPresence,
   type PresenceDraft,
 } from "../lib/atlas/types";
-import type { AtlasAgent as Agent, AtlasCity as City, AtlasSignal as Signal } from "../lib/atlas/world";
+import type {
+  AtlasAgent as Agent,
+  AtlasCity as City,
+  AtlasDailyLiveAgent,
+  AtlasSignal as Signal,
+} from "../lib/atlas/world";
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
@@ -1678,7 +1683,7 @@ function PresenceStudio({
   );
 }
 
-function AtlasWorldExperience({ cities }: { cities: City[] }) {
+function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; liveAgentHistory: AtlasDailyLiveAgent[] }) {
   const presence = useAtlasPresence();
   const [selectedCityId, setSelectedCityId] = useState(cities[0].id);
   const [selectedCountry, setSelectedCountry] = useState<CountrySelection | null>(null);
@@ -1731,11 +1736,16 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const selectedHotTopics = selectedCity.hotTopics.length
     ? selectedCity.hotTopics
     : selectedCity.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
-  const pulseBars = useMemo(() => {
-    const values = cities.map((city) => city.agents.filter((agent) => agent.status !== "offline").length + (liveCounts[city.name] ?? 0));
-    const peak = Math.max(...values, 1);
-    return values.map((value) => 16 + Math.round((value / peak) * 76));
-  }, [cities, liveCounts]);
+  const pulseTrend = liveAgentHistory.map((day, index) => ({
+    ...day,
+    count: day.count + (index === liveAgentHistory.length - 1 ? connectedLiveAiAgents.length : 0),
+  }));
+  const pulsePeak = Math.max(...pulseTrend.map((day) => day.count), 1);
+  const pulseBars = pulseTrend.map((day) => ({
+    ...day,
+    height: 12 + Math.round((day.count / pulsePeak) * 88),
+  }));
+  const latestPulseCount = pulseTrend.at(-1)?.count ?? 0;
 
   const openSearch = useCallback((nextQuery?: string) => {
     if (nextQuery !== undefined) setQuery(nextQuery);
@@ -1946,8 +1956,15 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
             <span><Radio size={13} /><b>{onlineAgentCount}</b> Online</span>
             <span><Globe2 size={13} /><b>{cities.length}</b> Cities</span>
           </div>
-          <div className="pulseChart" aria-hidden="true">
-            {pulseBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
+          <div className="pulseChartHeader"><span>7D LIVE AGENTS</span><b>{latestPulseCount} today</b></div>
+          <div className="pulseChart" role="img" aria-label="Distinct agents reporting live activity on each of the past seven days">
+            {pulseBars.map((day) => (
+              <div className="pulseChartDay" key={day.date} title={`${day.label}: ${day.count} live agents`}>
+                <b>{day.count}</b>
+                <span><i style={{ height: `${day.height}%` }} /></span>
+                <small>{day.label}</small>
+              </div>
+            ))}
           </div>
         </div>
         <div className="pulseLegend" aria-label="Map legend">
@@ -2216,5 +2233,5 @@ export function AtlasExperience() {
     );
   }
 
-  return <AtlasWorldExperience cities={world.cities} />;
+  return <AtlasWorldExperience cities={world.cities} liveAgentHistory={world.liveAgentHistory} />;
 }

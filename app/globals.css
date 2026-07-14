@@ -673,16 +673,63 @@ button {
   font-size: 10px;
 }
 
-.pulseChart {
+.pulseChartHeader {
   display: flex;
-  gap: 3px;
-  align-items: end;
-  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 7px;
+  color: #64727b;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6.5px;
+  letter-spacing: 0.1em;
 }
 
-.pulseChart i {
-  flex: 1;
-  min-height: 3px;
+.pulseChartHeader b {
+  color: #8ca1af;
+  font-size: 6.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.pulseChart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  height: 62px;
+}
+
+.pulseChartDay {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 10px 38px 10px;
+  gap: 2px;
+  align-items: end;
+  text-align: center;
+}
+
+.pulseChartDay > b,
+.pulseChartDay > small {
+  overflow: hidden;
+  color: #677680;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  font-weight: 500;
+  line-height: 1;
+  text-overflow: clip;
+}
+
+.pulseChartDay > small { color: #4f5d66; }
+
+.pulseChartDay > span {
+  display: flex;
+  height: 38px;
+  align-items: end;
+}
+
+.pulseChartDay i {
+  width: 100%;
+  min-height: 4px;
   border-radius: 4px 4px 1px 1px;
   background: linear-gradient(to top, rgba(104, 191, 255, 0.16), rgba(127, 211, 255, 0.78));
 }
