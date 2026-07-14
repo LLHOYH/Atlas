@@ -160,6 +160,7 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
   useEffect(() => {
     let cancelled = false;
     let map: import("maplibre-gl").Map | null = null;
+    let hoveredBuildingId: string | number | null = null;
 
     void import("maplibre-gl").then(({ default: maplibregl }) => {
       if (cancelled || !container.current) return;
@@ -171,7 +172,7 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
         minZoom: 3.5,
         maxZoom: 19,
         bearing: 0,
-        pitch: 0,
+        pitch: 34,
         dragRotate: false,
         pitchWithRotate: false,
         touchPitch: false,
@@ -200,6 +201,79 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
           ["boundary_state", "#3a7f86"],
         ] as const) {
           if (map.getLayer(layerId)) map.setPaintProperty(layerId, "line-color", color);
+        }
+
+        if (map.getSource("openmaptiles") && !map.getLayer("atlas-building-blocks")) {
+          const firstSymbolLayer = map.getStyle().layers.find((styleLayer) => styleLayer.type === "symbol");
+          const buildingLayer: import("maplibre-gl").FillExtrusionLayerSpecification = {
+            id: "atlas-building-blocks",
+            type: "fill-extrusion",
+            source: "openmaptiles",
+            "source-layer": "building",
+            minzoom: 13.5,
+            paint: {
+              "fill-extrusion-color": [
+                "case",
+                ["boolean", ["feature-state", "hover"], false],
+                "#e6bf65",
+                [
+                  "interpolate",
+                  ["linear"],
+                  ["coalesce", ["get", "render_height"], 7],
+                  0,
+                  "#0e2228",
+                  25,
+                  "#1a3d43",
+                  80,
+                  "#2d5960",
+                ],
+              ],
+              "fill-extrusion-height": [
+                "*",
+                [
+                  "max",
+                  ["coalesce", ["get", "render_height"], 7],
+                  ["+", ["coalesce", ["get", "render_min_height"], 0], 4],
+                ],
+                [
+                  "case",
+                  ["boolean", ["feature-state", "hover"], false],
+                  1.72,
+                  0.76,
+                ],
+              ],
+              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+              "fill-extrusion-opacity": 0.88,
+            },
+          };
+          map.addLayer(buildingLayer, firstSymbolLayer?.id);
+
+          map.on("mousemove", "atlas-building-blocks", (event) => {
+            const nextBuildingId = event.features?.[0]?.id;
+            if (nextBuildingId === undefined || nextBuildingId === null) return;
+            if (hoveredBuildingId !== null && hoveredBuildingId !== nextBuildingId) {
+              map?.setFeatureState(
+                { source: "openmaptiles", sourceLayer: "building", id: hoveredBuildingId },
+                { hover: false },
+              );
+            }
+            hoveredBuildingId = nextBuildingId;
+            map?.setFeatureState(
+              { source: "openmaptiles", sourceLayer: "building", id: nextBuildingId },
+              { hover: true },
+            );
+            map?.getCanvas().style.setProperty("cursor", "pointer");
+          });
+          map.on("mouseleave", "atlas-building-blocks", () => {
+            if (hoveredBuildingId !== null) {
+              map?.setFeatureState(
+                { source: "openmaptiles", sourceLayer: "building", id: hoveredBuildingId },
+                { hover: false },
+              );
+            }
+            hoveredBuildingId = null;
+            map?.getCanvas().style.setProperty("cursor", "grab");
+          });
         }
         setLoaded(true);
       });
@@ -251,6 +325,30 @@ function seededRandom(seedValue: number) {
 function PixelLand() {
   const blocks = useRef<THREE.InstancedMesh>(null);
   const landCells = atlasGeoData.cells;
+  const hoveredCountry = useRef<string | null>(null);
+  const hoverStrengths = useMemo(() => new Float32Array(landCells.length), [landCells.length]);
+  const gold = useMemo(() => new THREE.Color("#e6bf65"), []);
+  const instanceData = useMemo(() => {
+    const outward = new THREE.Vector3(0, 0, 1);
+    const palettes = ["#183941", "#1b4148", "#203a46", "#23444a", "#263a45", "#1c4650"];
+
+    return landCells.map((cell) => {
+      const position = latLngToVector3(cell.lat, cell.lng, 3.018);
+      const normal = position.clone().normalize();
+      const countryHash = hashString(cell.name);
+      const latitudeScale = Math.max(0.42, Math.cos((cell.lat * Math.PI) / 180));
+      const variance = 0.88 + (countryHash % 17) / 100;
+      return {
+        country: cell.name,
+        position,
+        normal,
+        quaternion: new THREE.Quaternion().setFromUnitVectors(outward, normal),
+        scaleX: latitudeScale * variance,
+        scaleY: variance,
+        color: new THREE.Color(palettes[countryHash % palettes.length]),
+      };
+    });
+  }, [landCells]);
 
   const borderGeometry = useMemo(() => {
     const positions: number[] = [];
@@ -275,25 +373,46 @@ function PixelLand() {
   useLayoutEffect(() => {
     if (!blocks.current) return;
     const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
     const scale = new THREE.Vector3();
-    const outward = new THREE.Vector3(0, 0, 1);
-    const palettes = ["#183941", "#1b4148", "#203a46", "#23444a", "#263a45", "#1c4650"];
 
-    landCells.forEach((cell, index) => {
-      const position = latLngToVector3(cell.lat, cell.lng, 3.018);
-      quaternion.setFromUnitVectors(outward, position.clone().normalize());
-      const countryHash = hashString(cell.name);
-      const latitudeScale = Math.max(0.42, Math.cos((cell.lat * Math.PI) / 180));
-      const variance = 0.88 + (countryHash % 17) / 100;
-      scale.set(latitudeScale * variance, variance, 1);
-      matrix.compose(position, quaternion, scale);
+    instanceData.forEach((cell, index) => {
+      scale.set(cell.scaleX, cell.scaleY, 1);
+      matrix.compose(cell.position, cell.quaternion, scale);
       blocks.current?.setMatrixAt(index, matrix);
-      blocks.current?.setColorAt(index, new THREE.Color(palettes[countryHash % palettes.length]));
+      blocks.current?.setColorAt(index, cell.color);
     });
     blocks.current.instanceMatrix.needsUpdate = true;
     if (blocks.current.instanceColor) blocks.current.instanceColor.needsUpdate = true;
-  }, [landCells]);
+  }, [instanceData]);
+
+  useFrame((_, delta) => {
+    if (!blocks.current) return;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const color = new THREE.Color();
+    let changed = false;
+
+    instanceData.forEach((cell, index) => {
+      const target = hoveredCountry.current === cell.country ? 1 : 0;
+      const current = hoverStrengths[index];
+      const next = THREE.MathUtils.damp(current, target, 11, delta);
+      if (Math.abs(next - current) < 0.0001) return;
+      hoverStrengths[index] = next;
+      position.copy(cell.position).addScaledVector(cell.normal, next * 0.07);
+      scale.set(cell.scaleX, cell.scaleY, 1 + next * 4.2);
+      matrix.compose(position, cell.quaternion, scale);
+      color.copy(cell.color).lerp(gold, next * 0.9);
+      blocks.current?.setMatrixAt(index, matrix);
+      blocks.current?.setColorAt(index, color);
+      changed = true;
+    });
+
+    if (changed) {
+      blocks.current.instanceMatrix.needsUpdate = true;
+      if (blocks.current.instanceColor) blocks.current.instanceColor.needsUpdate = true;
+    }
+  });
 
   return (
     <>
@@ -305,7 +424,20 @@ function PixelLand() {
         <sphereGeometry args={[3, 36, 24]} />
         <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.07} depthWrite={false} />
       </mesh>
-      <instancedMesh ref={blocks} args={[undefined, undefined, landCells.length]} frustumCulled={false}>
+      <instancedMesh
+        ref={blocks}
+        args={[undefined, undefined, landCells.length]}
+        frustumCulled={false}
+        onPointerMove={(event) => {
+          if (event.instanceId === undefined) return;
+          hoveredCountry.current = instanceData[event.instanceId]?.country ?? null;
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          hoveredCountry.current = null;
+          document.body.style.cursor = "grab";
+        }}
+      >
         <boxGeometry args={[0.205, 0.205, 0.04]} />
         <meshStandardMaterial color="#d9ffff" roughness={0.72} metalness={0.08} vertexColors />
       </instancedMesh>
@@ -320,16 +452,25 @@ function PixelSettlements({
   cities,
   density,
   layer,
+  meshRef,
   materialRef,
 }: {
   cities: City[];
   density: "city" | "town";
   layer: Layer;
+  meshRef: React.RefObject<THREE.InstancedMesh | null>;
   materialRef: React.RefObject<THREE.MeshBasicMaterial | null>;
 }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const hoveredBlock = useRef<number | null>(null);
+  const gold = useMemo(() => new THREE.Color("#e6bf65"), []);
   const blocks = useMemo(() => {
-    const generated: Array<{ lat: number; lng: number; height: number; color: THREE.Color }> = [];
+    const outward = new THREE.Vector3(0, 0, 1);
+    const generated: Array<{
+      height: number;
+      color: THREE.Color;
+      normal: THREE.Vector3;
+      quaternion: THREE.Quaternion;
+    }> = [];
     cities.forEach((city) => {
       const random = seededRandom(hashString(`${city.name}-${density}`));
       const count = density === "city" ? 24 : 78;
@@ -342,33 +483,186 @@ function PixelSettlements({
         const longitude = city.lng + (Math.cos(angle) * distance) / Math.max(0.25, Math.cos((city.lat * Math.PI) / 180));
         const height = density === "city" ? 0.07 + random() * 0.18 : 0.025 + random() * 0.065;
         const color = baseColor.clone().lerp(new THREE.Color("#d8ffff"), random() * 0.18);
-        generated.push({ lat: latitude, lng: longitude, height, color });
+        const normal = latLngToVector3(latitude, longitude, 1).normalize();
+        generated.push({
+          height,
+          color,
+          normal,
+          quaternion: new THREE.Quaternion().setFromUnitVectors(outward, normal),
+        });
       }
     });
     return generated;
   }, [cities, density, layer]);
+  const hoverStrengths = useMemo(() => new Float32Array(blocks.length), [blocks.length]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
     const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const outward = new THREE.Vector3(0, 0, 1);
     const scale = new THREE.Vector3(1, 1, 1);
     blocks.forEach((block, index) => {
-      const position = latLngToVector3(block.lat, block.lng, 3.032 + block.height / 2);
-      quaternion.setFromUnitVectors(outward, position.clone().normalize());
+      const position = block.normal.clone().multiplyScalar(3.032 + block.height / 2);
       scale.set(1, 1, block.height);
-      matrix.compose(position, quaternion, scale);
+      matrix.compose(position, block.quaternion, scale);
       meshRef.current?.setMatrixAt(index, matrix);
       meshRef.current?.setColorAt(index, block.color);
     });
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [blocks]);
+  }, [blocks, meshRef]);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const color = new THREE.Color();
+    const extraHeight = density === "city" ? 0.22 : 0.1;
+    let changed = false;
+
+    blocks.forEach((block, index) => {
+      const target = hoveredBlock.current === index ? 1 : 0;
+      const current = hoverStrengths[index];
+      const next = THREE.MathUtils.damp(current, target, 13, delta);
+      if (Math.abs(next - current) < 0.0001) return;
+      hoverStrengths[index] = next;
+      const height = block.height + next * extraHeight;
+      position.copy(block.normal).multiplyScalar(3.032 + height / 2);
+      scale.set(1 + next * 0.2, 1 + next * 0.2, height);
+      matrix.compose(position, block.quaternion, scale);
+      color.copy(block.color).lerp(gold, next * 0.92);
+      meshRef.current?.setMatrixAt(index, matrix);
+      meshRef.current?.setColorAt(index, color);
+      changed = true;
+    });
+
+    if (changed) {
+      meshRef.current.instanceMatrix.needsUpdate = true;
+      if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    }
+  });
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, blocks.length]} frustumCulled={false}>
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, blocks.length]}
+      frustumCulled={false}
+      onPointerMove={(event) => {
+        if (event.instanceId === undefined) return;
+        hoveredBlock.current = event.instanceId;
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        hoveredBlock.current = null;
+        document.body.style.cursor = "grab";
+      }}
+    >
       <boxGeometry args={[density === "city" ? 0.055 : 0.024, density === "city" ? 0.055 : 0.024, 1]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        color="#ffffff"
+        vertexColors
+        transparent
+        opacity={0}
+        toneMapped={false}
+        depthWrite={false}
+      />
+    </instancedMesh>
+  );
+}
+
+function GlobalCityBlocks({
+  meshRef,
+  materialRef,
+}: {
+  meshRef: React.RefObject<THREE.InstancedMesh | null>;
+  materialRef: React.RefObject<THREE.MeshBasicMaterial | null>;
+}) {
+  const hoveredCity = useRef<number | null>(null);
+  const gold = useMemo(() => new THREE.Color("#e6bf65"), []);
+  const cityBlocks = useMemo(() => {
+    const outward = new THREE.Vector3(0, 0, 1);
+    const palette = ["#4d9ca5", "#5daab1", "#397f8a", "#6ab8ba"];
+    return atlasLabelData.cities.map((city) => {
+      const normal = latLngToVector3(city.lat, city.lng, 1).normalize();
+      const populationHeight = THREE.MathUtils.clamp(
+        (Math.log10(Math.max(city.population, 100_000)) - 5) * 0.028,
+        0,
+        0.1,
+      );
+      return {
+        normal,
+        quaternion: new THREE.Quaternion().setFromUnitVectors(outward, normal),
+        height: 0.055 + populationHeight,
+        color: new THREE.Color(palette[hashString(city.name) % palette.length]),
+      };
+    });
+  }, []);
+  const hoverStrengths = useMemo(() => new Float32Array(cityBlocks.length), [cityBlocks.length]);
+
+  useLayoutEffect(() => {
+    if (!meshRef.current) return;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    cityBlocks.forEach((city, index) => {
+      position.copy(city.normal).multiplyScalar(3.036 + city.height / 2);
+      scale.set(1, 1, city.height);
+      matrix.compose(position, city.quaternion, scale);
+      meshRef.current?.setMatrixAt(index, matrix);
+      meshRef.current?.setColorAt(index, city.color);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+  }, [cityBlocks, meshRef]);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const color = new THREE.Color();
+    let changed = false;
+
+    cityBlocks.forEach((city, index) => {
+      const target = hoveredCity.current === index ? 1 : 0;
+      const current = hoverStrengths[index];
+      const next = THREE.MathUtils.damp(current, target, 13, delta);
+      if (Math.abs(next - current) < 0.0001) return;
+      hoverStrengths[index] = next;
+      const height = city.height + next * 0.2;
+      position.copy(city.normal).multiplyScalar(3.036 + height / 2);
+      scale.set(1 + next * 0.28, 1 + next * 0.28, height);
+      matrix.compose(position, city.quaternion, scale);
+      color.copy(city.color).lerp(gold, next * 0.94);
+      meshRef.current?.setMatrixAt(index, matrix);
+      meshRef.current?.setColorAt(index, color);
+      changed = true;
+    });
+
+    if (changed) {
+      meshRef.current.instanceMatrix.needsUpdate = true;
+      if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    }
+  });
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, cityBlocks.length]}
+      frustumCulled={false}
+      visible={false}
+      onPointerMove={(event) => {
+        if (event.instanceId === undefined) return;
+        hoveredCity.current = event.instanceId;
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        hoveredCity.current = null;
+        document.body.style.cursor = "grab";
+      }}
+    >
+      <boxGeometry args={[0.045, 0.045, 1]} />
       <meshBasicMaterial
         ref={materialRef}
         color="#ffffff"
@@ -651,8 +945,12 @@ function Earth({
   const streetEntryLocked = useRef(false);
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
+  const cityBlocks = useRef<THREE.InstancedMesh>(null);
+  const townBlocks = useRef<THREE.InstancedMesh>(null);
+  const globalCityBlocks = useRef<THREE.InstancedMesh>(null);
   const cityMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const townMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const globalCityMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
   const cityMarkers = useRef<THREE.Group>(null);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
@@ -717,10 +1015,15 @@ function Earth({
 
     const cityOpacity = 1 - THREE.MathUtils.smoothstep(distance, 5.45, 6.2);
     const townOpacity = 1 - THREE.MathUtils.smoothstep(distance, 4.45, 5.2);
+    const globalCityOpacity = 1 - THREE.MathUtils.smoothstep(distance, 4.82, 5.34);
     const streetOpacity = 1 - THREE.MathUtils.smoothstep(distance, 3.88, 4.6);
     if (cityMaterial.current) cityMaterial.current.opacity = cityOpacity;
     if (townMaterial.current) townMaterial.current.opacity = townOpacity * 0.8;
+    if (globalCityMaterial.current) globalCityMaterial.current.opacity = globalCityOpacity * 0.88;
     if (streetMaterial.current) streetMaterial.current.opacity = streetOpacity * 0.72;
+    if (cityBlocks.current) cityBlocks.current.visible = cityOpacity > 0.08;
+    if (townBlocks.current) townBlocks.current.visible = townOpacity > 0.08;
+    if (globalCityBlocks.current) globalCityBlocks.current.visible = globalCityOpacity > 0.08;
     if (cityMarkers.current) cityMarkers.current.visible = cityOpacity > 0.08;
 
     if (focus.current) {
@@ -800,8 +1103,9 @@ function Earth({
       </mesh>
       <PixelLand />
       <EnergyParticles cities={cities} layer={layer} />
-      <PixelSettlements cities={cities} density="city" layer={layer} materialRef={cityMaterial} />
-      <PixelSettlements cities={cities} density="town" layer={layer} materialRef={townMaterial} />
+      <PixelSettlements cities={cities} density="city" layer={layer} meshRef={cityBlocks} materialRef={cityMaterial} />
+      <PixelSettlements cities={cities} density="town" layer={layer} meshRef={townBlocks} materialRef={townMaterial} />
+      <GlobalCityBlocks meshRef={globalCityBlocks} materialRef={globalCityMaterial} />
       <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
