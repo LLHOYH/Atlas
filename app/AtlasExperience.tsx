@@ -81,11 +81,24 @@ function normalizedAgentEnergy(value: number) {
   return THREE.MathUtils.clamp(value / CITY_ENERGY_REFERENCE, 0, 1);
 }
 
-function agentEnergyLabel(value: number) {
-  if (value >= 0.78) return "INTENSE";
-  if (value >= 0.52) return "ACTIVE";
-  if (value >= 0.28) return "RISING";
-  return "LOW";
+const agentDensityLevels = [
+  { level: 0, max: 0, label: "0", color: "#10282f" },
+  { level: 1, max: 100, label: "1–100", color: "#1d5964" },
+  { level: 2, max: 1_000, label: "101–1K", color: "#287982" },
+  { level: 3, max: 10_000, label: "1K–10K", color: "#319b91" },
+  { level: 4, max: 100_000, label: "10K–100K", color: "#6eb16f" },
+  { level: 5, max: 1_000_000, label: "100K–1M", color: "#b6b75d" },
+  { level: 6, max: 10_000_000, label: "1M–10M", color: "#e2a04b" },
+  { level: 7, max: 100_000_000, label: "10M–100M", color: "#ffd36f" },
+] as const;
+
+function agentDensityLevel(liveAgentCount: number) {
+  const safeCount = Math.max(0, Math.floor(liveAgentCount));
+  return agentDensityLevels.find((level) => safeCount <= level.max) ?? agentDensityLevels.at(-1)!;
+}
+
+function agentDensityBarWidth(level: (typeof agentDensityLevels)[number]) {
+  return level.level === 0 ? 3 : Math.round((level.level / (agentDensityLevels.length - 1)) * 100);
 }
 
 function latLngToVector3(lat: number, lng: number, radius: number) {
@@ -344,15 +357,6 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
   );
 }
 
-function hashString(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return Math.abs(hash >>> 0);
-}
-
 type CountryPoint = { lng: number; lat: number };
 
 const COUNTRY_BOTTOM_RADIUS = 3.003;
@@ -499,11 +503,11 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
 }
 
 function CountrySurfaces({
-  energyByCountry = {},
+  liveAgentsByCountry = {},
   selectedCountryKey,
   onSelect,
 }: {
-  energyByCountry?: Record<string, number>;
+  liveAgentsByCountry?: Record<string, number>;
   selectedCountryKey: string | null;
   onSelect: (country: CountrySelection) => void;
 }) {
@@ -511,19 +515,12 @@ function CountrySurfaces({
   const outlines = useRef<Array<THREE.LineSegments | null>>([]);
   const hoveredCountry = useRef<number | null>(null);
   const hoverStrengths = useMemo(() => new Float32Array(atlasGeoData.countries.length), []);
-  const palette = useMemo(() => ["#174049", "#1b4b53", "#20535a", "#285963", "#1d4650"].map((color) => new THREE.Color(color)), []);
-  const gold = useMemo(() => new THREE.Color("#f0c75e"), []);
-  const dark = useMemo(() => new THREE.Color("#000000"), []);
-  const peakEnergy = useMemo(
-    () => Math.max(...Object.values(energyByCountry), 1),
-    [energyByCountry],
-  );
+  const densityColors = useMemo(() => agentDensityLevels.map((level) => new THREE.Color(level.color)), []);
   const countries = useMemo(() => atlasGeoData.countries.map((country) => ({
     name: country.name,
     energyKey: countryEnergyKey(country.name),
     ...buildCountryGeometry(country),
-    color: palette[hashString(country.name) % palette.length],
-  })), [palette]);
+  })), []);
   const countryHitAreas = useMemo(() => atlasGeoData.countries.map((country) => {
     const coordinates = country.polygons.map((polygon) => polygon.map((flatRing) => {
       const ring: [number, number][] = [];
@@ -558,27 +555,30 @@ function CountrySurfaces({
 
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
-      const energy = THREE.MathUtils.clamp((energyByCountry[country.energyKey] ?? 0) / peakEnergy, 0, 1);
+      const liveAgentCount = liveAgentsByCountry[country.energyKey] ?? 0;
+      const density = agentDensityLevel(liveAgentCount);
+      const densityColor = densityColors[density.level];
       const isSelected = selectedCountryKey === country.energyKey;
       const target = hoveredCountry.current === index ? 1 : isSelected ? 0.74 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
-      const lift = Math.max(energy * 0.38, next);
+      const liveLift = liveAgentCount > 0 ? 0.08 + density.level * 0.025 : 0;
+      const lift = Math.max(liveLift, next);
       hoverStrengths[index] = next;
       const mesh = meshes.current[index];
       const outline = outlines.current[index];
       if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = lift;
       if (mesh?.material instanceof THREE.MeshStandardMaterial) {
-        mesh.material.color.copy(country.color).lerp(gold, energy * 0.82).lerp(gold, next * 0.98);
-        mesh.material.emissive.copy(dark).lerp(gold, Math.max(energy, next));
-        mesh.material.emissiveIntensity = energy * 1.08 + next * 1.3;
+        mesh.material.color.copy(densityColor);
+        mesh.material.emissive.copy(densityColor);
+        mesh.material.emissiveIntensity = 0.18 + density.level * 0.11 + next * 0.72;
       }
       if (outline) {
         const radiusScale = 1 + lift * (COUNTRY_HOVER_RADIUS / COUNTRY_TOP_RADIUS - 1);
         outline.scale.setScalar(radiusScale);
         if (outline.material instanceof THREE.LineBasicMaterial) {
-          outline.material.color.set(energy > 0.02 || next > 0.02 ? "#ffe19a" : "#4f919a");
-          outline.material.opacity = 0.42 + energy * 0.5 + next * 0.08;
+          outline.material.color.set(next > 0.02 ? "#ffe19a" : density.color);
+          outline.material.opacity = 0.34 + (liveAgentCount > 0 ? 0.12 : 0) + density.level * 0.04 + next * 0.12;
         }
       }
     });
@@ -625,7 +625,8 @@ function CountrySurfaces({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       {countries.map((country, index) => {
-        const energy = THREE.MathUtils.clamp((energyByCountry[country.energyKey] ?? 0) / peakEnergy, 0, 1);
+        const liveAgentCount = liveAgentsByCountry[country.energyKey] ?? 0;
+        const density = agentDensityLevel(liveAgentCount);
         return (
         <group key={country.name}>
           <mesh
@@ -637,9 +638,9 @@ function CountrySurfaces({
             frustumCulled={false}
           >
             <meshStandardMaterial
-              color={country.color.clone().lerp(gold, energy * 0.82)}
-              emissive={gold}
-              emissiveIntensity={energy * 1.08}
+              color={density.color}
+              emissive={density.color}
+              emissiveIntensity={0.18 + density.level * 0.11}
               roughness={0.56}
               metalness={0.16}
               side={THREE.DoubleSide}
@@ -653,7 +654,7 @@ function CountrySurfaces({
             frustumCulled={false}
             raycast={() => undefined}
           >
-            <lineBasicMaterial color={energy > 0 ? "#ffe19a" : "#4f919a"} transparent opacity={0.42 + energy * 0.5} depthWrite={false} />
+            <lineBasicMaterial color={density.color} transparent opacity={0.34 + (liveAgentCount > 0 ? 0.12 : 0) + density.level * 0.04} depthWrite={false} />
           </lineSegments>
         </group>
         );
@@ -1056,11 +1057,12 @@ function Earth({
     () => new Map(cities.map((city) => [normalizeLabelName(city.name), city.color])),
     [cities],
   );
-  const energyByCountry = useMemo(() => cities.reduce<Record<string, number>>((energy, city) => {
+  const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
-    energy[key] = (energy[key] ?? 0) + city.agentEnergy;
-    return energy;
-  }, {}), [cities]);
+    const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
+    counts[key] = (counts[key] ?? 0) + seededLiveAgents + (liveCounts[city.name] ?? 0);
+    return counts;
+  }, {}), [cities, liveCounts]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1211,7 +1213,7 @@ function Earth({
         <sphereGeometry args={[3, 128, 128]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      <CountrySurfaces energyByCountry={energyByCountry} selectedCountryKey={selectedCountryKey} onSelect={onCountrySelect} />
+      <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} onSelect={onCountrySelect} />
       <EnergyParticles cities={cities} layer={layer} />
       <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
@@ -1457,11 +1459,13 @@ function atlasPresenceToSignal(presence: AtlasPresence): Signal {
 function CountryProfileCard({
   country,
   cities,
+  liveCounts,
   onCitySelect,
   onTopicSelect,
 }: {
   country: CountrySelection;
   cities: City[];
+  liveCounts: Record<string, number>;
   onCitySelect: (city: City) => void;
   onTopicSelect: (topic: string) => void;
 }) {
@@ -1470,19 +1474,11 @@ function CountryProfileCard({
     [cities, country.key],
   );
   const countryAgents = useMemo(() => countryCities.flatMap((city) => city.agents), [countryCities]);
-  const countryEnergy = countryCities.reduce((total, city) => total + city.agentEnergy, 0);
-  const peakCountryEnergy = useMemo(() => {
-    const energy = cities.reduce<Record<string, number>>((totals, city) => {
-      const key = countryEnergyKey(city.country);
-      totals[key] = (totals[key] ?? 0) + city.agentEnergy;
-      return totals;
-    }, {});
-    return Math.max(...Object.values(energy), 1);
-  }, [cities]);
-  const energyLevel = THREE.MathUtils.clamp(countryEnergy / peakCountryEnergy, 0, 1);
-  const energyPercent = Math.round(energyLevel * 100);
-  const energyLabel = countryAgents.length ? agentEnergyLabel(energyLevel) : "NO SIGNAL";
-  const activeAgents = countryAgents.filter((agent) => agent.status !== "offline").length;
+  const seededLiveAgents = countryAgents.filter((agent) => agent.status !== "offline").length;
+  const connectedLiveAgents = countryCities.reduce((total, city) => total + (liveCounts[city.name] ?? 0), 0);
+  const countryLiveAgents = seededLiveAgents + connectedLiveAgents;
+  const density = agentDensityLevel(countryLiveAgents);
+  const densityBarWidth = agentDensityBarWidth(density);
   const workingAgents = countryAgents.filter((agent) => agent.status === "working").length;
   const countryTopics = useMemo(() => {
     const totals = new Map<string, { topic: string; events: number; energy: number }>();
@@ -1515,22 +1511,22 @@ function CountryProfileCard({
         Centered at {Math.abs(country.lat).toFixed(1)}°{country.lat >= 0 ? "N" : "S"} · {Math.abs(country.lng).toFixed(1)}°{country.lng >= 0 ? "E" : "W"}
       </p>
       <div className="activityTotal countryActivityTotal">
-        <span />
-        <strong>{countryEnergy.toLocaleString()}</strong>
-        <small>country energy</small>
+        <span style={{ background: density.color, boxShadow: `0 0 11px ${density.color}` }} />
+        <strong>{countryLiveAgents.toLocaleString()}</strong>
+        <small>live agents</small>
         <em>{workingAgents} working</em>
       </div>
-      <div className="energyMeter" aria-label={`${country.name} energy level ${energyLabel}, ${energyPercent} percent`}>
-        <div><span>ENERGY LEVEL</span><b>{energyLabel} · {energyPercent}%</b></div>
-        <div className="energyMeterTrack" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={energyPercent}><i style={{ width: `${energyPercent}%` }} /></div>
-        <small>Relative 24H agent activity across the global Atlas network</small>
+      <div className="energyMeter" aria-label={`${country.name} energy level ${density.level}, ${countryLiveAgents} live agents`}>
+        <div><span>ENERGY LEVEL</span><b style={{ color: density.color }}>LEVEL {density.level} · {density.label}</b></div>
+        <div className="energyMeterTrack" aria-hidden="true"><i style={{ width: `${densityBarWidth}%`, background: density.color, boxShadow: `0 0 12px ${density.color}` }} /></div>
+        <small>Calculated directly from the number of agents currently live in this country</small>
       </div>
       <div className="countrySummaryGrid" aria-label={`${country.name} network summary`}>
         <span><b>{countryCities.length}</b><small>Cities</small></span>
-        <span><b>{countryAgents.length}</b><small>Agents</small></span>
-        <span><b>{activeAgents}</b><small>Active</small></span>
+        <span><b>{(countryAgents.length + connectedLiveAgents).toLocaleString()}</b><small>Observed</small></span>
+        <span><b>{countryLiveAgents.toLocaleString()}</b><small>Live</small></span>
       </div>
-      {countryAgents.length ? (
+      {countryAgents.length || connectedLiveAgents ? (
         <>
           <div className="countrySectionLabel">HOT TOPICS · 24H</div>
           <div className="topicList">
@@ -1542,14 +1538,20 @@ function CountryProfileCard({
           </div>
           <div className="countrySectionLabel">OBSERVED CITIES</div>
           <div className="countryCityList">
-            {countryCities.map((city) => (
-              <button key={city.id} onClick={() => onCitySelect(city)}>
-                <i style={{ background: city.color, boxShadow: `0 0 8px ${city.color}` }} />
-                <span><b>{city.name}</b><small>{city.category} · {city.agents.length} agents</small></span>
-                <em>{city.agentEnergy}</em>
-                <ChevronRight size={13} />
-              </button>
-            ))}
+            {countryCities.map((city) => {
+              const connectedCityAgents = liveCounts[city.name] ?? 0;
+              const cityLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length + connectedCityAgents;
+              const cityObservedAgents = city.agents.length + connectedCityAgents;
+              const cityDensity = agentDensityLevel(cityLiveAgents);
+              return (
+                <button key={city.id} onClick={() => onCitySelect(city)}>
+                  <i style={{ background: cityDensity.color, boxShadow: `0 0 8px ${cityDensity.color}` }} />
+                  <span><b>{city.name}</b><small>{city.category} · {cityObservedAgents} observed</small></span>
+                  <em>{cityLiveAgents} live</em>
+                  <ChevronRight size={13} />
+                </button>
+              );
+            })}
           </div>
         </>
       ) : (
@@ -1692,13 +1694,16 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   );
 
   const liveCounts = useMemo(() => visiblePresenceFeed.reduce<Record<string, number>>((counts, item) => {
+    if (item.entityKind !== "ai" || item.status === "Offline" || item.activity === "Offline") return counts;
     counts[item.city] = (counts[item.city] ?? 0) + 1;
     return counts;
   }, {}), [visiblePresenceFeed]);
 
   const seededAgents = useMemo(() => cities.flatMap((city) => city.agents), [cities]);
+  const seededLiveAgents = seededAgents.filter((agent) => agent.status !== "offline");
   const liveAiAgents = visiblePresenceFeed.filter((item) => item.entityKind === "ai");
-  const worldAgentEnergy = cities.reduce((total, city) => total + city.agentEnergy, 0) + liveAiAgents.length * 50;
+  const connectedLiveAiAgents = liveAiAgents.filter((agent) => agent.status !== "Offline" && agent.activity !== "Offline");
+  const worldLiveAgentCount = seededLiveAgents.length + connectedLiveAiAgents.length;
   const worldAgentCount = seededAgents.length + liveAiAgents.length;
   const workingAgentCount = seededAgents.filter((agent) => agent.status === "working").length
     + liveAiAgents.filter((agent) => !["Idle", "Offline", "Sleeping"].includes(agent.activity)).length;
@@ -1706,17 +1711,19 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     + liveAiAgents.filter((agent) => agent.status !== "Offline").length;
   const selectedWorkingAgents = selectedCity.agents.filter((agent) => agent.status === "working").length;
   const selectedActiveAgents = selectedCity.agents.filter((agent) => agent.status !== "offline").length;
-  const selectedEnergyLevel = normalizedAgentEnergy(selectedCity.agentEnergy);
-  const selectedEnergyPercent = Math.round(selectedEnergyLevel * 100);
-  const selectedEnergyLabel = agentEnergyLabel(selectedEnergyLevel);
+  const selectedConnectedAgents = liveCounts[selectedCity.name] ?? 0;
+  const selectedLiveAgents = selectedActiveAgents + selectedConnectedAgents;
+  const selectedObservedAgents = selectedCity.agents.length + selectedConnectedAgents;
+  const selectedDensity = agentDensityLevel(selectedLiveAgents);
+  const selectedDensityBarWidth = agentDensityBarWidth(selectedDensity);
   const selectedHotTopics = selectedCity.hotTopics.length
     ? selectedCity.hotTopics
     : selectedCity.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
   const pulseBars = useMemo(() => {
-    const values = cities.map((city) => city.agentEnergy);
+    const values = cities.map((city) => city.agents.filter((agent) => agent.status !== "offline").length + (liveCounts[city.name] ?? 0));
     const peak = Math.max(...values, 1);
     return values.map((value) => 16 + Math.round((value / peak) * 76));
-  }, [cities]);
+  }, [cities, liveCounts]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1853,9 +1860,9 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       </header>
 
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
-        <div className="panelTitle"><Globe2 size={14} /><span>AGENT PULSE · 24H</span><i /></div>
-        <strong>{worldAgentEnergy.toLocaleString()}</strong>
-        <small>global agent energy</small>
+        <div className="panelTitle"><Globe2 size={14} /><span>AGENT PULSE · NOW</span><i /></div>
+        <strong>{worldLiveAgentCount.toLocaleString()}</strong>
+        <small>live agents worldwide</small>
         <div className="pulseStats">
           <span><Bot size={13} /><b>{worldAgentCount}</b> Agents</span>
           <span><Zap size={13} /><b>{workingAgentCount}</b> Working</span>
@@ -1868,11 +1875,15 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       </aside>
 
       <aside className="energyLegend glassPanel" aria-label="Map legend">
-        <div className="legendHeading"><span>MAP LEGEND</span><small>24H</small></div>
+        <div className="legendHeading"><span>MAP LEGEND</span><small>LIVE</small></div>
         <div className="energyScale">
-          <span>COUNTRY / CITY ENERGY</span>
-          <i aria-hidden="true" />
-          <div><small>LOW</small><small>RISING</small><small>ACTIVE</small><small>INTENSE</small></div>
+          <span>LIVE AGENTS PER COUNTRY</span>
+          <p>Energy level = agents live now</p>
+          <div className="energyLevelLegend">
+            {agentDensityLevels.map((density) => (
+              <small key={density.level}><i style={{ background: density.color, boxShadow: `0 0 7px ${density.color}` }} /><b>{density.label}</b></small>
+            ))}
+          </div>
         </div>
         <div className="statusLegend">
           <span>AGENT STATUS</span>
@@ -1889,6 +1900,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         <CountryProfileCard
           country={selectedCountry}
           cities={cities}
+          liveCounts={liveCounts}
           onCitySelect={focusCity}
           onTopicSelect={(topic) => {
             setQuery(topic);
@@ -1905,17 +1917,17 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
           <LocateFixed size={18} />
         </div>
         <div className="activityTotal">
-          <span style={{ background: selectedCity.color }} />
-          <strong>{selectedCity.agentEnergy.toLocaleString()}</strong>
-          <small>agent energy</small>
+          <span style={{ background: selectedDensity.color, boxShadow: `0 0 11px ${selectedDensity.color}` }} />
+          <strong>{selectedLiveAgents.toLocaleString()}</strong>
+          <small>live agents</small>
           <em>{selectedWorkingAgents} working</em>
         </div>
-        <div className="energyMeter" aria-label={`${selectedCity.name} energy level ${selectedEnergyLabel}, ${selectedEnergyPercent} percent`}>
-          <div><span>ENERGY LEVEL</span><b>{selectedEnergyLabel} · {selectedEnergyPercent}%</b></div>
-          <div className="energyMeterTrack" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={selectedEnergyPercent}><i style={{ width: `${selectedEnergyPercent}%` }} /></div>
-          <small>24H signal intensity from {selectedCity.agents.length} connected agents</small>
+        <div className="energyMeter" aria-label={`${selectedCity.name} energy level ${selectedDensity.level}, ${selectedLiveAgents} live agents`}>
+          <div><span>ENERGY LEVEL</span><b style={{ color: selectedDensity.color }}>LEVEL {selectedDensity.level} · {selectedDensity.label}</b></div>
+          <div className="energyMeterTrack" aria-hidden="true"><i style={{ width: `${selectedDensityBarWidth}%`, background: selectedDensity.color, boxShadow: `0 0 12px ${selectedDensity.color}` }} /></div>
+          <small>Calculated directly from the number of agents currently live in this city</small>
         </div>
-        <p className="categoryLine">{selectedActiveAgents} active · {selectedCity.agents.length} observed · last 24 hours</p>
+        <p className="categoryLine">{selectedLiveAgents} live · {selectedObservedAgents} observed · right now</p>
         <div className="topicList">
           {selectedHotTopics.map((topic, index) => (
             <button key={topic.topic} onClick={() => { setQuery(topic.topic); setSearchOpen(true); }}>

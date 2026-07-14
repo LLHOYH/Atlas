@@ -52,15 +52,24 @@ test("regional view tabs cover the six continental regions without dropdown-only
 });
 
 test("phase 4 agent telemetry is visible from country energy through individual agents", () => {
-  assert.match(experienceSource, /<CountrySurfaces energyByCountry=\{energyByCountry\}/);
+  assert.match(experienceSource, /<CountrySurfaces liveAgentsByCountry=\{liveAgentsByCountry\}/);
   assert.match(experienceSource, /function AgentLight\(/);
-  assert.match(experienceSource, /AGENT PULSE · 24H/);
+  assert.match(experienceSource, /AGENT PULSE · NOW/);
   assert.match(experienceSource, /className="energyLegend glassPanel"/);
-  assert.match(experienceSource, /COUNTRY \/ CITY ENERGY/);
+  assert.match(experienceSource, /LIVE AGENTS PER COUNTRY/);
   assert.match(experienceSource, /className="energyMeter"/);
-  assert.match(experienceSource, /selectedEnergyPercent/);
+  assert.match(experienceSource, /selectedDensityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
   assert.match(experienceSource, /selectedCity\.hotTopics/);
+});
+
+test("country background energy uses discrete live-agent population levels through 100 million", () => {
+  for (const range of ["0", "1–100", "101–1K", "1K–10K", "10K–100K", "100K–1M", "1M–10M", "10M–100M"]) {
+    assert.match(experienceSource, new RegExp(`label: "${range}"`));
+  }
+  assert.match(experienceSource, /agent\.status !== "offline"/);
+  assert.match(experienceSource, /mesh\.material\.color\.copy\(densityColor\)/);
+  assert.match(experienceSource, /Energy level = agents live now/);
 });
 
 test("country selection recenters the globe and opens an aggregated country profile", () => {

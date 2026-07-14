@@ -630,7 +630,7 @@ button {
 .energyLegend {
   top: 323px;
   left: 30px;
-  width: 190px;
+  width: 208px;
   padding: 13px 14px;
   border-radius: 13px;
 }
@@ -667,26 +667,43 @@ button {
   letter-spacing: 0.1em;
 }
 
-.energyScale > i {
-  display: block;
-  height: 8px;
-  margin-top: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 3px;
-  background: linear-gradient(90deg, #17383f 0%, #3c9298 32%, #b58442 68%, #ffd36f 100%);
-  box-shadow: 0 0 12px rgba(240, 198, 111, 0.18);
+.energyScale > p {
+  margin: 4px 0 0;
+  color: #4f5d65;
+  font-size: 6.5px;
 }
 
-.energyScale > div {
+.energyLevelLegend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 8px;
+  margin-top: 10px;
+}
+
+.energyLevelLegend small {
   display: flex;
-  justify-content: space-between;
-  margin-top: 5px;
+  gap: 6px;
+  min-width: 0;
+  align-items: center;
+  color: #75828a;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6.5px;
+  white-space: nowrap;
 }
 
-.energyScale small {
-  color: #5e6b74;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 5.5px;
+.energyLevelLegend i {
+  width: 12px;
+  height: 8px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+.energyLevelLegend b {
+  overflow: hidden;
+  font-size: inherit;
+  font-weight: 520;
+  text-overflow: ellipsis;
 }
 
 .statusLegend {
@@ -1686,7 +1703,7 @@ kbd {
   .topNav { display: none; }
   .brand small, .liveBadge { display: none; }
   .worldPulse { display: none; }
-  .energyLegend { top: 86px; left: 16px; width: 180px; }
+  .energyLegend { top: 86px; left: 16px; width: 198px; }
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
@@ -1727,7 +1744,7 @@ kbd {
   .searchBar kbd { display: none; }
   .dragHint { top: 86px; bottom: auto; }
   .lodIndicator { top: 108px; right: auto; bottom: auto; left: 12px; min-width: 139px; }
-  .energyLegend { top: 153px; left: 12px; width: 160px; padding: 10px 11px; }
+  .energyLegend { top: 153px; left: 12px; width: 190px; padding: 10px 11px; }
   .statusLegend { margin-top: 9px; padding-top: 8px; }
   .statusLegend > div { gap: 5px 7px; margin-top: 6px; }
   .profilePanel { top: 80px; right: 12px; left: 12px; width: auto; }
