@@ -730,6 +730,134 @@ button {
 
 .citySignal::-webkit-scrollbar { display: none; }
 
+.countrySignal {
+  border-color: rgba(240, 198, 111, 0.16);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(240, 198, 111, 0.075), transparent 38%),
+    linear-gradient(145deg, rgba(14, 23, 30, 0.82), rgba(5, 10, 15, 0.72));
+}
+
+.countrySignalHeader h1 {
+  max-width: 236px;
+  line-height: 1.03;
+}
+
+.countrySignalHeader svg {
+  color: #d1ae60;
+  filter: drop-shadow(0 0 8px rgba(240, 198, 111, 0.25));
+}
+
+.countryCoordinateLine {
+  margin: 7px 0 0;
+  color: #5e6b73;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.035em;
+}
+
+.countryActivityTotal > span {
+  background: #f0c66f;
+  box-shadow: 0 0 11px #f0c66f;
+}
+
+.countrySummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 11px 0 14px;
+}
+
+.countrySummaryGrid > span {
+  display: flex;
+  min-width: 0;
+  padding: 9px 7px;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.countrySummaryGrid b {
+  color: #d8e0e3;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.countrySummaryGrid small {
+  margin-top: 3px;
+  color: #637079;
+  font-size: 7px;
+}
+
+.countrySectionLabel {
+  margin: 12px 0 7px;
+  color: #75694e;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6.5px;
+  letter-spacing: 0.12em;
+}
+
+.countryCityList {
+  display: grid;
+  gap: 4px;
+}
+
+.countryCityList button {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto 14px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #aeb9be;
+  text-align: left;
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.countryCityList button:hover {
+  border-color: rgba(240, 198, 111, 0.22);
+  background: rgba(240, 198, 111, 0.055);
+  transform: translateX(2px);
+}
+
+.countryCityList button > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.countryCityList button > span { min-width: 0; }
+.countryCityList b { display: block; font-size: 9px; font-weight: 540; }
+.countryCityList small { display: block; overflow: hidden; margin-top: 2px; color: #65737b; font-size: 7px; white-space: nowrap; text-overflow: ellipsis; }
+.countryCityList em { color: #d0ad62; font-family: var(--font-geist-mono), monospace; font-size: 8px; font-style: normal; }
+.countryCityList svg { color: #56646c; }
+
+.countryNoSignal {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  margin-top: 15px;
+  padding: 14px;
+  border: 1px dashed rgba(103, 145, 153, 0.2);
+  border-radius: 9px;
+  background: rgba(35, 91, 98, 0.035);
+  color: #61777d;
+}
+
+.countryNoSignal > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.countryNoSignal b { color: #9aa9ad; font-size: 9px; font-weight: 540; }
+.countryNoSignal small { margin-top: 3px; color: #5e6b72; font-size: 7.5px; line-height: 1.45; }
+
 .signalHeader {
   display: flex;
   align-items: start;

@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { geoContains } from "d3-geo";
+import { geoCentroid, geoContains } from "d3-geo";
 import atlasGeoData from "./atlas-geo-data.json";
 import atlasLabelData from "./atlas-label-data.json";
 import {
@@ -100,6 +100,7 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
 
 type LabelKind = "country" | "region" | "city" | "street";
 type GeoCenter = { lat: number; lng: number };
+type CountrySelection = GeoCenter & { name: string; key: string; distance: number };
 
 type GeographicLabel = {
   id: string;
@@ -497,7 +498,15 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   return { geometry, outline };
 }
 
-function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<string, number> }) {
+function CountrySurfaces({
+  energyByCountry = {},
+  selectedCountryKey,
+  onSelect,
+}: {
+  energyByCountry?: Record<string, number>;
+  selectedCountryKey: string | null;
+  onSelect: (country: CountrySelection) => void;
+}) {
   const meshes = useRef<Array<THREE.Mesh | null>>([]);
   const outlines = useRef<Array<THREE.LineSegments | null>>([]);
   const hoveredCountry = useRef<number | null>(null);
@@ -527,6 +536,18 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
       ? { type: "Polygon" as const, coordinates: coordinates[0] }
       : { type: "MultiPolygon" as const, coordinates };
   }), []);
+  const countryCenters = useMemo(() => {
+    const labelCenters = new Map(atlasLabelData.countries.map((country) => [
+      countryEnergyKey(country.name),
+      { lat: country.lat, lng: country.lng },
+    ]));
+    return countryHitAreas.map((country, index) => {
+      const labelCenter = labelCenters.get(countries[index].energyKey);
+      if (labelCenter) return labelCenter;
+      const [lng, lat] = geoCentroid(country);
+      return { lat, lng };
+    });
+  }, [countries, countryHitAreas]);
 
   const findCountryAt = (geo: GeoCenter) => {
     for (let countryIndex = 0; countryIndex < countryHitAreas.length; countryIndex += 1) {
@@ -538,7 +559,8 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
       const energy = THREE.MathUtils.clamp((energyByCountry[country.energyKey] ?? 0) / peakEnergy, 0, 1);
-      const target = hoveredCountry.current === index ? 1 : 0;
+      const isSelected = selectedCountryKey === country.energyKey;
+      const target = hoveredCountry.current === index ? 1 : isSelected ? 0.74 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
       const lift = Math.max(energy * 0.38, next);
@@ -582,6 +604,21 @@ function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<st
         onPointerOut={() => {
           hoveredCountry.current = null;
           document.body.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          if (event.delta > 5) return;
+          const localPoint = event.object.worldToLocal(event.point.clone());
+          const countryIndex = findCountryAt(vectorToGeoCenter(localPoint));
+          if (countryIndex === null) return;
+          event.stopPropagation();
+          const country = countries[countryIndex];
+          onSelect({
+            name: country.name,
+            key: country.energyKey,
+            lat: countryCenters[countryIndex].lat,
+            lng: countryCenters[countryIndex].lng,
+            distance: 6.15,
+          });
         }}
       >
         <sphereGeometry args={[COUNTRY_HOVER_RADIUS + 0.025, 96, 64]} />
@@ -973,24 +1010,28 @@ function AttentionFlow({ from, to, color, delay }: { from: City; to: City; color
 function Earth({
   cities,
   selectedCity,
+  selectedCountryKey,
   focusLocation,
   focusDistance,
   focusRevision,
   layer,
   liveCounts = {},
   onSelect,
+  onCountrySelect,
   onAgentSelect,
   onDetailChange,
   onStreetEnter,
 }: {
   cities: City[];
   selectedCity: City;
+  selectedCountryKey: string | null;
   focusLocation: GeoCenter;
   focusDistance: number | null;
   focusRevision: number;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
+  onCountrySelect: (country: CountrySelection) => void;
   onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
   onStreetEnter: (center: GeoCenter) => void;
@@ -1170,7 +1211,7 @@ function Earth({
         <sphereGeometry args={[3, 128, 128]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      <CountrySurfaces energyByCountry={energyByCountry} />
+      <CountrySurfaces energyByCountry={energyByCountry} selectedCountryKey={selectedCountryKey} onSelect={onCountrySelect} />
       <EnergyParticles cities={cities} layer={layer} />
       <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
@@ -1244,37 +1285,42 @@ function Earth({
 function EarthScene({
   cities,
   selectedCity,
+  countryTarget,
   viewTarget,
   viewRevision,
   layer,
   liveCounts = {},
   onSelect,
+  onCountrySelect,
   onAgentSelect,
   onDetailChange,
 }: {
   cities: City[];
   selectedCity: City;
+  countryTarget: CountrySelection | null;
   viewTarget: RegionView | null;
   viewRevision: number;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
+  onCountrySelect: (country: CountrySelection) => void;
   onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
   const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
-  const streetCenter = !viewTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
+  const streetCenter = !viewTarget && !countryTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
     ? streetState.center
     : null;
-  const globeOverride = !viewTarget && globeState?.cityId === selectedCity.id && globeState.viewRevision === viewRevision
+  const globeOverride = !viewTarget && !countryTarget && globeState?.cityId === selectedCity.id && globeState.viewRevision === viewRevision
     ? globeState.center
     : null;
-  const focusLocation = viewTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+  const focusLocation = viewTarget ?? countryTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
 
   const enterStreetView = useCallback((center: GeoCenter) => {
+    if (countryTarget) return;
     setStreetState({ cityId: selectedCity.id, center, viewRevision });
-  }, [selectedCity.id, viewRevision]);
+  }, [countryTarget, selectedCity.id, viewRevision]);
 
   const exitStreetView = useCallback((center: GeoCenter) => {
     setGlobeState({ cityId: selectedCity.id, center, viewRevision });
@@ -1286,6 +1332,12 @@ function EarthScene({
     setGlobeState(null);
     onSelect(city);
   }, [onSelect]);
+
+  const selectActivityCountry = useCallback((country: CountrySelection) => {
+    setStreetState(null);
+    setGlobeState(null);
+    onCountrySelect(country);
+  }, [onCountrySelect]);
 
   return (
     <>
@@ -1303,12 +1355,14 @@ function EarthScene({
             <Earth
               cities={cities}
               selectedCity={selectedCity}
+              selectedCountryKey={countryTarget?.key ?? null}
               focusLocation={focusLocation}
-              focusDistance={viewTarget?.distance ?? null}
+              focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
               focusRevision={viewRevision}
               layer={layer}
               liveCounts={liveCounts}
               onSelect={selectActivityCity}
+              onCountrySelect={selectActivityCountry}
               onAgentSelect={onAgentSelect}
               onDetailChange={onDetailChange}
               onStreetEnter={enterStreetView}
@@ -1398,6 +1452,114 @@ function atlasPresenceToSignal(presence: AtlasPresence): Signal {
     status: presence.controlState,
     detail: presence.detail,
   };
+}
+
+function CountryProfileCard({
+  country,
+  cities,
+  onCitySelect,
+  onTopicSelect,
+}: {
+  country: CountrySelection;
+  cities: City[];
+  onCitySelect: (city: City) => void;
+  onTopicSelect: (topic: string) => void;
+}) {
+  const countryCities = useMemo(
+    () => cities.filter((city) => countryEnergyKey(city.country) === country.key),
+    [cities, country.key],
+  );
+  const countryAgents = useMemo(() => countryCities.flatMap((city) => city.agents), [countryCities]);
+  const countryEnergy = countryCities.reduce((total, city) => total + city.agentEnergy, 0);
+  const peakCountryEnergy = useMemo(() => {
+    const energy = cities.reduce<Record<string, number>>((totals, city) => {
+      const key = countryEnergyKey(city.country);
+      totals[key] = (totals[key] ?? 0) + city.agentEnergy;
+      return totals;
+    }, {});
+    return Math.max(...Object.values(energy), 1);
+  }, [cities]);
+  const energyLevel = THREE.MathUtils.clamp(countryEnergy / peakCountryEnergy, 0, 1);
+  const energyPercent = Math.round(energyLevel * 100);
+  const energyLabel = countryAgents.length ? agentEnergyLabel(energyLevel) : "NO SIGNAL";
+  const activeAgents = countryAgents.filter((agent) => agent.status !== "offline").length;
+  const workingAgents = countryAgents.filter((agent) => agent.status === "working").length;
+  const countryTopics = useMemo(() => {
+    const totals = new Map<string, { topic: string; events: number; energy: number }>();
+    countryCities.forEach((city) => {
+      const topics = city.hotTopics.length
+        ? city.hotTopics
+        : city.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
+      topics.forEach((topic) => {
+        const current = totals.get(topic.topic) ?? { topic: topic.topic, events: 0, energy: 0 };
+        current.events += topic.events;
+        current.energy += topic.energy;
+        totals.set(topic.topic, current);
+      });
+    });
+    return [...totals.values()]
+      .sort((left, right) => right.energy - left.energy || right.events - left.events)
+      .slice(0, 4);
+  }, [countryCities]);
+
+  return (
+    <aside className="citySignal countrySignal glassPanel" aria-live="polite" aria-label={`${country.name} country profile`}>
+      <div className="signalHeader countrySignalHeader">
+        <div>
+          <span className="eyebrow">COUNTRY PROFILE · LIVE NETWORK</span>
+          <h1>{country.name}</h1>
+        </div>
+        <Globe2 size={18} />
+      </div>
+      <p className="countryCoordinateLine">
+        Centered at {Math.abs(country.lat).toFixed(1)}°{country.lat >= 0 ? "N" : "S"} · {Math.abs(country.lng).toFixed(1)}°{country.lng >= 0 ? "E" : "W"}
+      </p>
+      <div className="activityTotal countryActivityTotal">
+        <span />
+        <strong>{countryEnergy.toLocaleString()}</strong>
+        <small>country energy</small>
+        <em>{workingAgents} working</em>
+      </div>
+      <div className="energyMeter" aria-label={`${country.name} energy level ${energyLabel}, ${energyPercent} percent`}>
+        <div><span>ENERGY LEVEL</span><b>{energyLabel} · {energyPercent}%</b></div>
+        <div className="energyMeterTrack" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={energyPercent}><i style={{ width: `${energyPercent}%` }} /></div>
+        <small>Relative 24H agent activity across the global Atlas network</small>
+      </div>
+      <div className="countrySummaryGrid" aria-label={`${country.name} network summary`}>
+        <span><b>{countryCities.length}</b><small>Cities</small></span>
+        <span><b>{countryAgents.length}</b><small>Agents</small></span>
+        <span><b>{activeAgents}</b><small>Active</small></span>
+      </div>
+      {countryAgents.length ? (
+        <>
+          <div className="countrySectionLabel">HOT TOPICS · 24H</div>
+          <div className="topicList">
+            {countryTopics.map((topic, index) => (
+              <button key={topic.topic} onClick={() => onTopicSelect(topic.topic)}>
+                <span>0{index + 1}</span>{topic.topic}<small>{topic.events || "LIVE"}</small><ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+          <div className="countrySectionLabel">OBSERVED CITIES</div>
+          <div className="countryCityList">
+            {countryCities.map((city) => (
+              <button key={city.id} onClick={() => onCitySelect(city)}>
+                <i style={{ background: city.color, boxShadow: `0 0 8px ${city.color}` }} />
+                <span><b>{city.name}</b><small>{city.category} · {city.agents.length} agents</small></span>
+                <em>{city.agentEnergy}</em>
+                <ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="countryNoSignal">
+          <Radio size={18} />
+          <span><b>Awaiting Atlas signals</b><small>No connected agents are reporting from this country yet.</small></span>
+        </div>
+      )}
+    </aside>
+  );
 }
 
 function PresenceStudio({
@@ -1508,6 +1670,7 @@ function PresenceStudio({
 function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const presence = useAtlasPresence();
   const [selectedCityId, setSelectedCityId] = useState(cities[0].id);
+  const [selectedCountry, setSelectedCountry] = useState<CountrySelection | null>(null);
   const [regionViewId, setRegionViewId] = useState<RegionViewId | null>(null);
   const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
@@ -1522,6 +1685,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const joined = presence.connected;
   const selectedCity = cities.find((city) => city.id === selectedCityId) ?? cities[0];
   const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
+  const activeFocusLocation = activeRegionView ?? selectedCountry ?? selectedCity;
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
     [joined, presence.configured, presence.presenceFeed],
@@ -1621,12 +1785,21 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
 
   const focusCity = useCallback((city: City) => {
     setRegionViewId(null);
+    setSelectedCountry(null);
     setSelectedCityId(city.id);
+  }, []);
+
+  const focusCountry = useCallback((country: CountrySelection) => {
+    setRegionViewRevision((revision) => revision + 1);
+    setRegionViewId(null);
+    setSelectedCountry(country);
+    setProfile(null);
   }, []);
 
   const chooseRegionView = (nextViewId: RegionViewId) => {
     setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(nextViewId);
+    setSelectedCountry(null);
     const nextView = regionViews.find((view) => view.id === nextViewId);
     if (!nextView) return;
     const anchorCity = cities.find((city) => city.id === nextView.anchorCityId);
@@ -1657,7 +1830,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene cities={cities} selectedCity={selectedCity} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onAgentSelect={chooseAgent} onDetailChange={setDetailLevel} />
+        <EarthScene cities={cities} selectedCity={selectedCity} countryTarget={selectedCountry} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onCountrySelect={focusCountry} onAgentSelect={chooseAgent} onDetailChange={setDetailLevel} />
       </section>
 
       <header className="topBar">
@@ -1712,6 +1885,17 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         </div>
       </aside>
 
+      {selectedCountry ? (
+        <CountryProfileCard
+          country={selectedCountry}
+          cities={cities}
+          onCitySelect={focusCity}
+          onTopicSelect={(topic) => {
+            setQuery(topic);
+            setSearchOpen(true);
+          }}
+        />
+      ) : (
       <aside className="citySignal glassPanel" aria-live="polite">
         <div className="signalHeader">
           <div>
@@ -1750,6 +1934,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         </div>
         <button className="viewSignals agentSearchLink" onClick={() => { setQuery(selectedCity.name); setSearchOpen(true); }}>View all city signals <ArrowUpRight size={12} /></button>
       </aside>
+      )}
 
       <div className="lodIndicator glassPanel" aria-live="polite">
         <span>L0{detailLevel}</span>
@@ -1798,7 +1983,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       </div>
 
       <div className="coordinates">
-        {Math.abs(activeRegionView?.lat ?? selectedCity.lat).toFixed(2)}°{(activeRegionView?.lat ?? selectedCity.lat) >= 0 ? "N" : "S"} · {Math.abs(activeRegionView?.lng ?? selectedCity.lng).toFixed(2)}°{(activeRegionView?.lng ?? selectedCity.lng) >= 0 ? "E" : "W"}
+        {Math.abs(activeFocusLocation.lat).toFixed(2)}°{activeFocusLocation.lat >= 0 ? "N" : "S"} · {Math.abs(activeFocusLocation.lng).toFixed(2)}°{activeFocusLocation.lng >= 0 ? "E" : "W"}
         <span /> {clock}
       </div>
 

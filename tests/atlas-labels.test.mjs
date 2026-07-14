@@ -48,7 +48,7 @@ test("regional view tabs cover the six continental regions without dropdown-only
   assert.doesNotMatch(experienceSource, /id: "world"|Current focus/);
   assert.match(experienceSource, /aria-label="Region views"/);
   assert.match(experienceSource, /aria-pressed=\{regionViewId === view\.id\}/);
-  assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? null\}/);
+  assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? countryTarget\?\.distance \?\? null\}/);
 });
 
 test("phase 4 agent telemetry is visible from country energy through individual agents", () => {
@@ -61,4 +61,13 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedEnergyPercent/);
   assert.match(experienceSource, /className="agentRoster"/);
   assert.match(experienceSource, /selectedCity\.hotTopics/);
+});
+
+test("country selection recenters the globe and opens an aggregated country profile", () => {
+  assert.match(experienceSource, /geoCentroid\(country\)/);
+  assert.match(experienceSource, /onCountrySelect=\{focusCountry\}/);
+  assert.match(experienceSource, /selectedCountryKey=\{countryTarget\?\.key \?\? null\}/);
+  assert.match(experienceSource, /COUNTRY PROFILE · LIVE NETWORK/);
+  assert.match(experienceSource, /className="citySignal countrySignal glassPanel"/);
+  assert.match(experienceSource, /Awaiting Atlas signals/);
 });
