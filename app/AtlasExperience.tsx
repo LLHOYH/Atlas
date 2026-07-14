@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
+import { geoContains } from "d3-geo";
 import atlasGeoData from "./atlas-geo-data.json";
 import atlasLabelData from "./atlas-label-data.json";
 import {
@@ -335,6 +336,27 @@ function unpackCountryRing(flatRing: number[]) {
   return ring;
 }
 
+function prepareCountryRings(polygon: number[][]) {
+  const rings = polygon.map(unpackCountryRing).filter((ring) => ring.length >= 3);
+  if (!rings.length) return rings;
+  const outerMean = rings[0].reduce((sum, point) => sum + point.lng, 0) / rings[0].length;
+  for (let index = 1; index < rings.length; index += 1) {
+    const holeMean = rings[index].reduce((sum, point) => sum + point.lng, 0) / rings[index].length;
+    const longitudeShift = Math.round((outerMean - holeMean) / 360) * 360;
+    rings[index].forEach((point) => {
+      point.lng += longitudeShift;
+    });
+  }
+  return rings;
+}
+
+function vectorToGeoCenter(vector: THREE.Vector3): GeoCenter {
+  const unit = vector.clone().normalize();
+  const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(unit.y, -1, 1)));
+  const theta = THREE.MathUtils.radToDeg(Math.atan2(unit.z, -unit.x));
+  return { lat, lng: normalizeLongitude(theta - 180) };
+}
+
 function sphericalDirection(point: CountryPoint) {
   return latLngToVector3(point.lat, point.lng, 1).normalize();
 }
@@ -381,16 +403,8 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   const outlinePositions: number[] = [];
 
   for (const polygon of country.polygons) {
-    const rings = polygon.map(unpackCountryRing).filter((ring) => ring.length >= 3);
+    const rings = prepareCountryRings(polygon);
     if (!rings.length) continue;
-    const outerMean = rings[0].reduce((sum, point) => sum + point.lng, 0) / rings[0].length;
-    for (let index = 1; index < rings.length; index += 1) {
-      const holeMean = rings[index].reduce((sum, point) => sum + point.lng, 0) / rings[index].length;
-      const longitudeShift = Math.round((outerMean - holeMean) / 360) * 360;
-      rings[index].forEach((point) => {
-        point.lng += longitudeShift;
-      });
-    }
 
     const contour = rings[0].map((point) => new THREE.Vector2(point.lng, point.lat));
     const holes = rings.slice(1).map((ring) => ring.map((point) => new THREE.Vector2(point.lng, point.lat)));
@@ -459,6 +473,25 @@ function CountrySurfaces() {
     ...buildCountryGeometry(country),
     color: palette[hashString(country.name) % palette.length],
   })), [palette]);
+  const countryHitAreas = useMemo(() => atlasGeoData.countries.map((country) => {
+    const coordinates = country.polygons.map((polygon) => polygon.map((flatRing) => {
+      const ring: [number, number][] = [];
+      for (let index = 0; index < flatRing.length; index += 2) {
+        ring.push([flatRing[index], flatRing[index + 1]]);
+      }
+      return ring;
+    }));
+    return coordinates.length === 1
+      ? { type: "Polygon" as const, coordinates: coordinates[0] }
+      : { type: "MultiPolygon" as const, coordinates };
+  }), []);
+
+  const findCountryAt = (geo: GeoCenter) => {
+    for (let countryIndex = 0; countryIndex < countryHitAreas.length; countryIndex += 1) {
+      if (geoContains(countryHitAreas[countryIndex], [geo.lng, geo.lat])) return countryIndex;
+    }
+    return null;
+  };
 
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
@@ -496,6 +529,21 @@ function CountrySurfaces() {
         <sphereGeometry args={[3, 36, 24]} />
         <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.035} depthWrite={false} />
       </mesh>
+      <mesh
+        onPointerMove={(event) => {
+          const localPoint = event.object.worldToLocal(event.point.clone());
+          const nextCountry = findCountryAt(vectorToGeoCenter(localPoint));
+          hoveredCountry.current = nextCountry;
+          if (event.buttons === 0) document.body.style.cursor = nextCountry === null ? "grab" : "pointer";
+        }}
+        onPointerOut={() => {
+          hoveredCountry.current = null;
+          document.body.style.cursor = "grab";
+        }}
+      >
+        <sphereGeometry args={[COUNTRY_HOVER_RADIUS + 0.025, 96, 64]} />
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
+      </mesh>
       {countries.map((country, index) => (
         <group key={country.name}>
           <mesh
@@ -505,14 +553,6 @@ function CountrySurfaces() {
             }}
             geometry={country.geometry}
             frustumCulled={false}
-            onPointerOver={() => {
-              hoveredCountry.current = index;
-              document.body.style.cursor = "pointer";
-            }}
-            onPointerOut={() => {
-              if (hoveredCountry.current === index) hoveredCountry.current = null;
-              document.body.style.cursor = "grab";
-            }}
           >
             <meshStandardMaterial
               color={country.color}
