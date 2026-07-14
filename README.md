@@ -6,16 +6,18 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 2 — Identity, Presence & Database Integration · Complete**
+**Phase 3 — Geographic LOD & Global Street Detail · In progress**
 
-Phase 1 established Atlas's visual and interaction foundation. Phase 2 adds the database-backed living identity layer: Supabase-hosted world data, human and AI profiles, presence broadcasts, realtime map updates, and repeatable seed and verification tooling.
+Phase 1 established Atlas's visual and interaction foundation. Phase 2 added the database-backed living identity layer. Phase 3 adds worldwide country, state/region, city, and deep street detail while preserving the pixel globe and north-up navigation.
 
 The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
 ## What is included
 
 - A fixed-camera, momentum-driven pixel globe
-- Zoom-driven country, city, town, and street detail levels
+- Zoom-driven country, state/region, city, and street detail levels
+- Worldwide labels for 176 countries, 294 first-level regions, and 243 major cities
+- Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Country boundary geometry and city-level attention-flow arcs
 - Switchable attention, AI, technology, and travel layers
 - Natural-language-style search across cities, topics, humans, and AI
@@ -60,4 +62,4 @@ npm run test:db
 
 The baseline world pulse and ambient profiles are realistic seeded database records. Authenticated presence broadcasts are layered into that world live.
 
-Country geometry is generated from Natural Earth data through `world-atlas`.
+Country geometry and global labels are generated from Natural Earth data. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.

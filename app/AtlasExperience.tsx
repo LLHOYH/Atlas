@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
@@ -67,6 +67,7 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
 }
 
 type LabelKind = "country" | "region" | "city" | "street";
+type GeoCenter = { lat: number; lng: number };
 
 type GeographicLabel = {
   id: string;
@@ -98,6 +99,10 @@ function normalizeLabelName(value: string) {
 
 function nearestEquivalentAngle(target: number, reference: number) {
   return target + Math.round((reference - target) / (Math.PI * 2)) * Math.PI * 2;
+}
+
+function normalizeLongitude(value: number) {
+  return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
 function GlobeLabel({
@@ -136,6 +141,93 @@ function GlobeLabel({
         </div>
       </Html>
     </group>
+  );
+}
+
+function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: GeoCenter) => void }) {
+  const container = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<import("maplibre-gl").Map | null>(null);
+  const exitRequested = useRef(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const exitStreetView = useCallback(() => {
+    if (exitRequested.current) return;
+    exitRequested.current = true;
+    const mapCenter = mapInstance.current?.getCenter();
+    onExit(mapCenter ? { lat: mapCenter.lat, lng: mapCenter.lng } : center);
+  }, [center, onExit]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let map: import("maplibre-gl").Map | null = null;
+
+    void import("maplibre-gl").then(({ default: maplibregl }) => {
+      if (cancelled || !container.current) return;
+      map = new maplibregl.Map({
+        container: container.current,
+        style: "https://tiles.openfreemap.org/styles/dark",
+        center: [center.lng, center.lat],
+        zoom: 11.5,
+        minZoom: 3.5,
+        maxZoom: 19,
+        bearing: 0,
+        pitch: 0,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        attributionControl: { compact: true },
+      });
+      mapInstance.current = map;
+      map.touchZoomRotate.disableRotation();
+      map.on("load", () => {
+        if (cancelled || !map) return;
+        for (const layerId of ["highway_name_other", "highway_name_motorway"]) {
+          if (!map.getLayer(layerId)) continue;
+          map.setPaintProperty(layerId, "text-color", "#d9b76b");
+          map.setPaintProperty(layerId, "text-halo-color", "#071013");
+          map.setPaintProperty(layerId, "text-halo-width", 1);
+        }
+        for (const layerId of ["place_village", "place_town", "place_city", "place_city_large", "place_state"]) {
+          if (!map.getLayer(layerId)) continue;
+          map.setPaintProperty(layerId, "text-color", "#9fcbd0");
+          map.setPaintProperty(layerId, "text-halo-color", "#061014");
+          map.setPaintProperty(layerId, "text-halo-width", 1.2);
+        }
+        for (const [layerId, color] of [
+          ["highway_minor", "#1d3c42"],
+          ["highway_major_inner", "#826d42"],
+          ["highway_motorway_inner", "#b18b43"],
+          ["boundary_state", "#3a7f86"],
+        ] as const) {
+          if (map.getLayer(layerId)) map.setPaintProperty(layerId, "line-color", color);
+        }
+        setLoaded(true);
+      });
+      map.on("zoom", () => {
+        if (map && map.getZoom() <= 5.5) exitStreetView();
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      mapInstance.current = null;
+      map?.remove();
+    };
+  }, [center.lat, center.lng, exitStreetView]);
+
+  return (
+    <div className={`streetMapStage ${loaded ? "loaded" : ""}`}>
+      <div ref={container} className="streetMapCanvas" />
+      <div className="streetMapReadout glassPanel">
+        <span>GLOBAL STREET GRID</span>
+        <b>{Math.abs(center.lat).toFixed(3)}°{center.lat >= 0 ? "N" : "S"} · {Math.abs(center.lng).toFixed(3)}°{center.lng >= 0 ? "E" : "W"}</b>
+        <small>OpenStreetMap vector detail</small>
+      </div>
+      <button className="streetMapReturn glassPanel" onClick={exitStreetView}>
+        <Globe2 size={13} /> Return to globe
+      </button>
+      <div className="streetMapHint">Drag to move · Scroll to zoom · Zoom out to return</div>
+    </div>
   );
 }
 
@@ -531,17 +623,21 @@ function AttentionFlow({ from, to, color, delay }: { from: City; to: City; color
 function Earth({
   cities,
   selectedCity,
+  focusLocation,
   layer,
   liveCounts = {},
   onSelect,
   onDetailChange,
+  onStreetEnter,
 }: {
   cities: City[];
   selectedCity: City;
+  focusLocation: GeoCenter;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onDetailChange: (level: DetailLevel) => void;
+  onStreetEnter: (center: GeoCenter) => void;
 }) {
   const globe = useRef<THREE.Group>(null);
   const drag = useRef({ active: false, x: 0, y: 0 });
@@ -552,6 +648,7 @@ function Earth({
   const yawRotation = useRef(new THREE.Quaternion());
   const pitchAxis = useRef(new THREE.Vector3(1, 0, 0));
   const yawAxis = useRef(new THREE.Vector3(0, 1, 0));
+  const streetEntryLocked = useRef(false);
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const cityMaterial = useRef<THREE.MeshBasicMaterial>(null);
@@ -574,9 +671,9 @@ function Earth({
   useLayoutEffect(() => {
     if (!globe.current) return;
     const targetOrientation = {
-      pitch: THREE.MathUtils.degToRad(selectedCity.lat),
+      pitch: THREE.MathUtils.degToRad(focusLocation.lat),
       yaw: nearestEquivalentAngle(
-        -Math.PI / 2 - THREE.MathUtils.degToRad(selectedCity.lng),
+        -Math.PI / 2 - THREE.MathUtils.degToRad(focusLocation.lng),
         orientation.current.yaw,
       ),
     };
@@ -591,11 +688,20 @@ function Earth({
     }
 
     focus.current = targetOrientation;
-  }, [selectedCity]);
+  }, [focusLocation.lat, focusLocation.lng]);
 
   useFrame(({ camera }) => {
     if (!globe.current) return;
     const distance = camera.position.length();
+    if (distance > 3.84) {
+      streetEntryLocked.current = false;
+    } else if (distance <= 3.69 && !streetEntryLocked.current) {
+      streetEntryLocked.current = true;
+      onStreetEnter({
+        lat: THREE.MathUtils.radToDeg(orientation.current.pitch),
+        lng: normalizeLongitude(-90 - THREE.MathUtils.radToDeg(orientation.current.yaw)),
+      });
+    }
     const nextDetail: DetailLevel = distance > 6
       ? 1
       : distance > 5.05
@@ -772,32 +878,67 @@ function EarthScene({
   onSelect: (city: City) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
+  const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
+  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
+  const streetCenter = streetState?.cityId === selectedCity.id ? streetState.center : null;
+  const globeOverride = globeState?.cityId === selectedCity.id ? globeState.center : null;
+  const focusLocation = globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+
+  const enterStreetView = useCallback((center: GeoCenter) => {
+    setStreetState({ cityId: selectedCity.id, center });
+  }, [selectedCity.id]);
+
+  const exitStreetView = useCallback((center: GeoCenter) => {
+    setGlobeState({ cityId: selectedCity.id, center });
+    setStreetState(null);
+  }, [selectedCity.id]);
+
+  const selectActivityCity = useCallback((city: City) => {
+    setStreetState(null);
+    setGlobeState(null);
+    onSelect(city);
+  }, [onSelect]);
+
   return (
-    <Canvas
-      camera={{ position: [0, 0.1, 6.3], fov: 38, near: 0.1, far: 70 }}
-      dpr={[1, 1.7]}
-      gl={{ alpha: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.08 }}
-    >
-      <ambientLight intensity={0.24} color="#7ab9e8" />
-      <directionalLight position={[5, 3, 5]} intensity={2.35} color="#d9edff" />
-      <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
-      <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
-      <Suspense fallback={null}>
-        <Earth cities={cities} selectedCity={selectedCity} layer={layer} liveCounts={liveCounts} onSelect={onSelect} onDetailChange={onDetailChange} />
-      </Suspense>
-      <OrbitControls
-        makeDefault
-        enableRotate={false}
-        enablePan={false}
-        enableZoom
-        enableDamping
-        dampingFactor={0.1}
-        zoomSpeed={0.7}
-        minDistance={3.65}
-        maxDistance={10}
-      />
-      <fog attach="fog" args={["#020508", 11, 42]} />
-    </Canvas>
+    <>
+      <div className={`earthCanvasLayer ${streetCenter ? "streetMode" : ""}`}>
+        <Canvas
+          camera={{ position: [0, 0.1, 6.3], fov: 38, near: 0.1, far: 70 }}
+          dpr={[1, 1.7]}
+          gl={{ alpha: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.08 }}
+        >
+          <ambientLight intensity={0.24} color="#7ab9e8" />
+          <directionalLight position={[5, 3, 5]} intensity={2.35} color="#d9edff" />
+          <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
+          <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
+          <Suspense fallback={null}>
+            <Earth
+              cities={cities}
+              selectedCity={selectedCity}
+              focusLocation={focusLocation}
+              layer={layer}
+              liveCounts={liveCounts}
+              onSelect={selectActivityCity}
+              onDetailChange={onDetailChange}
+              onStreetEnter={enterStreetView}
+            />
+          </Suspense>
+          <OrbitControls
+            makeDefault
+            enableRotate={false}
+            enablePan={false}
+            enableZoom
+            enableDamping
+            dampingFactor={0.1}
+            zoomSpeed={0.7}
+            minDistance={3.65}
+            maxDistance={10}
+          />
+          <fog attach="fog" args={["#020508", 11, 42]} />
+        </Canvas>
+      </div>
+      {streetCenter && <StreetMap center={streetCenter} onExit={exitStreetView} />}
+    </>
   );
 }
 

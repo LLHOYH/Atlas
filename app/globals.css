@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
   --ink: #f1f5f7;
@@ -99,6 +100,137 @@ button {
 .globeStage canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+.earthCanvasLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 280ms ease, transform 420ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.earthCanvasLayer.streetMode {
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(1.06);
+}
+
+.streetMapStage {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  background: #02070a;
+  opacity: 0;
+  animation: street-map-enter 360ms ease forwards;
+}
+
+.streetMapCanvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  filter: saturate(0.78) brightness(0.76) contrast(1.14);
+  transition: opacity 240ms ease;
+}
+
+.streetMapStage.loaded .streetMapCanvas { opacity: 1; }
+
+.streetMapStage::before,
+.streetMapStage::after {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+}
+
+.streetMapStage::before {
+  background:
+    radial-gradient(circle at center, transparent 46%, rgba(0, 0, 0, 0.48) 100%),
+    linear-gradient(to bottom, rgba(2, 7, 10, 0.52), transparent 20%, transparent 76%, rgba(2, 7, 10, 0.62));
+}
+
+.streetMapStage::after {
+  opacity: 0.12;
+  background-image: linear-gradient(rgba(117, 221, 230, 0.16) 1px, transparent 1px);
+  background-size: 100% 4px;
+  mix-blend-mode: screen;
+}
+
+.streetMapReadout,
+.streetMapReturn,
+.streetMapHint {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.streetMapReadout {
+  top: 92px;
+  display: flex;
+  min-width: 230px;
+  padding: 9px 12px;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.streetMapReadout span,
+.streetMapReadout b {
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.streetMapReadout span { color: #d9b76b; font-size: 7px; letter-spacing: 0.15em; }
+.streetMapReadout b { margin-top: 4px; color: #dce7e9; font-size: 9px; font-weight: 560; }
+.streetMapReadout small { margin-top: 3px; color: #61727a; font-size: 7px; }
+
+.streetMapReturn {
+  top: 157px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: #a8c5cc;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.streetMapReturn:hover {
+  border-color: rgba(217, 183, 107, 0.42);
+  color: #e2c57e;
+}
+
+.streetMapHint {
+  bottom: 88px;
+  color: rgba(176, 198, 203, 0.6);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 5px #020507;
+}
+
+.streetMapStage .maplibregl-ctrl-bottom-right {
+  right: 22px;
+  bottom: 38px;
+}
+
+.streetMapStage .maplibregl-ctrl-attrib {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(3, 9, 12, 0.78);
+  color: #77878d;
+  font-size: 8px;
+}
+
+.streetMapStage .maplibregl-ctrl-attrib a { color: #91aeb4; }
+
+@keyframes street-map-enter {
+  to { opacity: 1; }
 }
 
 .mapLabel {
