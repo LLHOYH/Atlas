@@ -837,61 +837,63 @@ button {
 
 .regionControl {
   display: flex;
+  width: 100%;
+  max-width: 540px;
   gap: 7px;
   align-items: center;
-  padding: 5px 7px 5px 10px;
+  padding: 5px;
   border-radius: 11px;
 }
 
 .regionControl > span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 0 5px;
   color: #5f6c75;
   font-family: var(--font-geist-mono), monospace;
   font-size: 8px;
   letter-spacing: 0.12em;
 }
 
-.regionSelect {
-  position: relative;
+.regionTabs {
   display: flex;
-  min-width: 154px;
+  min-width: 0;
+  gap: 2px;
   align-items: center;
-  padding: 7px 7px 7px 9px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.055);
-  color: #8fd2db;
-  transition: background 160ms ease, color 160ms ease;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.regionControl:hover .regionSelect,
-.regionControl:focus-within .regionSelect {
-  background: rgba(255, 255, 255, 0.09);
-  color: #c2f1f5;
-}
+.regionTabs::-webkit-scrollbar { display: none; }
 
-.regionSelect select {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  margin: 0 5px;
+.regionTabs button {
+  flex: 0 0 auto;
+  padding: 7px 9px;
   border: 0;
-  outline: 0;
-  appearance: none;
   background: transparent;
-  color: #d8e3e6;
-  font-family: inherit;
+  border-radius: 7px;
+  color: #66747e;
   font-size: 9px;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.regionSelect select option {
-  background: #081116;
+.regionTabs button:hover {
+  background: rgba(255, 255, 255, 0.07);
   color: #d8e3e6;
 }
 
-.regionSelect > svg:last-child {
-  color: #5f737b;
-  pointer-events: none;
-  transform: rotate(90deg);
+.regionTabs button:focus-visible {
+  outline: 1px solid rgba(143, 210, 219, 0.72);
+  outline-offset: -1px;
+}
+
+.regionTabs button.active {
+  background: rgba(220, 175, 85, 0.14);
+  color: #f0c66f;
+  box-shadow: inset 0 0 0 1px rgba(224, 181, 91, 0.16), 0 0 12px rgba(218, 169, 68, 0.08);
 }
 
 .searchBar {
@@ -937,6 +939,8 @@ button {
 .bottomDock .leftDockControls {
   grid-column: 1;
   display: flex;
+  width: min(100%, 540px);
+  min-width: 0;
   flex-direction: column-reverse;
   gap: 6px;
   align-items: flex-start;
@@ -1317,7 +1321,7 @@ kbd {
 .broadcastButton:disabled { cursor: wait; opacity: 0.58; }
 
 @media (max-width: 1180px) {
-  .bottomDock { grid-template-columns: auto minmax(240px, 390px) minmax(155px, 1fr); gap: 12px; }
+  .bottomDock { grid-template-columns: minmax(0, 1fr) minmax(240px, 390px); gap: 12px; }
   .bottomDock .leftDockControls { grid-column: 1; }
   .bottomDock .searchBar { grid-column: 2; }
   .layerControl > span { display: none; }
@@ -1334,7 +1338,7 @@ kbd {
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
-  .bottomDock { right: 16px; bottom: 17px; left: 16px; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+  .bottomDock { right: 16px; bottom: 17px; left: 16px; grid-template-columns: minmax(260px, 1fr) minmax(240px, 390px); gap: 12px; }
   .bottomDock .leftDockControls { grid-column: 1; }
   .bottomDock .searchBar { grid-column: 2; width: 100%; }
   .dragHint { bottom: 76px; }
@@ -1354,11 +1358,14 @@ kbd {
   .topicList button { display: block; width: auto; flex: 0 0 auto; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; background: rgba(255, 255, 255, 0.03); }
   .topicList button span, .topicList button svg { display: none; }
   .entityStrip { display: none; }
-  .bottomDock { right: 12px; bottom: 16px; left: 12px; gap: 8px; }
+  .citySignal { bottom: 112px; }
+  .bottomDock { right: 12px; bottom: 16px; left: 12px; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .bottomDock .leftDockControls { grid-row: 2; width: 100%; }
+  .bottomDock .searchBar { grid-row: 1; grid-column: 1; width: 100%; max-width: 390px; justify-self: center; }
   .leftDockControls .layerControl { display: none; }
   .regionControl { padding: 5px; }
   .regionControl > span { display: none; }
-  .regionSelect { min-width: 128px; }
+  .regionTabs { width: 100%; }
   .searchBar span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .searchBar kbd { display: none; }
   .dragHint { top: 86px; bottom: auto; }

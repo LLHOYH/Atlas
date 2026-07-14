@@ -44,7 +44,6 @@ type Layer = (typeof layers)[number];
 type DetailLevel = 1 | 2 | 3 | 4;
 
 const regionViews = [
-  { id: "world", label: "World", lat: 12, lng: 10, distance: 7.5 },
   { id: "north-america", label: "North America", lat: 43, lng: -102, distance: 6.15, anchorCityId: "san-francisco" },
   { id: "south-america", label: "South America", lat: -17, lng: -60, distance: 6.15, anchorCityId: "sao-paulo" },
   { id: "europe", label: "Europe", lat: 50, lng: 15, distance: 6.05, anchorCityId: "london" },
@@ -833,6 +832,7 @@ function Earth({
   selectedCity,
   focusLocation,
   focusDistance,
+  focusRevision,
   layer,
   liveCounts = {},
   onSelect,
@@ -843,6 +843,7 @@ function Earth({
   selectedCity: City;
   focusLocation: GeoCenter;
   focusDistance: number | null;
+  focusRevision: number;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
@@ -899,7 +900,7 @@ function Earth({
     }
 
     focus.current = targetOrientation;
-  }, [focusDistance, focusLocation.lat, focusLocation.lng]);
+  }, [focusDistance, focusLocation.lat, focusLocation.lng, focusRevision]);
 
   useFrame(({ camera }, delta) => {
     if (!globe.current) return;
@@ -1144,6 +1145,7 @@ function EarthScene({
               selectedCity={selectedCity}
               focusLocation={focusLocation}
               focusDistance={viewTarget?.distance ?? null}
+              focusRevision={viewRevision}
               layer={layer}
               liveCounts={liveCounts}
               onSelect={selectActivityCity}
@@ -1330,7 +1332,7 @@ function PresenceStudio({
 function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const presence = useAtlasPresence();
   const [selectedCity, setSelectedCity] = useState(cities[0]);
-  const [regionViewId, setRegionViewId] = useState<RegionViewId | "">("");
+  const [regionViewId, setRegionViewId] = useState<RegionViewId | null>(null);
   const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
@@ -1429,16 +1431,15 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   }, [cities, query, visiblePresenceFeed]);
 
   const focusCity = useCallback((city: City) => {
-    setRegionViewId("");
+    setRegionViewId(null);
     setSelectedCity(city);
   }, []);
 
-  const chooseRegionView = (nextViewId: RegionViewId | "") => {
+  const chooseRegionView = (nextViewId: RegionViewId) => {
     setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(nextViewId);
-    if (!nextViewId) return;
     const nextView = regionViews.find((view) => view.id === nextViewId);
-    if (!nextView || !("anchorCityId" in nextView)) return;
+    if (!nextView) return;
     const anchorCity = cities.find((city) => city.id === nextView.anchorCityId);
     if (anchorCity) setSelectedCity(anchorCity);
   };
@@ -1541,21 +1542,22 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
 
       <div className="bottomDock">
         <div className="leftDockControls">
-          <label className="regionControl glassPanel">
-            <span>VIEW</span>
-            <div className="regionSelect">
-              <Globe2 size={13} />
-              <select
-                value={regionViewId}
-                onChange={(event) => chooseRegionView(event.target.value as RegionViewId | "")}
-                aria-label="Jump to a world region"
-              >
-                <option value="">Current focus</option>
-                {regionViews.map((view) => <option key={view.id} value={view.id}>{view.label}</option>)}
-              </select>
-              <ChevronRight size={12} aria-hidden="true" />
+          <div className="regionControl glassPanel">
+            <span><Globe2 size={12} /> VIEW</span>
+            <div className="regionTabs" role="group" aria-label="Region views">
+              {regionViews.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  className={regionViewId === view.id ? "active" : ""}
+                  aria-pressed={regionViewId === view.id}
+                  onClick={() => chooseRegionView(view.id)}
+                >
+                  {view.label}
+                </button>
+              ))}
             </div>
-          </label>
+          </div>
 
           <div className="layerControl glassPanel" role="group" aria-label="Attention layer">
             <span>LAYER</span>

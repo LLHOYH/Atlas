@@ -41,10 +41,12 @@ test("globe land is built from complete country silhouettes instead of sampling 
   }
 });
 
-test("regional view shortcuts cover the world and every continent", () => {
-  for (const region of ["World", "North America", "South America", "Europe", "Africa", "Asia", "Oceania"]) {
+test("regional view tabs cover the six continental regions without dropdown-only views", () => {
+  for (const region of ["North America", "South America", "Europe", "Africa", "Asia", "Oceania"]) {
     assert.match(experienceSource, new RegExp(`label: "${region}"`));
   }
-  assert.match(experienceSource, /aria-label="Jump to a world region"/);
+  assert.doesNotMatch(experienceSource, /id: "world"|Current focus/);
+  assert.match(experienceSource, /aria-label="Region views"/);
+  assert.match(experienceSource, /aria-pressed=\{regionViewId === view\.id\}/);
   assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? null\}/);
 });
