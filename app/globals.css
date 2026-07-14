@@ -269,23 +269,23 @@ button {
 }
 
 .mapLabel--city {
-  padding: 3px 5px 3px 10px;
-  font-size: 9px;
-  font-weight: 620;
-  letter-spacing: 0.08em;
+  padding: 2px 3px 2px 6px;
+  font-size: 5px;
+  font-weight: 580;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .mapLabel--city::before {
   position: absolute;
   top: 50%;
-  left: 2px;
-  width: 4px;
-  height: 4px;
+  left: 1px;
+  width: 2px;
+  height: 2px;
   transform: translateY(-50%);
   border-radius: 1px;
   background: currentColor;
-  box-shadow: 0 0 7px currentColor;
+  box-shadow: 0 0 4px currentColor;
   content: "";
 }
 

@@ -181,7 +181,7 @@ function GlobeLabel({
   const worldPosition = useMemo(() => new THREE.Vector3(), []);
   const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
   const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 2.5 : 0.9;
+  const distanceFactor = kind === "country" ? 1.875 : kind === "region" ? 1.5 : kind === "city" ? 1.5 : 0.9;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -753,16 +753,13 @@ function CityLight({
   city,
   selected,
   layer,
-  liveCount,
   onSelect,
 }: {
   city: City;
   selected: boolean;
   layer: Layer;
-  liveCount: number;
   onSelect: (city: City) => void;
 }) {
-  const pulse = useRef<THREE.Group>(null);
   const position = useMemo(
     () => latLngToVector3(city.lat, city.lng, 3.035),
     [city.lat, city.lng],
@@ -784,21 +781,8 @@ function CityLight({
       .getStyle();
   }, [energy, layer]);
 
-  useFrame(({ clock }) => {
-    if (!pulse.current) return;
-    const signalEnergy = 1 + energy * 0.58 + Math.min(liveCount, 20) * 0.018;
-    const scale = signalEnergy * (1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.14);
-    pulse.current.scale.setScalar(scale);
-  });
-
   return (
     <group position={position} quaternion={orientation}>
-      <group ref={pulse}>
-        <mesh position={[0, 0, 0.008]}>
-          <ringGeometry args={[selected ? 0.09 : 0.07, selected ? 0.145 : 0.11, 32]} />
-          <meshBasicMaterial color={color} transparent opacity={0.32 + energy * 0.38} blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
-      </group>
       <mesh
         position={[0, 0, towerHeight / 2]}
         onClick={(event) => {
@@ -1229,7 +1213,7 @@ function Earth({
       </mesh>
       <group ref={cityMarkers} visible={false}>
         {cities.map((city) => (
-          <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} liveCount={liveCounts[city.name] ?? 0} onSelect={onSelect} />
+          <CityLight key={city.name} city={city} selected={city.name === selectedCity.name} layer={layer} onSelect={onSelect} />
         ))}
       </group>
       {labelDetail === 1 && globalCountryLabels.map((country) => (

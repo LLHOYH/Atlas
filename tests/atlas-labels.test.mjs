@@ -13,6 +13,10 @@ const experienceSource = await readFile(
   new URL("../app/AtlasExperience.tsx", import.meta.url),
   "utf8",
 );
+const globalStylesSource = await readFile(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 const labelGeneratorSource = await readFile(
   new URL("../scripts/generate-atlas-labels.mjs", import.meta.url),
   "utf8",
@@ -109,6 +113,14 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedDensityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
   assert.match(experienceSource, /selectedCity\.hotTopics/);
+});
+
+test("country detail keeps city labels compact without an unexplained breathing ring", () => {
+  assert.match(experienceSource, /kind === "city" \? 1\.5/);
+  assert.doesNotMatch(experienceSource, /const signalEnergy =/);
+  assert.doesNotMatch(experienceSource, /ref=\{pulse\}>\s*<mesh position=\{\[0, 0, 0\.008\]\}/);
+  assert.match(globalStylesSource, /\.mapLabel--city \{[\s\S]*?font-size: 5px;/);
+  assert.match(globalStylesSource, /\.mapLabel--city::before \{[\s\S]*?width: 2px;[\s\S]*?height: 2px;/);
 });
 
 test("Agent Pulse charts seven days of distinct live-agent history", () => {
