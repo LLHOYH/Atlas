@@ -99,6 +99,17 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });
 
+test("side cards collapse into independent square icon controls", () => {
+  assert.match(experienceSource, /const \[pulseCollapsed, setPulseCollapsed\] = useState\(false\)/);
+  assert.match(experienceSource, /const \[networkCollapsed, setNetworkCollapsed\] = useState\(false\)/);
+  assert.match(experienceSource, /aria-label="Collapse Agent Pulse"/);
+  assert.match(experienceSource, /aria-label="Expand Agent Pulse"/);
+  assert.match(experienceSource, /aria-label="Collapse Live Agent Network"/);
+  assert.match(experienceSource, /aria-label="Expand Live Agent Network"/);
+  assert.match(experienceSource, /sideCardToggle--pulse/);
+  assert.match(experienceSource, /sideCardToggle--network/);
+});
+
 test("country background energy uses six live-agent levels with one top tier above one million", () => {
   for (const range of ["0–100", "101–1K", "1K–10K", "10K–100K", "100K–1M", ">1M"]) {
     assert.match(experienceSource, new RegExp(`label: "${range}"`));

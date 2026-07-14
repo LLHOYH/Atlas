@@ -542,6 +542,7 @@ button {
 
 .worldPulse,
 .citySignal,
+.sideCardToggle,
 .layerControl,
 .searchBar,
 .coordinates,
@@ -578,6 +579,61 @@ button {
 .panelTitle > i {
   margin-left: auto;
 }
+
+.panelCollapseButton {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #778791;
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.panelCollapseButton:hover {
+  border-color: rgba(123, 213, 255, 0.28);
+  background: rgba(123, 213, 255, 0.08);
+  color: #d6edf4;
+}
+
+.sideCardToggle {
+  top: 112px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  place-items: center;
+  border-radius: 11px;
+  color: #87b9c8;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.sideCardToggle:hover {
+  border-color: rgba(123, 213, 255, 0.32);
+  background: linear-gradient(145deg, rgba(23, 46, 57, 0.88), rgba(6, 14, 19, 0.8));
+  color: #d4eff8;
+  transform: translateY(-1px);
+}
+
+.sideCardToggle > i {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #67e9bc;
+  box-shadow: 0 0 7px #67e9bc;
+}
+
+.sideCardToggle--pulse { left: 30px; }
+.sideCardToggle--network { right: 30px; }
 
 .pulseTotal > strong {
   display: block;
@@ -881,6 +937,21 @@ button {
   display: flex;
   align-items: start;
   justify-content: space-between;
+}
+
+.signalHeaderActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.signalHeaderActions .panelCollapseButton {
+  margin: -4px -4px 0 0;
+}
+
+.signalHeaderActions .panelCollapseButton svg {
+  color: inherit;
+  filter: none;
 }
 
 .signalHeader svg {
@@ -1706,6 +1777,9 @@ kbd {
   .brand small, .liveBadge { display: none; }
   .worldPulse { top: 86px; left: 16px; width: 198px; max-height: calc(100vh - 171px); padding: 13px; }
   .citySignal { top: 86px; right: 16px; width: 248px; padding: 14px; }
+  .sideCardToggle { top: 86px; }
+  .sideCardToggle--pulse { left: 16px; }
+  .sideCardToggle--network { right: 16px; }
   .signalHeader h1 { font-size: 22px; }
   .topicList button { padding: 8px 0; }
   .bottomDock { right: 16px; bottom: 17px; left: 16px; grid-template-columns: minmax(260px, 1fr) minmax(240px, 390px); gap: 12px; }
@@ -1734,6 +1808,9 @@ kbd {
   .agentRoster button { padding: 6px; }
   .agentRoster button > em { display: none; }
   .citySignal { bottom: 112px; }
+  .sideCardToggle { width: 40px; height: 40px; }
+  .sideCardToggle--pulse { top: 80px; right: auto; left: 12px; }
+  .sideCardToggle--network { top: auto; right: 12px; bottom: 112px; left: auto; }
   .bottomDock { right: 12px; bottom: 16px; left: 12px; grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .bottomDock .leftDockControls { grid-row: 2; width: 100%; }
   .bottomDock .searchBar { grid-row: 1; grid-column: 1; width: 100%; max-width: 390px; justify-self: center; }

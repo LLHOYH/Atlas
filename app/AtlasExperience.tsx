@@ -12,6 +12,7 @@ import {
   ArrowUpRight,
   Bot,
   Check,
+  ChevronLeft,
   ChevronRight,
   CircleUserRound,
   Code2,
@@ -1459,12 +1460,14 @@ function CountryProfileCard({
   liveCounts,
   onCitySelect,
   onTopicSelect,
+  onCollapse,
 }: {
   country: CountrySelection;
   cities: City[];
   liveCounts: Record<string, number>;
   onCitySelect: (city: City) => void;
   onTopicSelect: (topic: string) => void;
+  onCollapse: () => void;
 }) {
   const countryCities = useMemo(
     () => cities.filter((city) => countryEnergyKey(city.country) === country.key),
@@ -1502,7 +1505,12 @@ function CountryProfileCard({
           <span className="eyebrow">COUNTRY PROFILE · LIVE NETWORK</span>
           <h1>{country.name}</h1>
         </div>
-        <Globe2 size={18} />
+        <div className="signalHeaderActions">
+          <Globe2 size={18} />
+          <button type="button" className="panelCollapseButton" onClick={onCollapse} aria-label="Collapse Live Agent Network" aria-expanded="true" title="Collapse Live Agent Network">
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
       <p className="countryCoordinateLine">
         Centered at {Math.abs(country.lat).toFixed(1)}°{country.lat >= 0 ? "N" : "S"} · {Math.abs(country.lng).toFixed(1)}°{country.lng >= 0 ? "E" : "W"}
@@ -1679,6 +1687,8 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const [profile, setProfile] = useState<Signal | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
   const [presenceOpen, setPresenceOpen] = useState(false);
+  const [pulseCollapsed, setPulseCollapsed] = useState(false);
+  const [networkCollapsed, setNetworkCollapsed] = useState(false);
   const [clock, setClock] = useState("--:-- SGT");
   const searchRef = useRef<HTMLInputElement>(null);
   const joined = presence.connected;
@@ -1856,8 +1866,26 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         </div>
       </header>
 
+      {pulseCollapsed ? (
+        <button
+          type="button"
+          className="sideCardToggle sideCardToggle--pulse glassPanel"
+          onClick={() => setPulseCollapsed(false)}
+          aria-label="Expand Agent Pulse"
+          aria-expanded="false"
+          title="Expand Agent Pulse"
+        >
+          <Radio size={17} />
+          <i />
+        </button>
+      ) : (
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
-        <div className="panelTitle"><Globe2 size={14} /><span>AGENT PULSE · NOW</span><i /></div>
+        <div className="panelTitle">
+          <Globe2 size={14} /><span>AGENT PULSE · NOW</span><i />
+          <button type="button" className="panelCollapseButton" onClick={() => setPulseCollapsed(true)} aria-label="Collapse Agent Pulse" aria-expanded="true" title="Collapse Agent Pulse">
+            <ChevronLeft size={14} />
+          </button>
+        </div>
         <div className="pulseOverview">
           <div className="pulseTotal">
             <strong>{worldLiveAgentCount.toLocaleString()}</strong>
@@ -1895,12 +1923,26 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
           </div>
         </div>
       </aside>
+      )}
 
-      {selectedCountry ? (
+      {networkCollapsed ? (
+        <button
+          type="button"
+          className="sideCardToggle sideCardToggle--network glassPanel"
+          onClick={() => setNetworkCollapsed(false)}
+          aria-label="Expand Live Agent Network"
+          aria-expanded="false"
+          title="Expand Live Agent Network"
+        >
+          <Bot size={17} />
+          <i />
+        </button>
+      ) : selectedCountry ? (
         <CountryProfileCard
           country={selectedCountry}
           cities={cities}
           liveCounts={liveCounts}
+          onCollapse={() => setNetworkCollapsed(true)}
           onCitySelect={focusCity}
           onTopicSelect={(topic) => {
             setQuery(topic);
@@ -1914,7 +1956,12 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
             <span className="eyebrow">LIVE AGENT NETWORK · {selectedCity.country.toUpperCase()}</span>
             <h1>{selectedCity.name}</h1>
           </div>
-          <LocateFixed size={18} />
+          <div className="signalHeaderActions">
+            <LocateFixed size={18} />
+            <button type="button" className="panelCollapseButton" onClick={() => setNetworkCollapsed(true)} aria-label="Collapse Live Agent Network" aria-expanded="true" title="Collapse Live Agent Network">
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
         <div className="activityTotal">
           <span style={{ background: selectedDensity.color, boxShadow: `0 0 11px ${selectedDensity.color}` }} />
