@@ -130,4 +130,103 @@ on conflict (id) do update set
   display_order = excluded.display_order,
   updated_at = now();
 
+insert into public.atlas_agents
+  (id, city_id, display_name, runtime, package_name, package_version, status, activity, topic, detail, latitude, longitude, energy, last_seen_at, display_order)
+values
+  ('singapore-merlion-code', 'singapore', 'Merlion Code', 'Codex', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Coding', 'Agentic systems', 'Building a multi-agent payment orchestration service', 1.31, 103.85, 96, now() - interval '24 seconds', 1),
+  ('singapore-harbor-scout', 'singapore', 'Harbor Scout', 'OpenClaw', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Searching', 'Stablecoin rails', 'Monitoring cross-border settlement activity', 1.38, 103.80, 68, now() - interval '2 minutes', 2),
+  ('singapore-garden-planner', 'singapore', 'Garden Planner', 'LangGraph', '@atlas-ai/sdk', '0.4.0-seed', 'idle', 'Planning', 'Developer tools', 'Waiting for the next product planning task', 1.34, 103.77, 38, now() - interval '18 minutes', 3),
+  ('singapore-night-index', 'singapore', 'Night Index', 'Custom Node agent', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Indexing', 'Regional research', 'Last completed an overnight research digest', 1.29, 103.82, 12, now() - interval '6 hours', 4),
+
+  ('tokyo-shibuya-code', 'tokyo', 'Shibuya Code', 'Claude Code', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Coding', 'Robotics', 'Refactoring a warehouse navigation controller', 35.66, 139.70, 92, now() - interval '31 seconds', 1),
+  ('tokyo-hikari-motion', 'tokyo', 'Hikari Motion', 'AutoGen', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Simulating', 'Robotics', 'Testing motion plans against a digital twin', 35.70, 139.74, 88, now() - interval '54 seconds', 2),
+  ('tokyo-sakura-route', 'tokyo', 'Sakura Route', 'Gemini CLI', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Planning', 'Kyoto travel', 'Comparing autumn rail itineraries', 35.72, 139.65, 63, now() - interval '4 minutes', 3),
+  ('tokyo-sumida-archive', 'tokyo', 'Sumida Archive', 'CrewAI', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Reading', 'Japanese learning', 'Last synchronized a language-learning corpus', 35.64, 139.78, 10, now() - interval '7 hours', 4),
+
+  ('san-francisco-context-weaver', 'san-francisco', 'Context Weaver', 'Codex', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Coding', 'Model context', 'Evaluating long-running agent memory strategies', 37.78, -122.40, 98, now() - interval '16 seconds', 1),
+  ('san-francisco-bay-builder', 'san-francisco', 'Bay Builder', 'Claude Code', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Building', 'AI infrastructure', 'Shipping an event-driven agent runtime', 37.75, -122.45, 94, now() - interval '43 seconds', 2),
+  ('san-francisco-soma-evaluator', 'san-francisco', 'SOMA Evaluator', 'LangGraph', '@atlas-ai/sdk', '0.4.0-seed', 'idle', 'Evaluating', 'Model context', 'Paused between benchmark suites', 37.76, -122.41, 44, now() - interval '12 minutes', 3),
+  ('san-francisco-fog-monitor', 'san-francisco', 'Fog Monitor', 'OpenClaw', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Monitoring', 'Robotics', 'Watching fleet telemetry and anomaly signals', 37.80, -122.44, 72, now() - interval '3 minutes', 4),
+
+  ('sao-paulo-pix-analyst', 'sao-paulo', 'PIX Analyst', 'CrewAI', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Researching', 'Payment systems', 'Comparing instant-payment adoption patterns', -23.54, -46.61, 91, now() - interval '37 seconds', 1),
+  ('sao-paulo-paulista-creator', 'sao-paulo', 'Paulista Creator', 'Gemini CLI', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Designing', 'Music festivals', 'Drafting a regional cultural discovery guide', -23.57, -46.66, 61, now() - interval '5 minutes', 2),
+  ('sao-paulo-samba-scheduler', 'sao-paulo', 'Samba Scheduler', 'AutoGen', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Planning', 'Football', 'Coordinating a multi-city event calendar', -23.52, -46.68, 84, now() - interval '68 seconds', 3),
+  ('sao-paulo-pinheiros-index', 'sao-paulo', 'Pinheiros Index', 'Custom Node agent', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Indexing', 'Brazilian fintech', 'Last refreshed a fintech company graph', -23.59, -46.63, 11, now() - interval '8 hours', 4),
+
+  ('london-safety-evaluator', 'london', 'Safety Evaluator', 'Claude Code', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Evaluating', 'AI safety', 'Running an agent reliability benchmark', 51.52, -0.10, 95, now() - interval '21 seconds', 1),
+  ('london-city-market', 'london', 'City Market', 'OpenClaw', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Analyzing', 'Market structure', 'Tracking public market structure changes', 51.50, -0.16, 66, now() - interval '3 minutes', 2),
+  ('london-thames-climate', 'london', 'Thames Climate', 'LangGraph', '@atlas-ai/sdk', '0.4.0-seed', 'idle', 'Reading', 'Climate research', 'Waiting on a new climate dataset', 51.49, -0.08, 35, now() - interval '24 minutes', 3),
+  ('london-soho-research', 'london', 'Soho Research', 'CrewAI', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Researching', 'AI safety', 'Last produced a policy literature review', 51.53, -0.19, 14, now() - interval '5 hours', 4),
+
+  ('lagos-naira-rails', 'lagos', 'Naira Rails', 'Codex', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Coding', 'Mobile money', 'Implementing a mobile settlement adapter', 6.50, 3.40, 93, now() - interval '29 seconds', 1),
+  ('lagos-rust-mentor', 'lagos', 'Rust Mentor', 'Claude Code', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Teaching', 'Learning Rust', 'Guiding a systems programming session', 6.55, 3.35, 64, now() - interval '4 minutes', 2),
+  ('lagos-lagoon-creative', 'lagos', 'Lagoon Creative', 'Gemini CLI', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Designing', 'Creative tools', 'Generating concepts for a creator workspace', 6.48, 3.36, 82, now() - interval '73 seconds', 3),
+  ('lagos-ikeja-monitor', 'lagos', 'Ikeja Monitor', 'Custom Node agent', '@atlas-ai/sdk', '0.4.0-seed', 'idle', 'Monitoring', 'Mobile money', 'Paused after a network health scan', 6.58, 3.42, 41, now() - interval '16 minutes', 4),
+
+  ('dubai-desert-orbit', 'dubai', 'Desert Orbit', 'AutoGen', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Searching', 'Digital assets', 'Tracking regional digital-asset regulation', 25.21, 55.30, 89, now() - interval '35 seconds', 1),
+  ('dubai-skyline-planner', 'dubai', 'Skyline Planner', 'CrewAI', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Planning', 'Future cities', 'Comparing autonomous mobility scenarios', 25.18, 55.24, 67, now() - interval '2 minutes', 2),
+  ('dubai-souk-research', 'dubai', 'Souk Research', 'OpenClaw', '@atlas-ai/sdk', '0.4.0-seed', 'idle', 'Researching', 'Luxury travel', 'Waiting for a new hospitality research brief', 25.23, 55.22, 39, now() - interval '21 minutes', 3),
+  ('dubai-marina-watch', 'dubai', 'Marina Watch', 'Custom Node agent', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Monitoring', 'Future cities', 'Last completed an urban sensor digest', 25.16, 55.31, 9, now() - interval '9 hours', 4),
+
+  ('sydney-reef-research', 'sydney', 'Reef Research', 'LangGraph', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Researching', 'Ocean research', 'Synthesizing reef recovery observations', -33.86, 151.23, 90, now() - interval '27 seconds', 1),
+  ('sydney-harbor-game', 'sydney', 'Harbor Game', 'Codex', '@atlas-ai/sdk', '0.4.0-seed', 'working', 'Coding', 'Indie games', 'Building a procedural coastal world', -33.89, 151.19, 86, now() - interval '59 seconds', 2),
+  ('sydney-climate-code', 'sydney', 'Climate Code', 'Claude Code', '@atlas-ai/sdk', '0.4.0-seed', 'online', 'Analyzing', 'Climate tech', 'Reviewing urban heat mitigation data', -33.84, 151.17, 65, now() - interval '3 minutes', 3),
+  ('sydney-bondi-scout', 'sydney', 'Bondi Scout', 'OpenClaw', '@atlas-ai/sdk', '0.4.0-seed', 'offline', 'Searching', 'Ocean research', 'Last scanned public ocean sensor feeds', -33.91, 151.25, 13, now() - interval '6 hours', 4)
+on conflict (id) do update set
+  city_id = excluded.city_id,
+  display_name = excluded.display_name,
+  runtime = excluded.runtime,
+  package_name = excluded.package_name,
+  package_version = excluded.package_version,
+  status = excluded.status,
+  activity = excluded.activity,
+  topic = excluded.topic,
+  detail = excluded.detail,
+  latitude = excluded.latitude,
+  longitude = excluded.longitude,
+  energy = excluded.energy,
+  last_seen_at = excluded.last_seen_at,
+  display_order = excluded.display_order,
+  updated_at = now();
+
+insert into public.atlas_agent_events
+  (id, agent_id, city_id, status, activity, topic, detail, energy, occurred_at)
+select
+  'seed-' || agent.id || '-current',
+  agent.id,
+  agent.city_id,
+  agent.status,
+  agent.activity,
+  agent.topic,
+  agent.detail,
+  agent.energy,
+  agent.last_seen_at
+from public.atlas_agents as agent
+where agent.package_version = '0.4.0-seed'
+union all
+select
+  'seed-' || agent.id || '-prior',
+  agent.id,
+  agent.city_id,
+  case when agent.status in ('working', 'offline') then 'online' else agent.status end,
+  agent.activity,
+  coalesce(topic.topic, agent.topic),
+  'Periodic privacy-safe telemetry sample',
+  greatest(5, agent.energy - 12),
+  agent.last_seen_at - interval '6 hours'
+from public.atlas_agents as agent
+left join public.atlas_city_topics as topic
+  on topic.city_id = agent.city_id
+  and topic.rank = ((agent.display_order - 1) % 3) + 1
+where agent.package_version = '0.4.0-seed'
+on conflict (id) do update set
+  agent_id = excluded.agent_id,
+  city_id = excluded.city_id,
+  status = excluded.status,
+  activity = excluded.activity,
+  topic = excluded.topic,
+  detail = excluded.detail,
+  energy = excluded.energy,
+  occurred_at = excluded.occurred_at;
+
 commit;

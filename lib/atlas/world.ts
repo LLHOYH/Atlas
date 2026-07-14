@@ -18,6 +18,31 @@ export type AtlasStreet = {
   lengthDegrees: number;
 };
 
+export type AtlasAgentStatus = "online" | "working" | "idle" | "offline";
+
+export type AtlasAgent = {
+  id: string;
+  cityId: string;
+  name: string;
+  runtime: string;
+  packageName: string;
+  packageVersion: string;
+  status: AtlasAgentStatus;
+  activity: string;
+  topic: string;
+  detail: string;
+  lat: number;
+  lng: number;
+  energy: number;
+  lastSeenAt: string;
+};
+
+export type AtlasHotTopic = {
+  topic: string;
+  events: number;
+  energy: number;
+};
+
 export type AtlasCity = {
   id: string;
   name: string;
@@ -33,6 +58,9 @@ export type AtlasCity = {
   topics: string[];
   signals: AtlasSignal[];
   streets: AtlasStreet[];
+  agents: AtlasAgent[];
+  agentEnergy: number;
+  hotTopics: AtlasHotTopic[];
 };
 
 export type AtlasCityRow = {
@@ -80,31 +108,92 @@ export type AtlasStreetRow = {
   display_order: number;
 };
 
+export type AtlasAgentRow = {
+  id: string;
+  city_id: string;
+  display_name: string;
+  runtime: string;
+  package_name: string;
+  package_version: string;
+  status: AtlasAgentStatus;
+  activity: string;
+  topic: string;
+  detail: string;
+  latitude: number;
+  longitude: number;
+  energy: number;
+  last_seen_at: string;
+  display_order: number;
+};
+
+export type AtlasAgentEventRow = {
+  id: string;
+  agent_id: string;
+  city_id: string;
+  status: AtlasAgentStatus;
+  activity: string;
+  topic: string;
+  detail: string;
+  energy: number;
+  occurred_at: string;
+};
+
 export function mapAtlasWorld(
   cityRows: AtlasCityRow[],
   topicRows: AtlasTopicRow[],
   signalRows: AtlasAmbientSignalRow[],
   streetRows: AtlasStreetRow[],
+  agentRows: AtlasAgentRow[],
+  agentEventRows: AtlasAgentEventRow[],
 ): AtlasCity[] {
   return [...cityRows]
     .sort((left, right) => left.display_order - right.display_order)
-    .map((city) => ({
-      id: city.id,
-      name: city.name,
-      country: city.country,
-      region: city.region,
-      lat: Number(city.latitude),
-      lng: Number(city.longitude),
-      color: city.color,
-      category: city.category,
-      humanActivity: Number(city.human_activity),
-      aiActivity: Number(city.ai_activity),
-      growthPercent: Number(city.growth_percent),
-      topics: topicRows
+    .map((city) => {
+      const topics = topicRows
         .filter((topic) => topic.city_id === city.id)
         .sort((left, right) => left.rank - right.rank)
-        .map((topic) => topic.topic),
-      signals: signalRows
+        .map((topic) => topic.topic);
+      const agents = agentRows
+        .filter((agent) => agent.city_id === city.id)
+        .sort((left, right) => left.display_order - right.display_order)
+        .map((agent) => ({
+          id: agent.id,
+          cityId: agent.city_id,
+          name: agent.display_name,
+          runtime: agent.runtime,
+          packageName: agent.package_name,
+          packageVersion: agent.package_version,
+          status: agent.status,
+          activity: agent.activity,
+          topic: agent.topic,
+          detail: agent.detail,
+          lat: Number(agent.latitude),
+          lng: Number(agent.longitude),
+          energy: Number(agent.energy),
+          lastSeenAt: agent.last_seen_at,
+        }));
+      const topicEnergy = new Map<string, AtlasHotTopic>();
+      for (const event of agentEventRows.filter((candidate) => candidate.city_id === city.id)) {
+        const current = topicEnergy.get(event.topic) ?? { topic: event.topic, events: 0, energy: 0 };
+        current.events += 1;
+        current.energy += Number(event.energy);
+        topicEnergy.set(event.topic, current);
+      }
+
+      return {
+        id: city.id,
+        name: city.name,
+        country: city.country,
+        region: city.region,
+        lat: Number(city.latitude),
+        lng: Number(city.longitude),
+        color: city.color,
+        category: city.category,
+        humanActivity: Number(city.human_activity),
+        aiActivity: Number(city.ai_activity),
+        growthPercent: Number(city.growth_percent),
+        topics,
+        signals: signalRows
         .filter((signal) => signal.city_id === city.id)
         .sort((left, right) => left.display_order - right.display_order)
         .map((signal) => ({
@@ -116,7 +205,7 @@ export function mapAtlasWorld(
           status: signal.control_state,
           detail: signal.detail,
         })),
-      streets: streetRows
+        streets: streetRows
         .filter((street) => street.city_id === city.id)
         .sort((left, right) => left.display_order - right.display_order)
         .map((street) => ({
@@ -128,5 +217,11 @@ export function mapAtlasWorld(
           bearingDegrees: Number(street.bearing_degrees),
           lengthDegrees: Number(street.length_degrees),
         })),
-    }));
+        agents,
+        agentEnergy: agents.reduce((sum, agent) => sum + agent.energy, 0),
+        hotTopics: [...topicEnergy.values()]
+          .sort((left, right) => right.energy - left.energy || right.events - left.events)
+          .slice(0, 3),
+      };
+    });
 }

@@ -22,6 +22,6 @@ if (!config) {
 
 const summary = verifyAtlasWorld(await readAtlasWorld(config));
 console.log(
-  `Atlas world seeded: ${summary.cities} cities, ${summary.topics} topics, ${summary.signals} signals, ${summary.streets} streets, `
-  + `${summary.humanActivity + summary.aiActivity} active minds.`,
+  `Atlas world seeded: ${summary.cities} cities, ${summary.agents} agents, ${summary.agentEvents} telemetry events, `
+  + `${summary.agentEnergy} agent energy, ${summary.workingAgents} working, and ${summary.onlineAgents} online.`,
 );

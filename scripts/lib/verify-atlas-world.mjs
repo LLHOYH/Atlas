@@ -3,6 +3,8 @@ export const expectedWorldCounts = Object.freeze({
   topics: 24,
   signals: 17,
   streets: 32,
+  agents: 32,
+  agentEvents: 64,
 });
 
 async function fetchTable(config, table, select, order) {
@@ -22,13 +24,15 @@ async function fetchTable(config, table, select, order) {
 }
 
 export async function readAtlasWorld(config) {
-  const [cities, topics, signals, streets] = await Promise.all([
+  const [cities, topics, signals, streets, agents, agentEvents] = await Promise.all([
     fetchTable(config, "atlas_cities", "id,name,country,region,human_activity,ai_activity,display_order", "display_order.asc"),
     fetchTable(config, "atlas_city_topics", "city_id,rank,topic", "city_id.asc,rank.asc"),
     fetchTable(config, "atlas_ambient_signals", "id,city_id,display_name,entity_kind,display_order", "city_id.asc,display_order.asc"),
     fetchTable(config, "atlas_city_streets", "id,city_id,name,road_class,display_order", "city_id.asc,display_order.asc"),
+    fetchTable(config, "atlas_agents", "id,city_id,display_name,runtime,status,activity,topic,energy,latitude,longitude,last_seen_at,display_order", "city_id.asc,display_order.asc"),
+    fetchTable(config, "atlas_agent_events", "id,agent_id,city_id,status,activity,topic,energy,occurred_at", "occurred_at.desc"),
   ]);
-  return { cities, topics, signals, streets };
+  return { cities, topics, signals, streets, agents, agentEvents };
 }
 
 export function verifyAtlasWorld(world) {
@@ -44,6 +48,12 @@ export function verifyAtlasWorld(world) {
   if (world.streets.length !== expectedWorldCounts.streets) {
     throw new Error(`Expected ${expectedWorldCounts.streets} streets, found ${world.streets.length}.`);
   }
+  if (world.agents.length < expectedWorldCounts.agents) {
+    throw new Error(`Expected at least ${expectedWorldCounts.agents} agents, found ${world.agents.length}.`);
+  }
+  if (world.agentEvents.length < expectedWorldCounts.agentEvents) {
+    throw new Error(`Expected at least ${expectedWorldCounts.agentEvents} agent events, found ${world.agentEvents.length}.`);
+  }
 
   const cityIds = new Set(world.cities.map((city) => city.id));
   if (!cityIds.has("singapore") || !cityIds.has("san-francisco") || !cityIds.has("sao-paulo")) {
@@ -56,17 +66,37 @@ export function verifyAtlasWorld(world) {
     const topicCount = world.topics.filter((topic) => topic.city_id === city.id).length;
     const signalCount = world.signals.filter((signal) => signal.city_id === city.id).length;
     const streetCount = world.streets.filter((street) => street.city_id === city.id).length;
+    const agentCount = world.agents.filter((agent) => agent.city_id === city.id).length;
+    const agentEventCount = world.agentEvents.filter((event) => event.city_id === city.id).length;
     if (topicCount !== 3) throw new Error(`${city.name} should have exactly three topics.`);
     if (signalCount < 2) throw new Error(`${city.name} should have at least two ambient signals.`);
     if (!city.region) throw new Error(`${city.name} should have a region label.`);
     if (streetCount !== 4) throw new Error(`${city.name} should have exactly four named streets.`);
+    if (agentCount < 4) throw new Error(`${city.name} should have at least four seeded agents.`);
+    if (agentEventCount < 8) throw new Error(`${city.name} should have at least eight seeded agent events.`);
   }
+
+  const statusCounts = Object.fromEntries(
+    ["working", "online", "idle", "offline"].map((status) => [
+      status,
+      world.agents.filter((agent) => agent.status === status).length,
+    ]),
+  );
+  const agentEnergy = world.agents.reduce((sum, agent) => sum + Number(agent.energy), 0);
+  if (agentEnergy < 1_500) throw new Error("The seeded agent network has insufficient visible energy.");
 
   return {
     cities: world.cities.length,
     topics: world.topics.length,
     signals: world.signals.length,
     streets: world.streets.length,
+    agents: world.agents.length,
+    agentEvents: world.agentEvents.length,
+    workingAgents: statusCounts.working,
+    onlineAgents: statusCounts.online,
+    idleAgents: statusCounts.idle,
+    offlineAgents: statusCounts.offline,
+    agentEnergy,
     humanActivity: world.cities.reduce((sum, city) => sum + Number(city.human_activity), 0),
     aiActivity: world.cities.reduce((sum, city) => sum + Number(city.ai_activity), 0),
   };

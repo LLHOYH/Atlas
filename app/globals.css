@@ -298,6 +298,39 @@ button {
   letter-spacing: 0.04em;
 }
 
+.agentMapLabel {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: rgba(3, 9, 13, 0.9);
+  color: #d7e3e6;
+  font-family: var(--font-geist-mono), monospace;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.56);
+  transition: opacity 120ms ease;
+}
+
+.agentMapLabel > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.agentMapLabel > span { display: flex; flex-direction: column; gap: 2px; }
+.agentMapLabel b { font-size: 7px; font-weight: 600; }
+.agentMapLabel small { color: #718089; font-size: 5.5px; text-transform: uppercase; }
+.agentMapLabel--working { color: #f0c66f; border-color: rgba(240, 198, 111, 0.26); }
+.agentMapLabel--online { color: #67e9bc; border-color: rgba(103, 233, 188, 0.24); }
+.agentMapLabel--idle { color: #a68cff; border-color: rgba(166, 140, 255, 0.24); }
+.agentMapLabel--offline { color: #64747d; opacity: 0; }
+
 .glassPanel {
   border: 1px solid var(--line);
   background: linear-gradient(145deg, rgba(14, 23, 30, 0.76), rgba(5, 10, 15, 0.64));
@@ -596,10 +629,15 @@ button {
 .citySignal {
   top: 112px;
   right: 30px;
-  width: 286px;
+  width: 306px;
+  max-height: calc(100vh - 216px);
+  overflow-y: auto;
   padding: 18px;
   border-radius: 15px;
+  scrollbar-width: none;
 }
+
+.citySignal::-webkit-scrollbar { display: none; }
 
 .signalHeader {
   display: flex;
@@ -674,7 +712,7 @@ button {
 
 .topicList button {
   display: grid;
-  grid-template-columns: 24px 1fr 14px;
+  grid-template-columns: 24px 1fr auto 14px;
   gap: 7px;
   align-items: center;
   width: 100%;
@@ -691,7 +729,46 @@ button {
 .topicList button:last-child { border-bottom: 0; }
 .topicList button:hover { color: #fff; }
 .topicList button span { color: #56636d; font-family: var(--font-geist-mono), monospace; font-size: 8px; }
+.topicList button small { color: #66757d; font-family: var(--font-geist-mono), monospace; font-size: 7px; }
 .topicList button svg { color: #53616b; }
+
+.agentRoster {
+  display: grid;
+  gap: 3px;
+  margin-top: 11px;
+}
+
+.agentRoster button {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #aeb9be;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agentRoster button:hover {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.agentRoster button > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.agentRoster button > span { min-width: 0; }
+.agentRoster b { display: block; overflow: hidden; font-size: 9px; font-weight: 540; white-space: nowrap; text-overflow: ellipsis; }
+.agentRoster small { display: block; overflow: hidden; margin-top: 2px; color: #66757d; font-size: 7px; white-space: nowrap; text-overflow: ellipsis; }
+.agentRoster em { color: #728089; font-family: var(--font-geist-mono), monospace; font-size: 6.5px; font-style: normal; text-transform: uppercase; }
+.agentSearchLink { width: 100%; justify-content: flex-end; margin-top: 9px; }
 
 .entityStrip {
   display: flex;
@@ -1356,8 +1433,11 @@ kbd {
   .categoryLine { margin: 5px 0 9px; }
   .topicList { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; border-bottom: 0; }
   .topicList button { display: block; width: auto; flex: 0 0 auto; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 7px; background: rgba(255, 255, 255, 0.03); }
-  .topicList button span, .topicList button svg { display: none; }
+  .topicList button span, .topicList button small, .topicList button svg { display: none; }
   .entityStrip { display: none; }
+  .agentRoster { grid-template-columns: 1fr 1fr; }
+  .agentRoster button { padding: 6px; }
+  .agentRoster button > em { display: none; }
   .citySignal { bottom: 112px; }
   .bottomDock { right: 12px; bottom: 16px; left: 12px; grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .bottomDock .leftDockControls { grid-row: 2; width: 100%; }

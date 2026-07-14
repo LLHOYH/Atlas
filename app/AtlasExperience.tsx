@@ -24,7 +24,6 @@ import {
   Save,
   Search,
   Sparkles,
-  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -37,7 +36,7 @@ import {
   type AtlasPresence,
   type PresenceDraft,
 } from "../lib/atlas/types";
-import type { AtlasCity as City, AtlasSignal as Signal } from "../lib/atlas/world";
+import type { AtlasAgent as Agent, AtlasCity as City, AtlasSignal as Signal } from "../lib/atlas/world";
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
@@ -56,10 +55,10 @@ type RegionViewId = (typeof regionViews)[number]["id"];
 type RegionView = (typeof regionViews)[number];
 
 const detailLabels: Record<DetailLevel, { title: string; note: string }> = {
-  1: { title: "COUNTRIES", note: "Country names" },
-  2: { title: "REGIONS", note: "State & region names" },
-  3: { title: "CITIES", note: "City names" },
-  4: { title: "STREETS", note: "Named street mesh" },
+  1: { title: "COUNTRIES", note: "Regional agent energy" },
+  2: { title: "REGIONS", note: "State & region energy" },
+  3: { title: "CITIES", note: "Live agent signals" },
+  4: { title: "AGENTS", note: "Agent status & streets" },
 };
 
 const layerColors: Record<Layer, string> = {
@@ -68,6 +67,13 @@ const layerColors: Record<Layer, string> = {
   Technology: "#59bdff",
   Travel: "#67e9bc",
 };
+
+const agentStatusColors = {
+  working: "#f0c66f",
+  online: "#67e9bc",
+  idle: "#a68cff",
+  offline: "#52616b",
+} as const;
 
 function latLngToVector3(lat: number, lng: number, radius: number) {
   const phi = ((90 - lat) * Math.PI) / 180;
@@ -108,6 +114,12 @@ const globalCityLabels: GeographicLabel[] = atlasLabelData.cities.map((label) =>
 
 function normalizeLabelName(value: string) {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
+}
+
+function countryEnergyKey(value: string) {
+  const normalized = normalizeLabelName(value);
+  if (normalized === "united states of america") return "united states";
+  return normalized;
 }
 
 function nearestEquivalentAngle(target: number, reference: number) {
@@ -472,7 +484,7 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   return { geometry, outline };
 }
 
-function CountrySurfaces() {
+function CountrySurfaces({ energyByCountry = {} }: { energyByCountry?: Record<string, number> }) {
   const meshes = useRef<Array<THREE.Mesh | null>>([]);
   const outlines = useRef<Array<THREE.LineSegments | null>>([]);
   const hoveredCountry = useRef<number | null>(null);
@@ -480,8 +492,13 @@ function CountrySurfaces() {
   const palette = useMemo(() => ["#174049", "#1b4b53", "#20535a", "#285963", "#1d4650"].map((color) => new THREE.Color(color)), []);
   const gold = useMemo(() => new THREE.Color("#f0c75e"), []);
   const dark = useMemo(() => new THREE.Color("#000000"), []);
+  const peakEnergy = useMemo(
+    () => Math.max(...Object.values(energyByCountry), 1),
+    [energyByCountry],
+  );
   const countries = useMemo(() => atlasGeoData.countries.map((country) => ({
     name: country.name,
+    energyKey: countryEnergyKey(country.name),
     ...buildCountryGeometry(country),
     color: palette[hashString(country.name) % palette.length],
   })), [palette]);
@@ -507,18 +524,18 @@ function CountrySurfaces() {
 
   useFrame((_, delta) => {
     countries.forEach((country, index) => {
+      const energy = (energyByCountry[country.energyKey] ?? 0) / peakEnergy;
       const target = hoveredCountry.current === index ? 1 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
-      if (Math.abs(next - current) < 0.0001) return;
       hoverStrengths[index] = next;
       const mesh = meshes.current[index];
       const outline = outlines.current[index];
       if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = next;
       if (mesh?.material instanceof THREE.MeshStandardMaterial) {
-        mesh.material.color.copy(country.color).lerp(gold, next * 0.96);
-        mesh.material.emissive.copy(dark).lerp(gold, next);
-        mesh.material.emissiveIntensity = next * 1.25;
+        mesh.material.color.copy(country.color).lerp(gold, energy * 0.38).lerp(gold, next * 0.96);
+        mesh.material.emissive.copy(dark).lerp(gold, Math.max(energy * 0.72, next));
+        mesh.material.emissiveIntensity = energy * 0.42 + next * 1.25;
       }
       if (outline) {
         const radiusScale = 1 + next * (COUNTRY_HOVER_RADIUS / COUNTRY_TOP_RADIUS - 1);
@@ -556,7 +573,9 @@ function CountrySurfaces() {
         <sphereGeometry args={[COUNTRY_HOVER_RADIUS + 0.025, 96, 64]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      {countries.map((country, index) => (
+      {countries.map((country, index) => {
+        const energy = (energyByCountry[country.energyKey] ?? 0) / peakEnergy;
+        return (
         <group key={country.name}>
           <mesh
             ref={(node) => {
@@ -567,7 +586,9 @@ function CountrySurfaces() {
             frustumCulled={false}
           >
             <meshStandardMaterial
-              color={country.color}
+              color={country.color.clone().lerp(gold, energy * 0.38)}
+              emissive={gold}
+              emissiveIntensity={energy * 0.42}
               roughness={0.56}
               metalness={0.16}
               side={THREE.DoubleSide}
@@ -581,10 +602,11 @@ function CountrySurfaces() {
             frustumCulled={false}
             raycast={() => undefined}
           >
-            <lineBasicMaterial color="#68cbd1" transparent opacity={0.5} depthWrite={false} />
+            <lineBasicMaterial color={energy > 0 ? "#d7ad57" : "#68cbd1"} transparent opacity={0.5 + energy * 0.24} depthWrite={false} />
           </lineSegments>
         </group>
-      ))}
+        );
+      })}
     </>
   );
 }
@@ -698,7 +720,8 @@ function CityLight({
 
   useFrame(({ clock }) => {
     if (!pulse.current) return;
-    const signalEnergy = 1 + Math.min(liveCount, 20) * 0.018;
+    const seededEnergy = Math.min((city.agentEnergy ?? 0) / 360, 1);
+    const signalEnergy = 1 + seededEnergy * 0.52 + Math.min(liveCount, 20) * 0.018;
     const scale = signalEnergy * (1 + Math.sin(clock.elapsedTime * 2.2 + city.lat) * 0.22);
     pulse.current.scale.setScalar(scale);
   });
@@ -730,6 +753,93 @@ function CityLight({
   );
 }
 
+function AgentLight({
+  agent,
+  showLabel,
+  onSelect,
+}: {
+  agent: Agent;
+  showLabel: boolean;
+  onSelect: (agent: Agent) => void;
+}) {
+  const anchor = useRef<THREE.Group>(null);
+  const pulse = useRef<THREE.Mesh>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const worldPosition = useMemo(() => new THREE.Vector3(), []);
+  const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
+  const towardCamera = useMemo(() => new THREE.Vector3(), []);
+  const position = useMemo(
+    () => latLngToVector3(agent.lat, agent.lng, 3.075),
+    [agent.lat, agent.lng],
+  );
+  const orientation = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      position.clone().normalize(),
+    ),
+    [position],
+  );
+  const color = agentStatusColors[agent.status];
+  const height = 0.045 + (agent.energy / 100) * 0.075;
+
+  useFrame(({ clock, camera }) => {
+    if (!pulse.current) return;
+    const active = agent.status === "working" || agent.status === "online";
+    const wave = active ? 1 + Math.sin(clock.elapsedTime * 2.8 + agent.energy) * 0.18 : 0.82;
+    pulse.current.scale.setScalar(wave);
+    if (anchor.current && content.current) {
+      anchor.current.getWorldPosition(worldPosition);
+      surfaceNormal.copy(worldPosition).normalize();
+      towardCamera.copy(camera.position).sub(worldPosition).normalize();
+      content.current.style.opacity = surfaceNormal.dot(towardCamera) > 0.055 ? "1" : "0";
+    }
+  });
+
+  return (
+    <group ref={anchor} position={position} quaternion={orientation}>
+      <mesh position={[0, 0, height / 2]}>
+        <boxGeometry args={[0.032, 0.032, height]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={agent.status === "offline" ? 0.08 : 0.95}
+          transparent
+          opacity={agent.status === "offline" ? 0.4 : 0.96}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh ref={pulse} position={[0, 0, 0.006]}>
+        <ringGeometry args={[0.035, 0.052, 24]} />
+        <meshBasicMaterial color={color} transparent opacity={agent.status === "offline" ? 0.12 : 0.58} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      <mesh
+        position={[0, 0, height / 2]}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(agent);
+        }}
+        onPointerOver={() => {
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "grab";
+        }}
+      >
+        <boxGeometry args={[0.075, 0.075, Math.max(0.09, height)]} />
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
+      </mesh>
+      {showLabel && (
+        <Html transform sprite center position={[0, 0, height + 0.045]} distanceFactor={2.1} zIndexRange={[9, 1]}>
+          <div ref={content} className={`agentMapLabel agentMapLabel--${agent.status}`}>
+            <i />
+            <span><b>{agent.name}</b><small>{agent.status} · {agent.activity}</small></span>
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
 function EnergyParticles({ cities, layer }: { cities: City[]; layer: Layer }) {
   const points = useRef<THREE.Points>(null);
   const geometry = useMemo(() => {
@@ -746,7 +856,8 @@ function EnergyParticles({ cities, layer }: { cities: City[]; layer: Layer }) {
       const tangent = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
       const bitangent = normal.clone().cross(tangent).normalize();
       const baseColor = new THREE.Color(city.color);
-      for (let i = 0; i < 30; i += 1) {
+      const particleCount = 12 + Math.round(Math.min((city.agentEnergy ?? 0) / 360, 1) * 38);
+      for (let i = 0; i < particleCount; i += 1) {
         const spread = 0.02 + random() * 0.22;
         const angle = random() * Math.PI * 2;
         const lift = random() * 0.09;
@@ -836,6 +947,7 @@ function Earth({
   layer,
   liveCounts = {},
   onSelect,
+  onAgentSelect,
   onDetailChange,
   onStreetEnter,
 }: {
@@ -847,6 +959,7 @@ function Earth({
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
   onStreetEnter: (center: GeoCenter) => void;
 }) {
@@ -870,6 +983,11 @@ function Earth({
     () => new Map(cities.map((city) => [normalizeLabelName(city.name), city.color])),
     [cities],
   );
+  const energyByCountry = useMemo(() => cities.reduce<Record<string, number>>((energy, city) => {
+    const key = countryEnergyKey(city.country);
+    energy[key] = (energy[key] ?? 0) + city.agentEnergy;
+    return energy;
+  }, {}), [cities]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1020,7 +1138,7 @@ function Earth({
         <sphereGeometry args={[3, 128, 128]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
-      <CountrySurfaces />
+      <CountrySurfaces energyByCountry={energyByCountry} />
       <EnergyParticles cities={cities} layer={layer} />
       <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
@@ -1057,6 +1175,14 @@ function Earth({
           color={cityLabelColors.get(normalizeLabelName(city.name))}
         />
       ))}
+      {(labelDetail === 3 || labelDetail === 4) && cities.flatMap((city) => city.agents.map((agent) => (
+        <AgentLight
+          key={agent.id}
+          agent={agent}
+          showLabel={labelDetail === 4 && city.id === selectedCity.id}
+          onSelect={(selectedAgent) => onAgentSelect(city, selectedAgent)}
+        />
+      )))}
       {labelDetail === 4 && (
         <>
           {selectedCity.streets.map((street) => (
@@ -1091,6 +1217,7 @@ function EarthScene({
   layer,
   liveCounts = {},
   onSelect,
+  onAgentSelect,
   onDetailChange,
 }: {
   cities: City[];
@@ -1100,6 +1227,7 @@ function EarthScene({
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
 }) {
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
@@ -1149,6 +1277,7 @@ function EarthScene({
               layer={layer}
               liveCounts={liveCounts}
               onSelect={selectActivityCity}
+              onAgentSelect={onAgentSelect}
               onDetailChange={onDetailChange}
               onStreetEnter={enterStreetView}
             />
@@ -1173,6 +1302,7 @@ function EarthScene({
 }
 
 function ProfilePanel({ signal, city, onClose }: { signal: Signal; city: City; onClose: () => void }) {
+  const statusColor = signalStatusColor(signal.status);
   return (
     <motion.aside
       className="profilePanel glassPanel"
@@ -1189,7 +1319,7 @@ function ProfilePanel({ signal, city, onClose }: { signal: Signal; city: City; o
       <div className="profileIdentity">
         <span className="eyebrow">{signal.type} · {city.name}</span>
         <h2>{signal.name}</h2>
-        <span className="statusLine"><i /> {signal.status}</span>
+        <span className="statusLine"><i style={{ background: statusColor, boxShadow: `0 0 8px ${statusColor}` }} /> {signal.status}</span>
       </div>
       <div className="profileNow">
         <span>RIGHT NOW</span>
@@ -1206,6 +1336,26 @@ function ProfilePanel({ signal, city, onClose }: { signal: Signal; city: City; o
   );
 }
 
+function signalStatusColor(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("offline")) return agentStatusColors.offline;
+  if (normalized.includes("idle") || normalized.includes("away")) return agentStatusColors.idle;
+  if (normalized.includes("working") || normalized.includes("autonomous")) return agentStatusColors.working;
+  return agentStatusColors.online;
+}
+
+function atlasAgentToSignal(agent: Agent): Signal {
+  return {
+    id: `agent-${agent.id}`,
+    name: agent.name,
+    type: "AI",
+    activity: agent.activity,
+    topic: agent.topic,
+    status: `${agent.status.slice(0, 1).toUpperCase()}${agent.status.slice(1)} · ${agent.runtime}`,
+    detail: `${agent.detail} · ${agent.packageName}@${agent.packageVersion}`,
+  };
+}
+
 function atlasPresenceToSignal(presence: AtlasPresence): Signal {
   return {
     id: `live-${presence.entityKind}-${presence.id}`,
@@ -1216,12 +1366,6 @@ function atlasPresenceToSignal(presence: AtlasPresence): Signal {
     status: presence.controlState,
     detail: presence.detail,
   };
-}
-
-function compactActivity(value: number) {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
-    .format(value)
-    .replace("K", "k");
 }
 
 function PresenceStudio({
@@ -1331,7 +1475,7 @@ function PresenceStudio({
 
 function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const presence = useAtlasPresence();
-  const [selectedCity, setSelectedCity] = useState(cities[0]);
+  const [selectedCityId, setSelectedCityId] = useState(cities[0].id);
   const [regionViewId, setRegionViewId] = useState<RegionViewId | null>(null);
   const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
@@ -1344,6 +1488,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
   const [clock, setClock] = useState("--:-- SGT");
   const searchRef = useRef<HTMLInputElement>(null);
   const joined = presence.connected;
+  const selectedCity = cities.find((city) => city.id === selectedCityId) ?? cities[0];
   const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
@@ -1355,22 +1500,21 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     return counts;
   }, {}), [visiblePresenceFeed]);
 
-  const liveSignals = useMemo(() => visiblePresenceFeed
-    .filter((item) => item.city.toLowerCase() === selectedCity.name.toLowerCase())
-    .map(atlasPresenceToSignal), [selectedCity.name, visiblePresenceFeed]);
-
-  const activeSignals = useMemo(() => [...liveSignals, ...selectedCity.signals]
-    .filter((signal, index, all) => all.findIndex((candidate) => candidate.name === signal.name && candidate.type === signal.type) === index),
-  [liveSignals, selectedCity.signals]);
-
-  const humanPresenceCount = visiblePresenceFeed.filter((item) => item.entityKind === "human").length;
-  const aiPresenceCount = visiblePresenceFeed.length - humanPresenceCount;
-  const seededHumanActivity = cities.reduce((total, city) => total + city.humanActivity, 0);
-  const seededAiActivity = cities.reduce((total, city) => total + city.aiActivity, 0);
-  const worldHumanActivity = seededHumanActivity + humanPresenceCount;
-  const worldAiActivity = seededAiActivity + aiPresenceCount;
+  const seededAgents = useMemo(() => cities.flatMap((city) => city.agents), [cities]);
+  const liveAiAgents = visiblePresenceFeed.filter((item) => item.entityKind === "ai");
+  const worldAgentEnergy = cities.reduce((total, city) => total + city.agentEnergy, 0) + liveAiAgents.length * 50;
+  const worldAgentCount = seededAgents.length + liveAiAgents.length;
+  const workingAgentCount = seededAgents.filter((agent) => agent.status === "working").length
+    + liveAiAgents.filter((agent) => !["Idle", "Offline", "Sleeping"].includes(agent.activity)).length;
+  const onlineAgentCount = seededAgents.filter((agent) => agent.status === "online").length
+    + liveAiAgents.filter((agent) => agent.status !== "Offline").length;
+  const selectedWorkingAgents = selectedCity.agents.filter((agent) => agent.status === "working").length;
+  const selectedActiveAgents = selectedCity.agents.filter((agent) => agent.status !== "offline").length;
+  const selectedHotTopics = selectedCity.hotTopics.length
+    ? selectedCity.hotTopics
+    : selectedCity.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
   const pulseBars = useMemo(() => {
-    const values = cities.flatMap((city) => [city.humanActivity, city.aiActivity]);
+    const values = cities.map((city) => city.agentEnergy);
     const peak = Math.max(...values, 1);
     return values.map((value) => 16 + Math.round((value / peak) * 76));
   }, [cities]);
@@ -1419,20 +1563,30 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
         return { title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${item.city} · LIVE`, city, signal };
       });
     const cityResults = cities
-      .filter((city) => !needle || [city.name, city.country, city.category, ...city.topics].join(" ").toLowerCase().includes(needle))
+      .filter((city) => !needle || [city.name, city.country, city.category, ...city.topics, ...city.hotTopics.map((topic) => topic.topic)].join(" ").toLowerCase().includes(needle))
+      .slice(0, 3)
+      .map((city) => ({ title: city.name, subtitle: `${city.country} · ${city.agentEnergy} agent energy`, city, signal: null as Signal | null }));
+    const agentResults = cities
+      .flatMap((city) => city.agents.map((agent) => ({ city, agent })))
+      .filter(({ city, agent }) => !needle || [agent.name, agent.runtime, agent.status, agent.activity, agent.topic, city.name, city.country].join(" ").toLowerCase().includes(needle))
       .slice(0, 4)
-      .map((city) => ({ title: city.name, subtitle: `${city.country} · ${city.category}`, city, signal: null as Signal | null }));
+      .map(({ city, agent }) => ({
+        title: agent.name,
+        subtitle: `${agent.status.toUpperCase()} · ${agent.activity} · ${city.name}`,
+        city,
+        signal: atlasAgentToSignal(agent),
+      }));
     const signalResults = cities
       .flatMap((city) => city.signals.map((signal) => ({ city, signal })))
       .filter(({ signal, city }) => needle && [signal.name, signal.type, signal.activity, signal.topic, city.name].join(" ").toLowerCase().includes(needle))
       .slice(0, 3)
       .map(({ city, signal }) => ({ title: signal.name, subtitle: `${signal.type} · ${signal.activity} · ${city.name}`, city, signal }));
-    return [...liveResults, ...cityResults, ...signalResults].slice(0, 7);
+    return [...liveResults, ...agentResults, ...cityResults, ...signalResults].slice(0, 8);
   }, [cities, query, visiblePresenceFeed]);
 
   const focusCity = useCallback((city: City) => {
     setRegionViewId(null);
-    setSelectedCity(city);
+    setSelectedCityId(city.id);
   }, []);
 
   const chooseRegionView = (nextViewId: RegionViewId) => {
@@ -1441,7 +1595,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     const nextView = regionViews.find((view) => view.id === nextViewId);
     if (!nextView) return;
     const anchorCity = cities.find((city) => city.id === nextView.anchorCityId);
-    if (anchorCity) setSelectedCity(anchorCity);
+    if (anchorCity) setSelectedCityId(anchorCity.id);
   };
 
   const chooseResult = (city: City, signal: Signal | null) => {
@@ -1450,6 +1604,11 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     setQuery("");
     if (signal) setProfile(signal);
   };
+
+  const chooseAgent = useCallback((city: City, agent: Agent) => {
+    focusCity(city);
+    setProfile(atlasAgentToSignal(agent));
+  }, [focusCity]);
 
   const beginSignIn = async (provider: "github" | "google") => {
     await presence.signIn(provider);
@@ -1463,7 +1622,7 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene cities={cities} selectedCity={selectedCity} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onDetailChange={setDetailLevel} />
+        <EarthScene cities={cities} selectedCity={selectedCity} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onAgentSelect={chooseAgent} onDetailChange={setDetailLevel} />
       </section>
 
       <header className="topBar">
@@ -1486,12 +1645,14 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       </header>
 
       <aside className="worldPulse glassPanel" aria-label="Global live activity">
-        <div className="panelTitle"><Globe2 size={14} /><span>WORLD PULSE</span><i /></div>
-        <strong>{(worldHumanActivity + worldAiActivity).toLocaleString()}</strong>
-        <small>minds active now</small>
+        <div className="panelTitle"><Globe2 size={14} /><span>AGENT PULSE · 24H</span><i /></div>
+        <strong>{worldAgentEnergy.toLocaleString()}</strong>
+        <small>global agent energy</small>
         <div className="pulseStats">
-          <span><Users size={13} /><b>{compactActivity(worldHumanActivity)}</b> Humans</span>
-          <span><Bot size={13} /><b>{compactActivity(worldAiActivity)}</b> AI</span>
+          <span><Bot size={13} /><b>{worldAgentCount}</b> Agents</span>
+          <span><Zap size={13} /><b>{workingAgentCount}</b> Working</span>
+          <span><Radio size={13} /><b>{onlineAgentCount}</b> Online</span>
+          <span><Globe2 size={13} /><b>{cities.length}</b> Cities</span>
         </div>
         <div className="pulseChart" aria-hidden="true">
           {pulseBars.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
@@ -1501,33 +1662,35 @@ function AtlasWorldExperience({ cities }: { cities: City[] }) {
       <aside className="citySignal glassPanel" aria-live="polite">
         <div className="signalHeader">
           <div>
-            <span className="eyebrow">LIVE SIGNAL · {selectedCity.country.toUpperCase()}</span>
+            <span className="eyebrow">LIVE AGENT NETWORK · {selectedCity.country.toUpperCase()}</span>
             <h1>{selectedCity.name}</h1>
           </div>
           <LocateFixed size={18} />
         </div>
         <div className="activityTotal">
           <span style={{ background: selectedCity.color }} />
-          <strong>{(selectedCity.humanActivity + selectedCity.aiActivity + liveSignals.length).toLocaleString()}</strong>
-          <small>minds active</small>
-          <em>{liveSignals.length ? `+${liveSignals.length} realtime` : `+${selectedCity.growthPercent.toFixed(1)}%`}</em>
+          <strong>{selectedCity.agentEnergy.toLocaleString()}</strong>
+          <small>agent energy</small>
+          <em>{selectedWorkingAgents} working</em>
         </div>
-        <p className="categoryLine">{layer === "Attention" ? selectedCity.category : `${layer} activity`}</p>
+        <p className="categoryLine">{selectedActiveAgents} active · {selectedCity.agents.length} observed · last 24 hours</p>
         <div className="topicList">
-          {selectedCity.topics.map((topic, index) => (
-            <button key={topic} onClick={() => { setQuery(topic); setSearchOpen(true); }}>
-              <span>0{index + 1}</span>{topic}<ChevronRight size={13} />
+          {selectedHotTopics.map((topic, index) => (
+            <button key={topic.topic} onClick={() => { setQuery(topic.topic); setSearchOpen(true); }}>
+              <span>0{index + 1}</span>{topic.topic}<small>{topic.events || "LIVE"}</small><ChevronRight size={13} />
             </button>
           ))}
         </div>
-        <div className="entityStrip">
-          {activeSignals.slice(0, 3).map((signal) => (
-            <button key={signal.name} onClick={() => setProfile(signal)} aria-label={`Open ${signal.name}'s profile`}>
-              {signal.type === "AI" ? <Bot size={14} /> : signal.name.slice(0, 1)}
+        <div className="agentRoster" aria-label={`${selectedCity.name} agents`}>
+          {selectedCity.agents.map((agent) => (
+            <button key={agent.id} onClick={() => chooseAgent(selectedCity, agent)} aria-label={`Open ${agent.name} agent signal`}>
+              <i style={{ background: agentStatusColors[agent.status], boxShadow: `0 0 8px ${agentStatusColors[agent.status]}` }} />
+              <span><b>{agent.name}</b><small>{agent.activity} · {agent.topic}</small></span>
+              <em>{agent.status}</em>
             </button>
           ))}
-          <button className="viewSignals" onClick={() => { setQuery(selectedCity.name); setSearchOpen(true); }}>View signals <ArrowUpRight size={12} /></button>
         </div>
+        <button className="viewSignals agentSearchLink" onClick={() => { setQuery(selectedCity.name); setSearchOpen(true); }}>View all city signals <ArrowUpRight size={12} /></button>
       </aside>
 
       <div className="lodIndicator glassPanel" aria-live="polite">
@@ -1666,7 +1829,7 @@ export function AtlasExperience() {
           <span className="atlasGlyph"><i /><i /><i /></span>
           <span className="eyebrow">ATLAS WORLD DATABASE</span>
           <h1>{world.error ? "The world signal is offline." : "Loading the living world…"}</h1>
-          <p>{world.error ?? "Reading cities, topics, and ambient signals from Supabase."}</p>
+          <p>{world.error ?? "Reading cities, agent status, and recent telemetry from Supabase."}</p>
           <div className={`databasePulse ${world.loading ? "loading" : ""}`} aria-hidden="true"><i /><i /><i /><i /><i /></div>
           {world.error && <button onClick={() => void world.reload()}>Retry connection <ArrowUpRight size={14} /></button>}
         </section>

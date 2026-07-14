@@ -50,3 +50,11 @@ test("regional view tabs cover the six continental regions without dropdown-only
   assert.match(experienceSource, /aria-pressed=\{regionViewId === view\.id\}/);
   assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? null\}/);
 });
+
+test("phase 4 agent telemetry is visible from country energy through individual agents", () => {
+  assert.match(experienceSource, /<CountrySurfaces energyByCountry=\{energyByCountry\}/);
+  assert.match(experienceSource, /function AgentLight\(/);
+  assert.match(experienceSource, /AGENT PULSE · 24H/);
+  assert.match(experienceSource, /className="agentRoster"/);
+  assert.match(experienceSource, /selectedCity\.hotTopics/);
+});

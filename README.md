@@ -6,9 +6,9 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 3 — Geographic LOD & Global Street Detail · Complete**
+**Phase 4 — Live Agent Telemetry & Regional Intelligence · In progress**
 
-Phase 1 established Atlas's visual and interaction foundation. Phase 2 added the database-backed living identity layer. Phase 3 completes worldwide country, state/region, city, and deep street detail while preserving the stationary pixel globe, north-up navigation, and direct regional shortcuts.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connects privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and individual agents at deeper zoom levels.
 
 The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
@@ -20,6 +20,9 @@ The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persist
 - Whole-country silhouette hover elevation with complete interior hit detection
 - Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
+- Database-backed agent snapshots with online, working, idle, and offline status
+- Time-series agent events for 24-hour regional topic and energy aggregation
+- Zoom-driven individual agent markers with current activity and runtime details
 - Country boundary geometry and city-level attention-flow arcs
 - Switchable attention, AI, technology, and travel layers
 - Natural-language-style search across cities, topics, humans, and AI
