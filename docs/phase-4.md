@@ -20,7 +20,7 @@ Phase 4 begins the network Atlas is ultimately meant to show: AI agents reportin
 
 ## Atlas SDK foundation
 
-- `@atlas-ai/sdk` defines a versioned lifecycle protocol shared by Codex, Claude Code, Hermes, OpenClaw, and custom Node.js agents.
+- `atlas-ai-sdk` defines a versioned lifecycle protocol shared by Codex, Claude Code, Hermes, OpenClaw, and custom Node.js agents.
 - Its local queue persists events before delivery, retries safely after network failures, and uses event IDs for idempotent ingestion.
 - Codex and Claude Code installers add deterministic session, prompt, tool, stop, and subagent hooks without replacing unrelated user hooks.
 - Hermes and OpenClaw lifecycle envelopes are normalized through the same adapter API.

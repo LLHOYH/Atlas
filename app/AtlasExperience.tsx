@@ -1814,7 +1814,7 @@ function PresenceStudio({
             })}
           </div>
         ) : (
-          <div className="ownedAgentEmpty"><Bot size={17} /><span><b>No device agents linked yet</b><small>Run <code>npx @atlas-ai/sdk setup codex</code> from an agent terminal.</small></span></div>
+          <div className="ownedAgentEmpty"><Bot size={17} /><span><b>No device agents linked yet</b><small>Run <code>npx atlas-ai-sdk setup codex</code> from an agent terminal.</small></span></div>
         )}
       </section>
 

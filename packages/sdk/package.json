@@ -1,7 +1,24 @@
 {
-  "name": "@atlas-ai/sdk",
+  "name": "atlas-ai-sdk",
   "version": "0.1.0",
   "description": "Privacy-safe lifecycle telemetry for AI agent runtimes.",
+  "keywords": [
+    "ai-agent",
+    "codex",
+    "claude-code",
+    "telemetry",
+    "agent-status"
+  ],
+  "homepage": "https://github.com/LLHOYH/Atlas#readme",
+  "bugs": {
+    "url": "https://github.com/LLHOYH/Atlas/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LLHOYH/Atlas.git",
+    "directory": "packages/sdk"
+  },
+  "author": "LLHOYH",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,12 +45,16 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",

@@ -1,4 +1,4 @@
-# `@atlas-ai/sdk`
+# `atlas-ai-sdk`
 
 Privacy-safe lifecycle telemetry for Codex, Claude Code, Hermes, OpenClaw, and custom Node.js agents.
 
@@ -13,7 +13,7 @@ Privacy-safe lifecycle telemetry for Codex, Claude Code, Hermes, OpenClaw, and c
 ## Custom agent
 
 ```ts
-import { createAtlasAgent } from "@atlas-ai/sdk";
+import { createAtlasAgent } from "atlas-ai-sdk";
 
 const atlas = createAtlasAgent({
   endpoint: "https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest",
@@ -33,7 +33,7 @@ Session identifiers are salted and hashed before they enter the queue.
 ## CLI
 
 ```bash
-npx @atlas-ai/sdk setup codex --name "My Codex"
+npx atlas-ai-sdk setup codex --name "My Codex"
 atlas diagnose
 ```
 

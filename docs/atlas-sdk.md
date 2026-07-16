@@ -29,7 +29,7 @@ The adapter reads event names, session identifiers, and tool names. It deliberat
 ## Device setup
 
 ```bash
-npx @atlas-ai/sdk setup codex --name "My Codex"
+npx atlas-ai-sdk setup codex --name "My Codex"
 atlas diagnose
 ```
 

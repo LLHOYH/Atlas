@@ -88,5 +88,5 @@ export function integrationSnippet(runtime: Exclude<AtlasRuntime, "codex" | "cla
     const yamlCommand = `'${hookCommand.replaceAll("'", "''")}'`;
     return `hooks:\n  on_session_start:\n    - command: ${yamlCommand}\n  pre_llm_call:\n    - command: ${yamlCommand}\n  pre_tool_call:\n    - matcher: ".*"\n      command: ${yamlCommand}\n  post_tool_call:\n    - matcher: ".*"\n      command: ${yamlCommand}\n  post_llm_call:\n    - command: ${yamlCommand}\n  on_session_end:\n    - command: ${yamlCommand}\n`;
   }
-  return `import { createAtlasAgent, draftsFromHook } from "@atlas-ai/sdk";\n\n// Register these observation hooks in your OpenClaw plugin:\n// session_start, before_agent_run, before_tool_call, after_tool_call,\n// agent_end, session_end, subagent_spawned, subagent_ended.\n// Pass each sanitized hook envelope through draftsFromHook("openclaw", event).\n`;
+  return `import { createAtlasAgent, draftsFromHook } from "atlas-ai-sdk";\n\n// Register these observation hooks in your OpenClaw plugin:\n// session_start, before_agent_run, before_tool_call, after_tool_call,\n// agent_end, session_end, subagent_spawned, subagent_ended.\n// Pass each sanitized hook envelope through draftsFromHook("openclaw", event).\n`;
 }
