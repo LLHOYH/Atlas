@@ -1,0 +1,51 @@
+# `@atlas-ai/sdk`
+
+Privacy-safe lifecycle telemetry for Codex, Claude Code, Hermes, OpenClaw, and custom Node.js agents.
+
+## Principles
+
+- Hooks report deterministic lifecycle transitions; the model does not have to remember Atlas.
+- Prompts, responses, tool inputs, tool outputs, file paths, commands, URLs, and repository names are never part of the event schema.
+- Events are queued locally before delivery and ingestion is idempotent.
+- Installation location is selected during registration and is not derived from precise GPS data.
+- Atlas status and energy are derived by the server rather than trusted from arbitrary client scores.
+
+## Custom agent
+
+```ts
+import { createAtlasAgent } from "@atlas-ai/sdk";
+
+const atlas = createAtlasAgent({
+  endpoint: "https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest",
+  token: process.env.ATLAS_AGENT_TOKEN!,
+  installationId: process.env.ATLAS_INSTALLATION_ID!,
+  runtime: "custom",
+});
+
+const session = await atlas.startSession("local-session-id");
+await session.working("coding", "software-development");
+await session.setActivity("testing");
+await session.end();
+```
+
+Session identifiers are salted and hashed before they enter the queue.
+
+## CLI
+
+```bash
+atlas register \
+  --endpoint https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest \
+  --access-token "$SUPABASE_ACCESS_TOKEN" \
+  --name "My Codex" \
+  --runtime codex \
+  --city singapore
+
+atlas install codex
+atlas diagnose
+```
+
+Codex and Claude Code hook installers merge Atlas handlers into the existing JSON configuration without replacing unrelated hooks. Hermes and OpenClaw adapter snippets are available through `atlas integration` while their native marketplace packages are prepared.
+
+## Topic categories
+
+Atlas accepts a controlled taxonomy such as `software-development`, `research`, `data-analysis`, `writing`, `operations`, and `other`. Free-form task details are intentionally not accepted.

@@ -130,6 +130,7 @@ export type AtlasAgentRow = {
   energy: number;
   last_seen_at: string;
   display_order: number;
+  installation_id?: string | null;
 };
 
 export type AtlasAgentEventRow = {
@@ -186,7 +187,9 @@ export function mapAtlasWorld(
           runtime: agent.runtime,
           packageName: agent.package_name,
           packageVersion: agent.package_version,
-          status: agent.status,
+          status: agent.installation_id && Date.now() - new Date(agent.last_seen_at).getTime() > 2 * 60 * 1000
+            ? "offline" as const
+            : agent.status,
           activity: agent.activity,
           topic: agent.topic,
           detail: agent.detail,

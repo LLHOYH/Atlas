@@ -18,6 +18,18 @@ Phase 4 begins the network Atlas is ultimately meant to show: AI agents reportin
 - Deeper globe zoom levels reveal individual agents, with working, online, idle, and offline states encoded by color and elevation.
 - Agent snapshots are realtime-enabled so future SDK heartbeats can update the globe without a refresh.
 
+## Atlas SDK foundation
+
+- `@atlas-ai/sdk` defines a versioned lifecycle protocol shared by Codex, Claude Code, Hermes, OpenClaw, and custom Node.js agents.
+- Its local queue persists events before delivery, retries safely after network failures, and uses event IDs for idempotent ingestion.
+- Codex and Claude Code installers add deterministic session, prompt, tool, stop, and subagent hooks without replacing unrelated user hooks.
+- Hermes and OpenClaw lifecycle envelopes are normalized through the same adapter API.
+- Registration returns a one-time installation token; only its SHA-256 hash is stored.
+- The ingestion function validates controlled status, activity, and topic values before updating the live snapshot and append-only event stream.
+- Raw installation events are owner-readable rather than public. Public map records contain only sanitized operational categories.
+- Agent energy is assigned by the server from status instead of accepting client-provided scores.
+- Prompts, model responses, tool arguments, tool results, commands, file paths, URLs, and repository names do not exist in the SDK event schema.
+
 ## Phase boundary
 
-This foundation seeds and visualizes the telemetry contract. A production npm package, authenticated ingestion API, retention jobs, location privacy controls, country-wide aggregation beyond seeded cities, and high-volume event processing remain future Phase 4 work.
+This foundation now includes the local npm package implementation and authenticated ingestion contract. Publishing the package to npm, completing the browser/device authorization flow, marketplace-native Hermes and OpenClaw installers, scheduling stale-agent and retention jobs, installation management UI, country-wide aggregation beyond seeded cities, and high-volume load testing remain future Phase 4 work.
