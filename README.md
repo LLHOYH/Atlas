@@ -6,11 +6,11 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 4 — Live Agent Telemetry, Atlas SDK & Regional Intelligence · In progress**
+**Phase 4 — Live Agent Telemetry, Atlas SDK & Regional Intelligence · Complete**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connects privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and individual agents at deeper zoom levels.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, account-linked device setup, and individual agents at deeper zoom levels. Phase 5 will deepen the street-level transition and render live agents directly into that view.
 
-The first `atlas-ai-sdk` implementation now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
+[`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
 The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless email sign-in, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 

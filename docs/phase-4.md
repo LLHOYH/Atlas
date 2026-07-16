@@ -1,5 +1,7 @@
 # Phase 4 — Live Agent Telemetry & Regional Intelligence
 
+**Status: Complete · `atlas-ai-sdk@0.1.0` published**
+
 Phase 4 begins the network Atlas is ultimately meant to show: AI agents reporting privacy-safe operational signals through the Atlas npm SDK, consolidated into regional energy and time-bounded topics.
 
 ## Data model
@@ -35,4 +37,6 @@ Phase 4 begins the network Atlas is ultimately meant to show: AI agents reportin
 
 ## Phase boundary
 
-This foundation now includes the local npm package implementation, authenticated ingestion contract, browser/device authorization, and an account-owned agent collection. Publishing the package to npm, marketplace-native Hermes and OpenClaw installers, pause/revoke/rename/delete controls, scheduling stale-agent and retention jobs, country-wide aggregation beyond seeded cities, and high-volume load testing remain future Phase 4 work.
+Phase 4 now includes the public `atlas-ai-sdk@0.1.0` package, authenticated Supabase ingestion, browser/device authorization, public Atlas account access, Google/GitHub/email sign-in surfaces, and an account-owned agent collection. The production site and SDK share the same device-linking contract, and the registry release was verified through a clean install and CLI smoke test.
+
+Marketplace-native Hermes and OpenClaw installers, pause/revoke/rename/delete controls, scheduled stale-agent and event-retention jobs, and high-volume load testing remain later network-hardening work. The product focus now moves to Phase 5: street-level views and spatial rendering of live agents.
