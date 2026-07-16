@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type { AtlasRuntime } from "./adapters.js";
 
 type JsonObject = Record<string, unknown>;
@@ -45,7 +46,7 @@ function mergeHooks(current: JsonObject, addition: JsonObject) {
   return result;
 }
 
-export async function installJsonIntegration(runtime: "codex" | "claude-code", path?: string) {
+export async function installJsonIntegration(runtime: "codex" | "claude-code", path?: string, command?: string) {
   const destination = path ?? (runtime === "codex"
     ? join(homedir(), ".codex", "hooks.json")
     : join(homedir(), ".claude", "settings.json"));
@@ -57,7 +58,7 @@ export async function installJsonIntegration(runtime: "codex" | "claude-code", p
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const addition = integrationConfig(runtime);
+  const addition = integrationConfig(runtime, command ?? `atlas hook ${runtime}`);
   const currentHooks = isObject(current.hooks) ? current.hooks : {};
   const next = { ...current, hooks: mergeHooks(currentHooks, addition.hooks) };
   await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
@@ -67,9 +68,25 @@ export async function installJsonIntegration(runtime: "codex" | "claude-code", p
   return destination;
 }
 
-export function integrationSnippet(runtime: Exclude<AtlasRuntime, "codex" | "claude-code" | "custom">) {
+export async function installPersistentRuntime(path?: string) {
+  const source = dirname(fileURLToPath(import.meta.url));
+  const destination = path ?? join(homedir(), ".atlas", "runtime");
+  await mkdir(destination, { recursive: true, mode: 0o700 });
+  await cp(source, destination, { recursive: true, force: true });
+  await writeFile(join(destination, "package.json"), "{\"type\":\"module\"}\n", { encoding: "utf8", mode: 0o600 });
+  return {
+    path: destination,
+    hookCommand(runtime: AtlasRuntime) {
+      return `${JSON.stringify(process.execPath)} ${JSON.stringify(join(destination, "cli.js"))} hook ${runtime}`;
+    },
+  };
+}
+
+export function integrationSnippet(runtime: Exclude<AtlasRuntime, "codex" | "claude-code" | "custom">, command?: string) {
   if (runtime === "hermes") {
-    return `hooks:\n  on_session_start:\n    - command: atlas hook hermes\n  pre_llm_call:\n    - command: atlas hook hermes\n  pre_tool_call:\n    - matcher: ".*"\n      command: atlas hook hermes\n  post_tool_call:\n    - matcher: ".*"\n      command: atlas hook hermes\n  post_llm_call:\n    - command: atlas hook hermes\n  on_session_end:\n    - command: atlas hook hermes\n`;
+    const hookCommand = command ?? "atlas hook hermes";
+    const yamlCommand = `'${hookCommand.replaceAll("'", "''")}'`;
+    return `hooks:\n  on_session_start:\n    - command: ${yamlCommand}\n  pre_llm_call:\n    - command: ${yamlCommand}\n  pre_tool_call:\n    - matcher: ".*"\n      command: ${yamlCommand}\n  post_tool_call:\n    - matcher: ".*"\n      command: ${yamlCommand}\n  post_llm_call:\n    - command: ${yamlCommand}\n  on_session_end:\n    - command: ${yamlCommand}\n`;
   }
   return `import { createAtlasAgent, draftsFromHook } from "@atlas-ai/sdk";\n\n// Register these observation hooks in your OpenClaw plugin:\n// session_start, before_agent_run, before_tool_call, after_tool_call,\n// agent_end, session_end, subagent_spawned, subagent_ended.\n// Pass each sanitized hook envelope through draftsFromHook("openclaw", event).\n`;
 }

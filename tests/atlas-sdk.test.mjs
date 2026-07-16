@@ -8,6 +8,9 @@ const migration = await readFile(new URL("../supabase/migrations/202607160001_at
 const eventRoute = await readFile(new URL("../app/api/atlas/v1/events/route.ts", import.meta.url), "utf8");
 const registrationRoute = await readFile(new URL("../app/api/atlas/v1/installations/route.ts", import.meta.url), "utf8");
 const edgeFunction = await readFile(new URL("../supabase/functions/atlas-ingest/index.ts", import.meta.url), "utf8");
+const deviceMigration = await readFile(new URL("../supabase/migrations/202607160002_atlas_device_authorization.sql", import.meta.url), "utf8");
+const devicePage = await readFile(new URL("../app/connect/DeviceConnect.tsx", import.meta.url), "utf8");
+const presenceHook = await readFile(new URL("../hooks/useAtlasPresence.ts", import.meta.url), "utf8");
 
 test("Atlas SDK exposes a controlled privacy-safe lifecycle protocol", () => {
   for (const event of ["session.started", "turn.started", "tool.completed", "status.changed", "session.ended"]) {
@@ -42,4 +45,27 @@ test("local and edge ingestion routes share batch validation", () => {
   assert.match(edgeFunction, /action === "events"/);
   assert.match(edgeFunction, /MAX_BODY_BYTES/);
   assert.match(edgeFunction, /request\.arrayBuffer\(\)/);
+});
+
+test("device authorization links approved agents to an authenticated Atlas profile", () => {
+  assert.match(deviceMigration, /atlas_device_authorizations/);
+  assert.match(deviceMigration, /owner_id uuid references auth\.users/);
+  assert.match(deviceMigration, /installation_token_hash text not null unique/);
+  assert.match(deviceMigration, /code_challenge text not null/);
+  assert.match(deviceMigration, /atlas_approve_device_authorization/);
+  assert.match(deviceMigration, /grant execute on function public\.atlas_approve_device_authorization[\s\S]*to service_role/);
+  assert.doesNotMatch(deviceMigration, /email text/);
+  assert.match(edgeFunction, /\/device\/code/);
+  assert.match(edgeFunction, /\/device\/verify/);
+  assert.match(edgeFunction, /\/device\/approve/);
+  assert.match(edgeFunction, /\/device\/token/);
+});
+
+test("Atlas provides browser approval and an owned-agent profile collection", () => {
+  assert.match(devicePage, /Continue with GitHub/);
+  assert.match(devicePage, /Continue with Google/);
+  assert.match(devicePage, /Approximate agent location/);
+  assert.match(devicePage, /Prompts, responses, files, commands and precise location are excluded/);
+  assert.match(presenceHook, /atlas_agent_installations/);
+  assert.match(presenceHook, /AtlasOwnedAgent/);
 });

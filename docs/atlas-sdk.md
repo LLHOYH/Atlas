@@ -4,12 +4,14 @@ The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks
 
 ## Flow
 
-1. The user signs in to Atlas and registers an installation through the CLI.
-2. Atlas returns a one-time `atlas_live_…` credential and stores only its SHA-256 hash.
-3. A runtime hook maps its native event into the Atlas lifecycle contract.
-4. The SDK hashes the host session identifier, writes the event to its local queue, and attempts a short batch delivery.
-5. The ingestion API validates the installation, protocol version, event type, controlled state values, and event identity.
-6. Supabase records the private raw event, updates the current agent/session snapshot, and appends a sanitized public map event.
+1. The CLI creates a PKCE verifier and an `atlas_live_…` installation credential locally, then sends only their hashes to Atlas.
+2. Atlas returns a short-lived device code and opens `/connect` in the browser.
+3. The user signs in with GitHub or Google, reviews the requesting agent, chooses an approximate city, and approves it.
+4. The device grant creates an installation owned by the authenticated Supabase user, linking it to the existing human profile without publishing the account email.
+5. The CLI polls with the high-entropy device code plus PKCE verifier, stores the local credential, and installs lifecycle hooks.
+6. A runtime hook maps its native event into the Atlas lifecycle contract.
+7. The SDK hashes the host session identifier, writes the event to its local queue, and attempts a short batch delivery.
+8. Supabase records the private raw event, updates the current agent/session snapshot, and appends a sanitized public map event.
 
 ## Lifecycle mapping
 
@@ -24,21 +26,16 @@ The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks
 
 The adapter reads event names, session identifiers, and tool names. It deliberately ignores prompt text, tool arguments, outputs, paths, commands, URLs, and conversation history.
 
-## Local registration
+## Device setup
 
 ```bash
-atlas register \
-  --endpoint http://localhost:3000/api/atlas/v1 \
-  --access-token "$SUPABASE_ACCESS_TOKEN" \
-  --name "My Codex" \
-  --runtime codex \
-  --city singapore
-
-atlas install codex
+npx @atlas-ai/sdk setup codex --name "My Codex"
 atlas diagnose
 ```
 
-The CLI stores its installation credential in `~/.atlas/config.json` with user-only permissions. Queued event files live under `~/.atlas/queue`.
+The code expires after ten minutes. The CLI stores its installation credential in `~/.atlas/config.json` with user-only permissions and a persistent hook runtime under `~/.atlas/runtime`. Queued event files live under `~/.atlas/queue`.
+
+The older `atlas register` command remains available for development, but requires manually supplying a Supabase access token. Public onboarding should use `atlas setup`.
 
 ## Production endpoint
 
@@ -46,6 +43,9 @@ Deploy `supabase/functions/atlas-ingest` without platform JWT verification becau
 
 - `/installations` validates a Supabase user access token.
 - `/events` validates the hashed Atlas installation credential.
+- `/device/code` starts a short-lived PKCE-protected device grant.
+- `/device/verify`, `/device/approve`, and `/device/deny` require a Supabase user session.
+- `/device/token` lets the originating CLI finish setup after approval.
 
 The SDK endpoint is the function base URL, for example:
 
@@ -61,8 +61,7 @@ https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest
 
 ## Next release
 
-- Device/browser login so users never paste a Supabase access token.
 - Native Hermes and OpenClaw marketplace installers.
-- Installation list, pause, revoke, rename, and delete UI.
+- Installation pause, revoke, rename, and delete controls.
 - Scheduled stale-agent and event-retention jobs.
 - Sampling controls and load testing for high-volume tool loops.

@@ -6,5 +6,13 @@ export { FileEventQueue } from "./queue.js";
 export type { AtlasEventQueue } from "./queue.js";
 export { readAtlasConfig, writeAtlasConfig, atlasHome, atlasConfigPath, atlasQueuePath } from "./config.js";
 export type { AtlasLocalConfig } from "./config.js";
-export { installJsonIntegration, integrationConfig, integrationSnippet } from "./installers.js";
+export { installJsonIntegration, installPersistentRuntime, integrationConfig, integrationSnippet } from "./installers.js";
+export {
+  DEFAULT_ATLAS_ENDPOINT,
+  createDeviceSetupSecrets,
+  startAtlasDeviceSetup,
+  pollAtlasDeviceSetup,
+  openAtlasVerificationPage,
+} from "./device.js";
+export type { AtlasDeviceSetupOptions, AtlasDeviceAuthorization, AtlasApprovedInstallation } from "./device.js";
 export * from "./protocol.js";

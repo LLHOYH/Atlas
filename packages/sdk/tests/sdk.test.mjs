@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { AtlasClient } from "../dist/client.js";
 import { draftsFromHook } from "../dist/adapters.js";
 import { FileEventQueue } from "../dist/queue.js";
-import { integrationConfig } from "../dist/installers.js";
+import { installPersistentRuntime, integrationConfig } from "../dist/installers.js";
+import { createDeviceSetupSecrets, startAtlasDeviceSetup } from "../dist/device.js";
 
 test("Codex hook mapping never forwards prompt or tool input content", () => {
   const drafts = draftsFromHook("codex", {
@@ -74,4 +75,41 @@ test("hook installers cover deterministic lifecycle events", () => {
     assert.ok(event in claude.hooks);
   }
   assert.ok("SessionEnd" in claude.hooks);
+});
+
+test("device setup keeps the raw installation credential on the user's machine", async () => {
+  const secrets = createDeviceSetupSecrets();
+  assert.match(secrets.installationToken, /^atlas_live_[A-Za-z0-9_-]{43}$/);
+  assert.match(secrets.installationTokenHash, /^[a-f0-9]{64}$/);
+  assert.equal(secrets.codeVerifier.length, 43);
+  assert.equal(secrets.codeChallenge.length, 43);
+
+  let posted;
+  const authorization = await startAtlasDeviceSetup({
+    endpoint: "https://atlas.example",
+    displayName: "Test Codex",
+    runtime: "codex",
+    fetch: async (_url, init) => {
+      posted = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        device_code: "atlas_device_abcdefghijklmnopqrstuvwxyzABCDEFGH123456789",
+        user_code: "ABCD-2345",
+        verification_uri: "https://atlas.example/connect",
+        verification_uri_complete: "https://atlas.example/connect?code=ABCD-2345",
+        expires_in: 600,
+        interval: 5,
+      }), { status: 201 });
+    },
+  });
+  assert.equal(authorization.userCode, "ABCD-2345");
+  assert.equal(posted.installation_token_hash.length, 64);
+  assert.ok(!JSON.stringify(posted).includes(authorization.installationToken));
+});
+
+test("one-shot setup persists a hook runtime after npx exits", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "atlas-sdk-runtime-"));
+  const runtime = await installPersistentRuntime(directory);
+  assert.match(await readFile(join(directory, "cli.js"), "utf8"), /Atlas SDK 0\.1/);
+  assert.match(runtime.hookCommand("codex"), /cli\.js.*hook codex/);
+  await rm(directory, { recursive: true, force: true });
 });

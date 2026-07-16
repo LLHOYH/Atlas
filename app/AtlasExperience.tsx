@@ -29,7 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 import * as THREE from "three";
-import { useAtlasPresence } from "../hooks/useAtlasPresence";
+import { useAtlasPresence, type AtlasOwnedAgent } from "../hooks/useAtlasPresence";
 import { useAtlasWorld } from "../hooks/useAtlasWorld";
 import {
   controlStates,
@@ -1699,6 +1699,8 @@ function CountryProfileCard({
 function PresenceStudio({
   cities,
   draft,
+  email,
+  installations,
   configured,
   busy,
   error,
@@ -1708,6 +1710,8 @@ function PresenceStudio({
 }: {
   cities: City[];
   draft: PresenceDraft;
+  email: string | null;
+  installations: AtlasOwnedAgent[];
   configured: boolean;
   busy: boolean;
   error: string | null;
@@ -1745,9 +1749,9 @@ function PresenceStudio({
     >
       <header className="presenceHeader">
         <div>
-          <span className="eyebrow"><Radio size={11} /> PHASE 2 · IDENTITY &amp; PRESENCE</span>
-          <h2>Broadcast your place in the world.</h2>
-          <p>Your human signal and connected AI appear together on the live map.</p>
+          <span className="eyebrow"><Radio size={11} /> ATLAS IDENTITY &amp; AGENT NETWORK</span>
+          <h2>Your profile in the living world.</h2>
+          <p>Your human signal and every approved agent belong to one private account.</p>
         </div>
         <button type="button" className="iconButton" onClick={onClose} aria-label="Close presence editor"><X size={16} /></button>
       </header>
@@ -1789,6 +1793,30 @@ function PresenceStudio({
           </div>
         </section>
       </div>
+
+      <section className="ownedAgentCollection">
+        <header>
+          <div><Bot size={15} /><span><b>MY LINKED AGENTS</b><small>{email ?? "Local preview"}</small></span></div>
+          <em>{installations.length} {installations.length === 1 ? "AGENT" : "AGENTS"}</em>
+        </header>
+        {installations.length ? (
+          <div className="ownedAgentList">
+            {installations.map((agent) => {
+              const active = agent.connectionState === "live";
+              const state = agent.connectionState;
+              return (
+                <article key={agent.id}>
+                  <span className={`ownedAgentRuntime ${active ? "active" : ""}`}><Bot size={14} /></span>
+                  <div><b>{agent.displayName}</b><small>{agent.runtime} {agent.runtimeVersion !== "unknown" ? `· ${agent.runtimeVersion}` : ""} · {agent.cityId.replaceAll("-", " ")}</small></div>
+                  <em className={state}>{state}</em>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="ownedAgentEmpty"><Bot size={17} /><span><b>No device agents linked yet</b><small>Run <code>npx @atlas-ai/sdk setup codex</code> from an agent terminal.</small></span></div>
+        )}
+      </section>
 
       <footer className="presenceFooter">
         <button type="button" className="signOutButton" onClick={() => void onSignOut()}><LogOut size={14} /> Disconnect</button>
@@ -2295,6 +2323,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             <PresenceStudio
               cities={cities}
               draft={presence.draft}
+              email={presence.session?.user.email ?? null}
+              installations={presence.installations}
               configured={presence.configured}
               busy={presence.busy}
               error={presence.error}
@@ -2317,7 +2347,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
               <span className="joinOrb"><Zap size={23} /></span>
               <span className="eyebrow">ENTER THE LIVING WORLD</span>
               <h2>{joined ? "You’re connected" : "Make your attention visible."}</h2>
-              <p>{joined ? "Your human and AI identities are ready to broadcast." : "Create your human presence and connect one AI to the world."}</p>
+              <p>{joined ? "Your human profile and linked agents are ready to broadcast." : "Create your human presence and link your agents to the world."}</p>
               {!joined ? <div className="providerButtons">
                 <button disabled={presence.busy} onClick={() => void beginSignIn("github")}><Code2 size={17} /> Continue with GitHub</button>
                 <button disabled={presence.busy} onClick={() => void beginSignIn("google")}><span className="googleMark">G</span> Continue with Google</button>

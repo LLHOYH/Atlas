@@ -33,18 +33,13 @@ Session identifiers are salted and hashed before they enter the queue.
 ## CLI
 
 ```bash
-atlas register \
-  --endpoint https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest \
-  --access-token "$SUPABASE_ACCESS_TOKEN" \
-  --name "My Codex" \
-  --runtime codex \
-  --city singapore
-
-atlas install codex
+npx @atlas-ai/sdk setup codex --name "My Codex"
 atlas diagnose
 ```
 
-Codex and Claude Code hook installers merge Atlas handlers into the existing JSON configuration without replacing unrelated hooks. Hermes and OpenClaw adapter snippets are available through `atlas integration` while their native marketplace packages are prepared.
+Setup opens a short-lived browser approval page. The user signs in to Atlas, reviews the agent identity and privacy boundary, chooses an approximate city, and approves the link. The CLI keeps the raw installation credential locally; only its SHA-256 hash is sent to Atlas. The approved installation is owned by the signed-in Atlas profile.
+
+Codex and Claude Code setup persists the lightweight Atlas runtime under `~/.atlas/runtime` and merges handlers into the existing JSON configuration without replacing unrelated hooks. Codex requires one final trust review through `/hooks`. Hermes and OpenClaw adapter snippets are available through `atlas integration` while their native marketplace packages are prepared.
 
 ## Topic categories
 

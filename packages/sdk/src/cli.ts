@@ -3,7 +3,8 @@ import process from "node:process";
 import { AtlasClient } from "./client.js";
 import { draftsFromHook, type AtlasRuntime } from "./adapters.js";
 import { readAtlasConfig, writeAtlasConfig } from "./config.js";
-import { installJsonIntegration, integrationSnippet } from "./installers.js";
+import { installJsonIntegration, installPersistentRuntime, integrationSnippet } from "./installers.js";
+import { DEFAULT_ATLAS_ENDPOINT, openAtlasVerificationPage, pollAtlasDeviceSetup, startAtlasDeviceSetup } from "./device.js";
 import { atlasActivities, atlasStatuses, atlasTopics, type AtlasActivity, type AtlasStatus, type AtlasTopic } from "./protocol.js";
 
 function option(name: string) {
@@ -71,6 +72,48 @@ async function register() {
   process.stdout.write(`Registered ${String(body.agent_id)}\n`);
 }
 
+async function setup(runtime: AtlasRuntime) {
+  if (!["codex", "claude-code", "hermes", "openclaw", "custom"].includes(runtime)) {
+    throw new Error("Choose a runtime: codex, claude-code, hermes, openclaw, or custom");
+  }
+  const displayName = option("name") ?? `${runtime} agent`;
+  const authorization = await startAtlasDeviceSetup({
+    endpoint: option("endpoint") ?? DEFAULT_ATLAS_ENDPOINT,
+    displayName,
+    runtime,
+    runtimeVersion: option("runtime-version") ?? "unknown",
+    topic: (option("topic") ?? "other") as AtlasTopic,
+    activity: (option("activity") ?? "working") as AtlasActivity,
+  });
+  process.stdout.write(`\nConnect ${displayName} to Atlas\n`);
+  process.stdout.write(`Open: ${authorization.verificationUriComplete}\n`);
+  process.stdout.write(`Code: ${authorization.userCode}\n\n`);
+  if (!process.argv.includes("--no-open")) openAtlasVerificationPage(authorization.verificationUriComplete);
+  process.stdout.write("Waiting for approval");
+  const installation = await pollAtlasDeviceSetup(authorization, { onPending: () => process.stdout.write(".") });
+  process.stdout.write(" approved.\n");
+  await writeAtlasConfig({
+    endpoint: authorization.endpoint,
+    token: authorization.installationToken,
+    installationId: installation.id,
+    agentId: installation.agentId,
+    runtime,
+    runtimeVersion: authorization.runtimeVersion,
+    defaultTopic: authorization.defaultTopic,
+    defaultActivity: authorization.defaultActivity,
+  });
+  const persistent = await installPersistentRuntime();
+  if (runtime === "codex" || runtime === "claude-code") {
+    const path = await installJsonIntegration(runtime, undefined, persistent.hookCommand(runtime));
+    process.stdout.write(`Installed ${runtime} lifecycle hooks in ${path}.\n`);
+    if (runtime === "codex") process.stdout.write("Open /hooks in Codex and trust the Atlas hooks once.\n");
+  } else if (runtime === "hermes" || runtime === "openclaw") {
+    process.stdout.write("Add this lifecycle integration to the runtime:\n");
+    process.stdout.write(integrationSnippet(runtime, runtime === "hermes" ? persistent.hookCommand(runtime) : undefined));
+  }
+  process.stdout.write(`Atlas agent ${installation.agentId} is linked and ready.\n`);
+}
+
 async function hook(runtime: AtlasRuntime) {
   const config = await readAtlasConfig();
   if (!config) return;
@@ -104,6 +147,7 @@ async function updateState(kind: "status" | "topic" | "activity", value: string)
 
 function help() {
   process.stdout.write(`Atlas SDK 0.1\n\n`);
+  process.stdout.write(`atlas setup codex|claude-code|hermes|openclaw|custom [--name NAME] [--endpoint URL]\n`);
   process.stdout.write(`atlas register --endpoint URL --access-token TOKEN --name NAME --runtime RUNTIME --city CITY_ID\n`);
   process.stdout.write(`atlas install codex|claude-code\n`);
   process.stdout.write(`atlas hook codex|claude-code|hermes|openclaw\n`);
@@ -117,6 +161,7 @@ function help() {
 async function main() {
   const [, , command, argument] = process.argv;
   if (!command || command === "help" || command === "--help") return help();
+  if (command === "setup") return setup(argument as AtlasRuntime);
   if (command === "register") return register();
   if (command === "hook") return hook(argument as AtlasRuntime);
   if (command === "install" && (argument === "codex" || argument === "claude-code")) {

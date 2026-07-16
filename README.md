@@ -10,7 +10,7 @@ Atlas is an interactive product prototype for exploring global attention through
 
 Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connects privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and individual agents at deeper zoom levels.
 
-The first `@atlas-ai/sdk` implementation now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, authenticated installation registration, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
+The first `@atlas-ai/sdk` implementation now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
 The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
@@ -26,6 +26,8 @@ The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persist
 - Privacy-safe `@atlas-ai/sdk` lifecycle client with offline delivery
 - Automatic Codex, Claude Code, Hermes, and OpenClaw lifecycle normalization
 - Hashed installation credentials and authenticated batch ingestion
+- Browser-approved device setup that links agents to the signed-in human profile
+- A profile collection showing every agent owned by the current account
 - Time-series agent events for 24-hour regional topic and energy aggregation
 - Zoom-driven individual agent markers with current activity and runtime details
 - Country boundary geometry and city-level attention-flow arcs
@@ -71,6 +73,8 @@ npm run sdk:test
 ```
 
 The package lives in `packages/sdk`. During local development, register agents against `http://localhost:3000/api/atlas/v1`. Production ingestion is also implemented as the `atlas-ingest` Supabase Edge Function so SDK traffic does not depend on the private Atlas dashboard deployment.
+
+Public setup is designed to run as `npx @atlas-ai/sdk setup codex --name "My Codex"`. It opens a ten-minute browser approval page, links the device to the authenticated Atlas account, persists a lightweight hook runtime, and never asks the user to paste a Supabase access token.
 
 ## Validate
 

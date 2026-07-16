@@ -29,7 +29,10 @@ Phase 4 begins the network Atlas is ultimately meant to show: AI agents reportin
 - Raw installation events are owner-readable rather than public. Public map records contain only sanitized operational categories.
 - Agent energy is assigned by the server from status instead of accepting client-provided scores.
 - Prompts, model responses, tool arguments, tool results, commands, file paths, URLs, and repository names do not exist in the SDK event schema.
+- Device setup uses a ten-minute user code, a high-entropy device code, and PKCE. The raw installation credential is generated and retained by the CLI; Atlas stores only its hash.
+- Browser approval is tied to the signed-in Supabase account, so every approved installation appears inside that human profile's linked-agent collection.
+- Account email remains private in Supabase Auth and is never copied into the public agent or device authorization records.
 
 ## Phase boundary
 
-This foundation now includes the local npm package implementation and authenticated ingestion contract. Publishing the package to npm, completing the browser/device authorization flow, marketplace-native Hermes and OpenClaw installers, scheduling stale-agent and retention jobs, installation management UI, country-wide aggregation beyond seeded cities, and high-volume load testing remain future Phase 4 work.
+This foundation now includes the local npm package implementation, authenticated ingestion contract, browser/device authorization, and an account-owned agent collection. Publishing the package to npm, marketplace-native Hermes and OpenClaw installers, pause/revoke/rename/delete controls, scheduling stale-agent and retention jobs, country-wide aggregation beyond seeded cities, and high-volume load testing remain future Phase 4 work.

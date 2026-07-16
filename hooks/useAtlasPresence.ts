@@ -13,6 +13,20 @@ import {
   type PresenceStatus,
 } from "../lib/atlas/types";
 
+export type AtlasOwnedAgent = {
+  id: string;
+  agentId: string;
+  displayName: string;
+  runtime: string;
+  runtimeVersion: string;
+  cityId: string;
+  visibility: "public" | "private" | "paused";
+  lastSeenAt: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+  connectionState: "live" | "offline" | "linked" | "paused" | "revoked";
+};
+
 const now = () => new Date().toISOString();
 const expiresAt = () => new Date(Date.now() + 2 * 60 * 1000).toISOString();
 
@@ -78,6 +92,7 @@ export function useAtlasPresence() {
   const [presenceFeed, setPresenceFeed] = useState<AtlasPresence[]>(() =>
     isSupabaseConfigured ? [] : presenceFromDraft(defaultPresenceDraft),
   );
+  const [installations, setInstallations] = useState<AtlasOwnedAgent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,6 +119,38 @@ export function useAtlasPresence() {
     setPresenceFeed((data ?? []).map((row) => mapPresenceRow(row as Record<string, unknown>)));
   }, [client]);
 
+  const loadInstallations = useCallback(async (ownerId: string) => {
+    if (!client) return;
+    const { data, error: queryError } = await client
+      .from("atlas_agent_installations")
+      .select("id, agent_id, display_name, runtime, runtime_version, city_id, visibility, last_seen_at, created_at, revoked_at")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false });
+    if (queryError) {
+      setError(queryError.message);
+      return;
+    }
+    setInstallations((data ?? []).map((row) => {
+      const lastSeenAt = row.last_seen_at ? String(row.last_seen_at) : null;
+      const revokedAt = row.revoked_at ? String(row.revoked_at) : null;
+      const visibility = row.visibility as AtlasOwnedAgent["visibility"];
+      const live = lastSeenAt ? Date.now() - new Date(lastSeenAt).getTime() <= 2 * 60 * 1000 : false;
+      return {
+        id: String(row.id),
+        agentId: String(row.agent_id),
+        displayName: String(row.display_name),
+        runtime: String(row.runtime),
+        runtimeVersion: String(row.runtime_version),
+        cityId: String(row.city_id),
+        visibility,
+        lastSeenAt,
+        createdAt: String(row.created_at),
+        revokedAt,
+        connectionState: revokedAt ? "revoked" : visibility === "paused" ? "paused" : live ? "live" : lastSeenAt ? "offline" : "linked",
+      };
+    }));
+  }, [client]);
+
   const loadUserDraft = useCallback(async (activeSession: Session) => {
     if (!client) return;
     const ownerId = activeSession.user.id;
@@ -117,6 +164,8 @@ export function useAtlasPresence() {
     const profile = profileResult.data;
     const aiProfile = aiProfileResult.data;
     const humanPresence = humanPresenceResult.data;
+
+    await loadInstallations(ownerId);
 
     setDraft((current) => ({
       ...current,
@@ -138,7 +187,7 @@ export function useAtlasPresence() {
       aiAutonomous: aiProfile?.autonomous ?? current.aiAutonomous,
       aiCapabilities: Array.isArray(aiProfile?.capabilities) ? aiProfile.capabilities.join(", ") : current.aiCapabilities,
     }));
-  }, [client]);
+  }, [client, loadInstallations]);
 
   useEffect(() => {
     if (!client) return;
@@ -168,6 +217,25 @@ export function useAtlasPresence() {
       void client.removeChannel(channel);
     };
   }, [client, loadPresenceFeed, loadUserDraft]);
+
+  useEffect(() => {
+    if (!client || !session) return;
+    const ownerId = session.user.id;
+    const channel = client
+      .channel(`atlas-owned-agents-${ownerId}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "atlas_agent_installations",
+        filter: `owner_id=eq.${ownerId}`,
+      }, () => {
+        void loadInstallations(ownerId);
+      })
+      .subscribe();
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [client, loadInstallations, session]);
 
   useEffect(() => {
     if (!client || !session) return;
@@ -206,6 +274,7 @@ export function useAtlasPresence() {
     }
     await client.auth.signOut();
     setSession(null);
+    setInstallations([]);
   }, [client, session]);
 
   const savePresence = useCallback(async (nextDraft: PresenceDraft) => {
@@ -310,6 +379,7 @@ export function useAtlasPresence() {
     configured: isSupabaseConfigured,
     connected: Boolean(session || demoConnected),
     session,
+    installations,
     draft,
     presenceFeed,
     busy,
