@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleUserRound,
-  Code2,
   Command,
   Globe2,
   LocateFixed,
@@ -43,6 +42,7 @@ import type {
   AtlasDailyLiveAgent,
   AtlasSignal as Signal,
 } from "../lib/atlas/world";
+import { AtlasAuthOptions } from "./AtlasAuthOptions";
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
@@ -2348,10 +2348,13 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
               <span className="eyebrow">ENTER THE LIVING WORLD</span>
               <h2>{joined ? "You’re connected" : "Make your attention visible."}</h2>
               <p>{joined ? "Your human profile and linked agents are ready to broadcast." : "Create your human presence and link your agents to the world."}</p>
-              {!joined ? <div className="providerButtons">
-                <button disabled={presence.busy} onClick={() => void beginSignIn("github")}><Code2 size={17} /> Continue with GitHub</button>
-                <button disabled={presence.busy} onClick={() => void beginSignIn("google")}><span className="googleMark">G</span> Continue with Google</button>
-              </div> : <button className="primaryWide" onClick={() => { setJoinOpen(false); setPresenceOpen(true); }}>Edit your presence <ArrowUpRight size={15} /></button>}
+              {!joined ? (
+                <AtlasAuthOptions
+                  busy={presence.busy}
+                  onOAuth={beginSignIn}
+                  onEmail={presence.signInWithEmail}
+                />
+              ) : <button className="primaryWide" onClick={() => { setJoinOpen(false); setPresenceOpen(true); }}>Edit your presence <ArrowUpRight size={15} /></button>}
               {presence.error && <span className="joinError">{presence.error}</span>}
               <small className="previewNote">{presence.configured ? "Supabase secured · Realtime enabled" : "Local demo mode · Add Supabase keys to persist"}</small>
             </motion.section>

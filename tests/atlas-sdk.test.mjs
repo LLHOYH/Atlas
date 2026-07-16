@@ -11,6 +11,7 @@ const edgeFunction = await readFile(new URL("../supabase/functions/atlas-ingest/
 const deviceMigration = await readFile(new URL("../supabase/migrations/202607160002_atlas_device_authorization.sql", import.meta.url), "utf8");
 const devicePage = await readFile(new URL("../app/connect/DeviceConnect.tsx", import.meta.url), "utf8");
 const presenceHook = await readFile(new URL("../hooks/useAtlasPresence.ts", import.meta.url), "utf8");
+const authOptions = await readFile(new URL("../app/AtlasAuthOptions.tsx", import.meta.url), "utf8");
 
 test("Atlas SDK exposes a controlled privacy-safe lifecycle protocol", () => {
   for (const event of ["session.started", "turn.started", "tool.completed", "status.changed", "session.ended"]) {
@@ -62,8 +63,11 @@ test("device authorization links approved agents to an authenticated Atlas profi
 });
 
 test("Atlas provides browser approval and an owned-agent profile collection", () => {
-  assert.match(devicePage, /Continue with GitHub/);
-  assert.match(devicePage, /Continue with Google/);
+  assert.match(devicePage, /signInWithOtp/);
+  assert.match(authOptions, /Continue with GitHub/);
+  assert.match(authOptions, /Continue with Google/);
+  assert.match(authOptions, /type="email"/);
+  assert.match(authOptions, /one-time sign-in link/);
   assert.match(devicePage, /Approximate agent location/);
   assert.match(devicePage, /Prompts, responses, files, commands and precise location are excluded/);
   assert.match(presenceHook, /atlas_agent_installations/);

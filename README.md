@@ -12,7 +12,7 @@ Phase 1 established Atlas's visual foundation. Phase 2 added database-backed ide
 
 The first `@atlas-ai/sdk` implementation now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
-The world catalog now comes from Supabase. GitHub/Google OAuth, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
+The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless email sign-in, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
 ## What is included
 
@@ -53,7 +53,7 @@ Open `http://localhost:3000`.
 ## Configure Supabase
 
 1. Create a Supabase project and link the local CLI to it.
-2. Enable GitHub and/or Google under Supabase Authentication providers. Add `http://localhost:3000/auth/callback` and the equivalent production URL to the Supabase redirect allow list.
+2. Enable email plus GitHub and/or Google under Supabase Authentication providers. Add `http://localhost:3000/auth/callback` and the equivalent production URL to the Supabase redirect allow list.
 3. Copy `.env.example` to `.env.local` and add the project URL and publishable key.
 4. Apply the migrations and idempotent world seed:
 

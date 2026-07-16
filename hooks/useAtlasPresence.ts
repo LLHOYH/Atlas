@@ -263,6 +263,22 @@ export function useAtlasPresence() {
     setBusy(false);
   }, [client]);
 
+  const signInWithEmail = useCallback(async (email: string) => {
+    setError(null);
+    if (!client) {
+      setDemoConnected(true);
+      return true;
+    }
+    setBusy(true);
+    const { error: signInError } = await client.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
+    });
+    if (signInError) setError(signInError.message);
+    setBusy(false);
+    return !signInError;
+  }, [client]);
+
   const signOut = useCallback(async () => {
     if (!client) {
       setDemoConnected(false);
@@ -385,6 +401,7 @@ export function useAtlasPresence() {
     busy,
     error,
     signIn,
+    signInWithEmail,
     signOut,
     savePresence,
   };

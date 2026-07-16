@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import Link from "next/link";
-import { ArrowLeft, Bot, Check, Code2, Link2, LoaderCircle, MapPin, ShieldCheck, X } from "lucide-react";
+import { ArrowLeft, Bot, Check, Link2, LoaderCircle, MapPin, ShieldCheck, X } from "lucide-react";
 import { atlasDeviceEndpoint, normalizeAtlasDeviceCode, type AtlasDeviceCity, type AtlasDevicePreview } from "../../lib/atlas/device";
 import { getSupabaseBrowserClient } from "../../lib/supabase/client";
+import { AtlasAuthOptions } from "../AtlasAuthOptions";
 
 type Stage = "code" | "approval" | "approved" | "denied";
 
@@ -102,6 +103,23 @@ export function DeviceConnect() {
     }
   };
 
+  const signInWithEmail = async (email: string) => {
+    if (!client) {
+      setError("Atlas authentication is not configured");
+      return false;
+    }
+    setBusy(true);
+    setError(null);
+    const returnPath = `/connect?code=${encodeURIComponent(normalizeAtlasDeviceCode(code))}`;
+    const { error: signInError } = await client.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnPath)}` },
+    });
+    if (signInError) setError(signInError.message);
+    setBusy(false);
+    return !signInError;
+  };
+
   const approve = async () => {
     if (!session || !preview || !cityId) return;
     setBusy(true);
@@ -161,10 +179,13 @@ export function DeviceConnect() {
             {!session ? (
               <div className="deviceAuthBlock">
                 <span><ShieldCheck size={15} /> Sign in so this agent belongs to your Atlas profile</span>
-                <div className="providerButtons">
-                  <button disabled={busy || code.length !== 9} onClick={() => void signIn("github")}><Code2 size={17} /> Continue with GitHub</button>
-                  <button disabled={busy || code.length !== 9} onClick={() => void signIn("google")}><b className="googleMark">G</b> Continue with Google</button>
-                </div>
+                <AtlasAuthOptions
+                  key={code}
+                  busy={busy}
+                  disabled={code.length !== 9}
+                  onOAuth={signIn}
+                  onEmail={signInWithEmail}
+                />
               </div>
             ) : stage === "code" ? (
               <button className="devicePrimary" disabled={busy || code.length !== 9} onClick={() => void verify()}>{busy ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />} Verify device</button>

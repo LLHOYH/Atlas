@@ -6,7 +6,7 @@ The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks
 
 1. The CLI creates a PKCE verifier and an `atlas_live_…` installation credential locally, then sends only their hashes to Atlas.
 2. Atlas returns a short-lived device code and opens `/connect` in the browser.
-3. The user signs in with GitHub or Google, reviews the requesting agent, chooses an approximate city, and approves it.
+3. The user signs in with Google, GitHub, or a passwordless email link, reviews the requesting agent, chooses an approximate city, and approves it.
 4. The device grant creates an installation owned by the authenticated Supabase user, linking it to the existing human profile without publishing the account email.
 5. The CLI polls with the high-entropy device code plus PKCE verifier, stores the local credential, and installs lifecycle hooks.
 6. A runtime hook maps its native event into the Atlas lifecycle contract.
