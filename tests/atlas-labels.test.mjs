@@ -128,6 +128,10 @@ test("phase 5 renders dense Supabase agents in street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
+  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.08/);
+  assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
+  assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
+  assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
 });
 
 test("city detail uses bordered territories and the country label style", () => {

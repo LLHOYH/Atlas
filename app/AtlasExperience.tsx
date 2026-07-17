@@ -159,6 +159,19 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
+const STREET_ENTRY_DISTANCE = 4.08;
+const STREET_ENTRY_RESET_DISTANCE = 4.36;
+
+function nearestCityToLocation(cities: City[], location: GeoCenter) {
+  return cities.reduce((nearest, city) => {
+    const latitudeScale = Math.cos(THREE.MathUtils.degToRad((location.lat + city.lat) / 2));
+    const latitudeDelta = city.lat - location.lat;
+    const longitudeDelta = normalizeLongitude(city.lng - location.lng) * latitudeScale;
+    const distance = latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
+    return distance < nearest.distance ? { city, distance } : nearest;
+  }, { city: cities[0], distance: Number.POSITIVE_INFINITY }).city;
+}
+
 function GlobeLabel({
   label,
   kind,
@@ -432,10 +445,13 @@ function StreetMap({
           paint: {
             "circle-color": statusColor,
             "circle-radius": [
-              "case",
-              ["boolean", ["feature-state", "hover"], false],
-              8,
-              ["interpolate", ["linear"], ["zoom"], 13, 3.4, 18, 6.2],
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              13,
+              ["case", ["boolean", ["feature-state", "hover"], false], 7, 3.4],
+              18,
+              ["case", ["boolean", ["feature-state", "hover"], false], 9, 6.2],
             ],
             "circle-opacity": ["case", ["==", ["get", "status"], "offline"], 0.38, 0.96],
             "circle-stroke-color": "#effcff",
@@ -1436,9 +1452,9 @@ function Earth({
       }
     }
     const distance = camera.position.length();
-    if (distance > 3.84) {
+    if (distance > STREET_ENTRY_RESET_DISTANCE) {
       streetEntryLocked.current = false;
-    } else if (distance <= 3.69 && !streetEntryLocked.current) {
+    } else if (distance <= STREET_ENTRY_DISTANCE && !streetEntryLocked.current) {
       streetEntryLocked.current = true;
       onStreetEnter({
         lat: THREE.MathUtils.radToDeg(orientation.current.pitch),
@@ -1641,9 +1657,12 @@ function EarthScene({
   const focusLocation = viewTarget ?? countryTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
 
   const enterStreetView = useCallback((center: GeoCenter) => {
-    if (countryTarget) return;
-    setStreetState({ cityId: selectedCity.id, center, viewRevision });
-  }, [countryTarget, selectedCity.id, viewRevision]);
+    const streetCity = viewTarget || countryTarget
+      ? selectedCity
+      : nearestCityToLocation(cities, center);
+    onSelect(streetCity);
+    setStreetState({ cityId: streetCity.id, center, viewRevision: viewRevision + 1 });
+  }, [cities, countryTarget, onSelect, selectedCity, viewRevision, viewTarget]);
 
   const exitStreetView = useCallback((center: GeoCenter) => {
     setGlobeState({ cityId: selectedCity.id, center, viewRevision });
@@ -2209,8 +2228,10 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(null);
     setSelectedCountry(country);
+    const countryAnchor = cities.find((city) => countryEnergyKey(city.country) === country.key);
+    if (countryAnchor) setSelectedCityId(countryAnchor.id);
     setProfile(null);
-  }, []);
+  }, [cities]);
 
   const chooseRegionView = (nextViewId: RegionViewId) => {
     setRegionViewRevision((revision) => revision + 1);
