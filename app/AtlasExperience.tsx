@@ -2,7 +2,7 @@
 
 import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import { geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
@@ -158,20 +158,21 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const STREET_ENTRY_DISTANCE = 4.08;
-const STREET_ENTRY_RESET_DISTANCE = 4.36;
+const GLOBE_COUNTRY_DISTANCE = 6.15;
+const STREET_ENTRY_DISTANCE = 4.35;
+const STREET_ENTRY_RESET_DISTANCE = 4.55;
 const COUNTRY_DETAIL_DISTANCE = 5.7;
 const CITY_DETAIL_DISTANCE = 5.05;
-const TOWN_DETAIL_DISTANCE = 4.42;
-const GLOBE_MAX_DISTANCE = 6.3;
+const TOWN_MIN_DISTANCE = STREET_ENTRY_DISTANCE;
+const GLOBE_MAX_DISTANCE = 10;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
 
 function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
   const thresholds = streetZoomAvailable
-    ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
-    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_DETAIL_DISTANCE];
-  const progressStops = streetZoomAvailable ? [0, 25, 50, 75, 100] : [0, 33.333, 66.667, 100];
+    ? [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
+    : [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
+  const progressStops = [0, 33.333, 66.667, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
   for (let index = 0; index < thresholds.length - 1; index += 1) {
@@ -184,6 +185,28 @@ function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean)
   }
 
   return progressStops.at(-1) ?? 100;
+}
+
+function distanceForZoomProgress(progress: number, streetZoomAvailable: boolean) {
+  const thresholds = streetZoomAvailable
+    ? [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
+    : [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
+  const progressStops = [0, 33.333, 66.667, 100];
+  const clampedProgress = THREE.MathUtils.clamp(progress, 0, 100);
+
+  for (let index = 0; index < progressStops.length - 1; index += 1) {
+    const start = progressStops[index];
+    const end = progressStops[index + 1];
+    if (clampedProgress <= end) {
+      return THREE.MathUtils.lerp(
+        thresholds[index],
+        thresholds[index + 1],
+        THREE.MathUtils.inverseLerp(start, end, clampedProgress),
+      );
+    }
+  }
+
+  return thresholds.at(-1) ?? TOWN_MIN_DISTANCE;
 }
 
 function nearestCityToLocation(cities: City[], location: GeoCenter) {
@@ -714,57 +737,100 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
 type CountryHitArea = ReturnType<typeof countryToGeoJson>;
 type CityMapLabel = (typeof atlasLabelData.cities)[number];
 
-function stableCityHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+type TerritoryPlanePoint = { x: number; y: number };
+
+function clipTerritoryPolygon(
+  polygon: TerritoryPlanePoint[],
+  normalX: number,
+  normalY: number,
+  maximumDot: number,
+) {
+  const clipped: TerritoryPlanePoint[] = [];
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+    const startDistance = start.x * normalX + start.y * normalY - maximumDot;
+    const endDistance = end.x * normalX + end.y * normalY - maximumDot;
+    const startInside = startDistance <= 0;
+    const endInside = endDistance <= 0;
+    if (startInside) clipped.push(start);
+    if (startInside === endInside) continue;
+    const fraction = startDistance / (startDistance - endDistance);
+    clipped.push({
+      x: THREE.MathUtils.lerp(start.x, end.x, fraction),
+      y: THREE.MathUtils.lerp(start.y, end.y, fraction),
+    });
   }
-  return hash >>> 0;
+  return clipped;
 }
 
-function buildCityTerritoryRing(label: CityMapLabel, countryArea?: CountryHitArea) {
-  const population = Math.max(100_000, Number(label.population) || 100_000);
-  const populationScale = THREE.MathUtils.clamp((Math.log10(population) - 5) / 3, 0, 1);
-  const latitudeRadius = 0.2 + populationScale * 0.42;
-  const longitudeRadius = latitudeRadius / Math.max(0.32, Math.cos(THREE.MathUtils.degToRad(label.lat)));
-  const hash = stableCityHash(label.id);
-  const phase = ((hash % 360) * Math.PI) / 180;
+function buildCityTerritoryRing(
+  label: CityMapLabel,
+  countryArea: CountryHitArea | undefined,
+  countryLabels: CityMapLabel[],
+) {
+  const longitudeScale = Math.max(0.18, Math.cos(THREE.MathUtils.degToRad(label.lat)));
+  let territory = Array.from({ length: 48 }, (_, index) => {
+    const angle = (index / 48) * Math.PI * 2;
+    return { x: Math.cos(angle) * 180 * longitudeScale, y: Math.sin(angle) * 88 };
+  });
+
+  for (const neighbor of countryLabels) {
+    if (neighbor.id === label.id) continue;
+    const deltaX = normalizeLongitude(neighbor.lng - label.lng) * longitudeScale;
+    const deltaY = neighbor.lat - label.lat;
+    const squaredDistance = deltaX * deltaX + deltaY * deltaY;
+    if (squaredDistance < 0.0001) continue;
+    territory = clipTerritoryPolygon(territory, deltaX, deltaY, squaredDistance / 2);
+    if (territory.length < 3) break;
+  }
+
   const center: [number, number] = [normalizeLongitude(label.lng), label.lat];
   const centerInsideCountry = countryArea ? geoContains(countryArea, center) : false;
+  const ring: CountryPoint[] = [];
 
-  return Array.from({ length: 10 }, (_, index) => {
-    const angle = phase + (index / 10) * Math.PI * 2;
-    const wobbleSeed = (hash >>> (index % 16)) & 15;
-    const wobble = 0.82 + (wobbleSeed / 15) * 0.28;
-    const targetLng = normalizeLongitude(label.lng + Math.cos(angle) * longitudeRadius * wobble);
-    const targetLat = THREE.MathUtils.clamp(label.lat + Math.sin(angle) * latitudeRadius * wobble, -89.5, 89.5);
-    if (!countryArea || !centerInsideCountry || geoContains(countryArea, [targetLng, targetLat])) {
-      return { lng: targetLng, lat: targetLat };
-    }
+  for (let index = 0; index < territory.length; index += 1) {
+    const start = territory[index];
+    const end = territory[(index + 1) % territory.length];
+    const divisions = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 2.5));
+    for (let division = 0; division < divisions; division += 1) {
+      const fraction = division / divisions;
+      const localX = THREE.MathUtils.lerp(start.x, end.x, fraction);
+      const localY = THREE.MathUtils.lerp(start.y, end.y, fraction);
+      const targetLng = normalizeLongitude(label.lng + localX / longitudeScale);
+      const targetLat = THREE.MathUtils.clamp(label.lat + localY, -89.5, 89.5);
+      if (!countryArea || !centerInsideCountry || geoContains(countryArea, [targetLng, targetLat])) {
+        ring.push({ lng: targetLng, lat: targetLat });
+        continue;
+      }
 
-    const longitudeDelta = normalizeLongitude(targetLng - label.lng);
-    let insideFraction = 0;
-    let outsideFraction = 1;
-    for (let iteration = 0; iteration < 10; iteration += 1) {
-      const fraction = (insideFraction + outsideFraction) / 2;
-      const candidate: [number, number] = [
-        normalizeLongitude(label.lng + longitudeDelta * fraction),
-        label.lat + (targetLat - label.lat) * fraction,
-      ];
-      if (geoContains(countryArea, candidate)) insideFraction = fraction;
-      else outsideFraction = fraction;
+      const longitudeDelta = normalizeLongitude(targetLng - label.lng);
+      let insideFraction = 0;
+      let outsideFraction = 1;
+      for (let iteration = 0; iteration < 12; iteration += 1) {
+        const candidateFraction = (insideFraction + outsideFraction) / 2;
+        const candidate: [number, number] = [
+          normalizeLongitude(label.lng + longitudeDelta * candidateFraction),
+          label.lat + (targetLat - label.lat) * candidateFraction,
+        ];
+        if (geoContains(countryArea, candidate)) insideFraction = candidateFraction;
+        else outsideFraction = candidateFraction;
+      }
+      const clippedFraction = insideFraction * 0.992;
+      ring.push({
+        lng: normalizeLongitude(label.lng + longitudeDelta * clippedFraction),
+        lat: label.lat + (targetLat - label.lat) * clippedFraction,
+      });
     }
-    const clippedFraction = insideFraction * 0.94;
-    return {
-      lng: normalizeLongitude(label.lng + longitudeDelta * clippedFraction),
-      lat: label.lat + (targetLat - label.lat) * clippedFraction,
-    };
+  }
+
+  return ring.filter((point, index) => {
+    const previous = ring[(index - 1 + ring.length) % ring.length];
+    return !previous || Math.abs(point.lng - previous.lng) + Math.abs(point.lat - previous.lat) > 0.0001;
   });
 }
 
-function buildCityTerritoryGeometry(label: CityMapLabel, countryArea?: CountryHitArea) {
-  const ring = buildCityTerritoryRing(label, countryArea);
+function buildCityTerritoryGeometry(label: CityMapLabel, ring: CountryPoint[]) {
   const positions: number[] = [];
   const raisedPositions: number[] = [];
   const outlinePositions: number[] = [];
@@ -978,19 +1044,26 @@ function CityTerritories({
     countryEnergyKey(country.name),
     countryToGeoJson(country),
   ])), []);
+  const labelsByCountry = useMemo(() => atlasLabelData.cities.reduce<Map<string, CityMapLabel[]>>((groups, label) => {
+    const key = countryEnergyKey(label.country);
+    groups.set(key, [...(groups.get(key) ?? []), label]);
+    return groups;
+  }, new Map()), []);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
   const territories = useMemo(() => atlasLabelData.cities.map((label) => {
     const city = cityByName.get(normalizeLabelName(label.name)) ?? null;
-    const countryArea = countryAreas.get(countryEnergyKey(label.country));
+    const countryKey = countryEnergyKey(label.country);
+    const countryArea = countryAreas.get(countryKey);
+    const ring = buildCityTerritoryRing(label, countryArea, labelsByCountry.get(countryKey) ?? [label]);
     const baseColor = new THREE.Color(city?.color ?? "#287982").lerp(new THREE.Color("#214f58"), city ? 0.3 : 0.55);
     return {
       id: label.id,
       name: label.name,
       city,
       baseColor,
-      ...buildCityTerritoryGeometry(label, countryArea),
+      ...buildCityTerritoryGeometry(label, ring),
     };
-  }), [cityByName, countryAreas]);
+  }), [cityByName, countryAreas, labelsByCountry]);
 
   useFrame((_, delta) => {
     territories.forEach((territory, index) => {
@@ -1005,6 +1078,7 @@ function CityTerritories({
         mesh.material.color.copy(territory.baseColor).lerp(gold, next * 0.72);
         mesh.material.emissive.copy(territory.baseColor).lerp(gold, next);
         mesh.material.emissiveIntensity = 0.26 + next * 1.15;
+        mesh.material.opacity = 0.055 + next * 0.68;
       }
       if (outline) {
         const radiusScale = 1 + next * (CITY_HOVER_RADIUS / CITY_TOP_RADIUS - 1);
@@ -1029,7 +1103,7 @@ function CityTerritories({
         onPointerOver={(event) => {
           event.stopPropagation();
           hoveredCity.current = index;
-          document.body.style.cursor = territory.city ? "pointer" : "grab";
+          document.body.style.cursor = "pointer";
         }}
         onPointerMove={(event) => {
           event.stopPropagation();
@@ -1052,6 +1126,9 @@ function CityTerritories({
           roughness={0.5}
           metalness={0.18}
           side={THREE.DoubleSide}
+          transparent
+          opacity={0.055}
+          depthWrite={false}
         />
       </mesh>
       <lineSegments
@@ -1365,6 +1442,7 @@ function Earth({
   onStreetEnter: (center: GeoCenter) => void;
   streetZoomAvailable: boolean;
 }) {
+  const { camera, gl } = useThree();
   const globe = useRef<THREE.Group>(null);
   const drag = useRef({ active: false, x: 0, y: 0 });
   const velocity = useRef({ x: 0, y: 0 });
@@ -1424,6 +1502,55 @@ function Earth({
     focus.current = targetOrientation;
   }, [focusDistance, focusLocation.lat, focusLocation.lng, focusRevision]);
 
+  useEffect(() => {
+    const element = gl.domElement;
+    const semanticStep = (100 / 3) / ZOOM_SCROLLS_PER_LEVEL;
+    const overviewStep = (GLOBE_MAX_DISTANCE - GLOBE_COUNTRY_DISTANCE) / ZOOM_SCROLLS_PER_LEVEL;
+    let wheelGestureLocked = false;
+    let wheelGestureTimer: number | undefined;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      if (event.deltaY === 0) return;
+      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
+      wheelGestureTimer = window.setTimeout(() => {
+        wheelGestureLocked = false;
+      }, 120);
+      if (wheelGestureLocked) return;
+      wheelGestureLocked = true;
+
+      const currentDistance = focusDistanceTarget.current ?? camera.position.length();
+      const zoomingIn = event.deltaY < 0;
+      let nextDistance: number;
+      if (currentDistance > GLOBE_COUNTRY_DISTANCE) {
+        nextDistance = THREE.MathUtils.clamp(
+          currentDistance + (zoomingIn ? -overviewStep : overviewStep),
+          GLOBE_COUNTRY_DISTANCE,
+          GLOBE_MAX_DISTANCE,
+        );
+      } else {
+        const currentProgress = zoomProgressForDistance(currentDistance, streetZoomAvailable);
+        if (!zoomingIn && currentProgress <= 0) {
+          nextDistance = Math.min(GLOBE_MAX_DISTANCE, currentDistance + overviewStep);
+        } else {
+          const nextProgress = THREE.MathUtils.clamp(
+            currentProgress + (zoomingIn ? semanticStep : -semanticStep),
+            0,
+            100,
+          );
+          nextDistance = distanceForZoomProgress(nextProgress, streetZoomAvailable);
+        }
+      }
+      focusDistanceTarget.current = nextDistance;
+    };
+
+    element.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => {
+      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
+      element.removeEventListener("wheel", onWheel, { capture: true });
+    };
+  }, [camera, gl, streetZoomAvailable]);
+
   useFrame(({ camera }, delta) => {
     if (!globe.current) return;
     if (focusDistanceTarget.current !== null) {
@@ -1453,7 +1580,7 @@ function Earth({
       ? 1
       : distance > CITY_DETAIL_DISTANCE
         ? 2
-        : distance > TOWN_DETAIL_DISTANCE
+        : distance > STREET_ENTRY_DISTANCE
           ? 3
           : streetZoomAvailable
             ? 4
@@ -1630,6 +1757,7 @@ function CanvasWorldFallback({
   onAgentSelect,
   onDetailChange,
   onZoomChange,
+  onStreetEnter,
 }: {
   cities: City[];
   selectedCity: City;
@@ -1643,6 +1771,7 @@ function CanvasWorldFallback({
   onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
   onZoomChange: (progress: number) => void;
+  onStreetEnter: (center: GeoCenter) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const fallbackCountries = useMemo(() => atlasGeoData.countries.map((country) => {
@@ -1671,6 +1800,39 @@ function CanvasWorldFallback({
     counts[key] = (counts[key] ?? 0) + seeded + (liveCounts[city.name] ?? 0);
     return counts;
   }, {}), [cities, liveCounts]);
+  const fallbackCityTerritories = useMemo(() => {
+    const countryAreas = new Map(fallbackCountries.map((country) => [country.key, country.geometry]));
+    const cityByName = new Map(cities.map((city) => [normalizeLabelName(city.name), city]));
+    const labelsByCountry = atlasLabelData.cities.reduce<Map<string, CityMapLabel[]>>((groups, label) => {
+      const key = countryEnergyKey(label.country);
+      groups.set(key, [...(groups.get(key) ?? []), label]);
+      return groups;
+    }, new Map());
+
+    return atlasLabelData.cities.flatMap((label) => {
+      const countryKey = countryEnergyKey(label.country);
+      const ring = buildCityTerritoryRing(
+        label,
+        countryAreas.get(countryKey),
+        labelsByCountry.get(countryKey) ?? [label],
+      );
+      if (ring.length < 3) return [];
+      const coordinates = ring.map((point): [number, number] => [point.lng, point.lat]);
+      coordinates.push(coordinates[0]);
+      const geometry: GeoJSON.Polygon = { type: "Polygon", coordinates: [coordinates] };
+      return [{
+        id: label.id,
+        label,
+        city: cityByName.get(normalizeLabelName(label.name)) ?? null,
+        geometry,
+        feature: {
+          type: "Feature" as const,
+          properties: { id: label.id, name: label.name },
+          geometry,
+        },
+      }];
+    });
+  }, [cities, fallbackCountries]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -1685,6 +1847,7 @@ function CanvasWorldFallback({
       lng: focusLocation.lng,
       progress: initialProgress,
       hoveredCountryKey: null as string | null,
+      hoveredCityId: null as string | null,
     };
     let projection = geoOrthographic();
     let frame = 0;
@@ -1697,9 +1860,9 @@ function CanvasWorldFallback({
 
     const detailForProgress = (progress: number): DetailLevel => {
       if (streetZoomAvailable) {
-        if (progress >= 75) return 4;
-        if (progress >= 50) return 3;
-        if (progress >= 25) return 2;
+        if (progress >= 100) return 4;
+        if (progress >= 66.667) return 3;
+        if (progress >= 33.333) return 2;
         return 1;
       }
       if (progress >= 66.667) return 3;
@@ -1761,6 +1924,7 @@ function CanvasWorldFallback({
       context.lineWidth = 0.55;
       context.stroke();
 
+      const detail = detailForProgress(view.progress);
       for (const country of fallbackCountries) {
         context.beginPath();
         path(country.feature);
@@ -1775,7 +1939,26 @@ function CanvasWorldFallback({
         context.stroke();
       }
 
-      const detail = detailForProgress(view.progress);
+      if (detail >= 2) {
+        for (const territory of fallbackCityTerritories) {
+          if (!isVisible(territory.label.lng, territory.label.lat)) continue;
+          const highlighted = territory.id === view.hoveredCityId || territory.city?.id === selectedCity.id;
+          context.beginPath();
+          path(territory.feature);
+          if (highlighted) {
+            context.globalAlpha = territory.id === view.hoveredCityId ? 0.42 : 0.2;
+            context.fillStyle = territory.id === view.hoveredCityId ? "#e8b957" : "#367c86";
+            context.fill();
+            context.globalAlpha = 1;
+          }
+          context.strokeStyle = territory.id === view.hoveredCityId
+            ? "rgba(255, 220, 142, 0.96)"
+            : "rgba(99, 196, 207, 0.58)";
+          context.lineWidth = territory.id === view.hoveredCityId ? 1.6 : 0.72;
+          context.stroke();
+        }
+      }
+
       context.textAlign = "center";
       context.textBaseline = "middle";
       if (detail === 1) {
@@ -1840,7 +2023,15 @@ function CanvasWorldFallback({
         }
       }
 
-      if (view.hoveredCountryKey) {
+      if (view.hoveredCityId) {
+        const hovered = fallbackCityTerritories.find((territory) => territory.id === view.hoveredCityId);
+        if (hovered) {
+          context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+          context.fillStyle = "#f0c66f";
+          context.textAlign = "left";
+          context.fillText(hovered.label.name.toUpperCase(), 22, height - 28);
+        }
+      } else if (view.hoveredCountryKey) {
         const hovered = fallbackCountries.find((country) => country.key === view.hoveredCountryKey);
         if (hovered) {
           context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -1863,6 +2054,11 @@ function CanvasWorldFallback({
       if (!location) return null;
       return fallbackCountries.find((country) => geoContains(country.geometry, location)) ?? null;
     };
+    const hitCityTerritory = (x: number, y: number) => {
+      const location = projection.invert?.([x, y]);
+      if (!location) return null;
+      return fallbackCityTerritories.find((territory) => geoContains(territory.geometry, location)) ?? null;
+    };
     const onPointerDown = (event: PointerEvent) => {
       const point = pointerPosition(event);
       dragging = true;
@@ -1883,8 +2079,12 @@ function CanvasWorldFallback({
         lastX = point.x;
         lastY = point.y;
       } else {
-        view.hoveredCountryKey = hitCountry(point.x, point.y)?.key ?? null;
-        element.style.cursor = view.hoveredCountryKey ? "pointer" : "grab";
+        const cityTerritory = detailForProgress(view.progress) >= 2
+          ? hitCityTerritory(point.x, point.y)
+          : null;
+        view.hoveredCityId = cityTerritory?.id ?? null;
+        view.hoveredCountryKey = cityTerritory ? null : hitCountry(point.x, point.y)?.key ?? null;
+        element.style.cursor = view.hoveredCityId || view.hoveredCountryKey ? "pointer" : "grab";
       }
       requestDraw();
     };
@@ -1895,13 +2095,10 @@ function CanvasWorldFallback({
       element.style.cursor = "grab";
       if (moved) return;
 
-      if (detailForProgress(view.progress) >= 3) {
-        const city = cities.find((candidate) => {
-          const projected = projection([candidate.lng, candidate.lat]);
-          return projected && Math.hypot(projected[0] - point.x, projected[1] - point.y) <= 16;
-        });
-        if (city) {
-          onSelect(city);
+      if (detailForProgress(view.progress) >= 2) {
+        const territory = hitCityTerritory(point.x, point.y);
+        if (territory) {
+          if (territory.city) onSelect(territory.city);
           return;
         }
       }
@@ -1927,7 +2124,7 @@ function CanvasWorldFallback({
       if (wheelGestureLocked) return;
       wheelGestureLocked = true;
       const previousDetail = detailForProgress(view.progress);
-      const levelSpan = streetZoomAvailable ? 25 : 100 / 3;
+      const levelSpan = 100 / 3;
       const progressStep = levelSpan / ZOOM_SCROLLS_PER_LEVEL;
       view.progress = THREE.MathUtils.clamp(
         view.progress - Math.sign(event.deltaY) * progressStep,
@@ -1938,6 +2135,7 @@ function CanvasWorldFallback({
       if (streetZoomAvailable && previousDetail < 4 && nextDetail === 4) {
         view.lat = selectedCity.lat;
         view.lng = selectedCity.lng;
+        onStreetEnter({ lat: selectedCity.lat, lng: selectedCity.lng });
       }
       onZoomChange(view.progress);
       if (nextDetail !== previousDetail) onDetailChange(nextDetail);
@@ -1977,6 +2175,7 @@ function CanvasWorldFallback({
   }, [
     cities,
     countryLiveAgents,
+    fallbackCityTerritories,
     fallbackCountries,
     focusDistance,
     focusLocation.lat,
@@ -1985,6 +2184,7 @@ function CanvasWorldFallback({
     onCountrySelect,
     onDetailChange,
     onSelect,
+    onStreetEnter,
     onZoomChange,
     selectedCity,
     selectedCountryKey,
@@ -2141,6 +2341,7 @@ function EarthScene({
       onAgentSelect={onAgentSelect}
       onDetailChange={onDetailChange}
       onZoomChange={onZoomChange}
+      onStreetEnter={enterStreetView}
     />
   );
 
@@ -2190,11 +2391,10 @@ function EarthScene({
                 makeDefault
                 enableRotate={false}
                 enablePan={false}
-                enableZoom
+                enableZoom={false}
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={0.2}
-                minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE : TOWN_DETAIL_DISTANCE}
+                minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : TOWN_MIN_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
               <fog attach="fog" args={["#020508", 11, 42]} />
@@ -2564,9 +2764,9 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const zoomStops = streetZoomAvailable
     ? [
         { level: 1 as DetailLevel, label: "Country", position: 0 },
-        { level: 2 as DetailLevel, label: "City", position: 25 },
-        { level: 3 as DetailLevel, label: "Town", position: 50 },
-        { level: 4 as DetailLevel, label: "Streets", position: 75 },
+        { level: 2 as DetailLevel, label: "City", position: 33.333 },
+        { level: 3 as DetailLevel, label: "Town", position: 66.667 },
+        { level: 4 as DetailLevel, label: "Streets", position: 100 },
       ]
     : [
         { level: 1 as DetailLevel, label: "Country", position: 0 },

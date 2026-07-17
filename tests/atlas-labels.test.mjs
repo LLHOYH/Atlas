@@ -128,7 +128,7 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.08/);
+  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.35/);
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
@@ -148,6 +148,7 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(experienceSource, /probe\.getContext\("webgl2"/);
   assert.match(experienceSource, /rendererAvailability === "unavailable"/);
   assert.match(experienceSource, /function CanvasWorldFallback\(/);
+  assert.match(experienceSource, /onStreetEnter\(\{ lat: selectedCity\.lat, lng: selectedCity\.lng \}\)/);
   assert.match(experienceSource, /getContext\("2d"\)/);
   assert.match(experienceSource, /geoOrthographic\(\)/);
   assert.match(experienceSource, /2D MAP · COMPATIBILITY MODE/);
@@ -165,7 +166,8 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
     assert.match(experienceSource, new RegExp(`label: "${label}"`));
   }
   assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "TOWN"\}/);
-  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE : TOWN_DETAIL_DISTANCE\}/);
+  assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 10/);
+  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE - 0\.1 : TOWN_MIN_DISTANCE\}/);
   assert.match(experienceSource, /streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE/);
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
@@ -176,17 +178,24 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
   assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
   assert.match(experienceSource, /levelSpan \/ ZOOM_SCROLLS_PER_LEVEL/);
-  assert.match(experienceSource, /zoomSpeed=\{0\.2\}/);
+  assert.match(experienceSource, /function distanceForZoomProgress\(/);
+  assert.match(experienceSource, /semanticStep = \(100 \/ 3\) \/ ZOOM_SCROLLS_PER_LEVEL/);
+  assert.match(experienceSource, /enableZoom=\{false\}/);
+  assert.match(experienceSource, /label: "Streets", position: 100/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
 });
 
 test("city detail uses bordered territories and distinct city, town, and street label styles", () => {
   assert.match(experienceSource, /function buildCityTerritoryGeometry\(/);
+  assert.match(experienceSource, /function clipTerritoryPolygon\(/);
+  assert.match(experienceSource, /labelsByCountry\.get\(countryKey\)/);
   assert.match(experienceSource, /function CityTerritories\(/);
   assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
   assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
   assert.match(experienceSource, /detailLevel >= 2/);
+  assert.match(experienceSource, /hitCityTerritory\(point\.x, point\.y\)/);
+  assert.match(experienceSource, /mesh\.material\.opacity = 0\.055 \+ next \* 0\.68/);
   assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
   assert.match(experienceSource, /kind="town"/);
