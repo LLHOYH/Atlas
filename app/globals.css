@@ -1233,6 +1233,18 @@ button {
 .agentRoster b { display: block; overflow: hidden; font-size: 9px; font-weight: 540; white-space: nowrap; text-overflow: ellipsis; }
 .agentRoster small { display: block; overflow: hidden; margin-top: 2px; color: #66757d; font-size: 7px; white-space: nowrap; text-overflow: ellipsis; }
 .agentRoster em { color: #728089; font-family: var(--font-geist-mono), monospace; font-size: 6.5px; font-style: normal; text-transform: uppercase; }
+.agentRosterMore {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  color: #6f8389;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.02em;
+}
+.agentRosterMore svg { color: #d2ad5c; }
 .agentSearchLink { width: 100%; justify-content: flex-end; margin-top: 9px; }
 
 .entityStrip {

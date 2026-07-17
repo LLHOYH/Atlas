@@ -246,6 +246,98 @@ function streetAgentCollection(agents: Agent[]): GeoJSON.FeatureCollection<GeoJS
   };
 }
 
+type PixelCityProperties = {
+  id: string;
+  kind: "parcel" | "building";
+  height: number;
+  shade: number;
+};
+
+function pixelHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function pixelCityCollection(center: GeoCenter, cityId: string): GeoJSON.FeatureCollection<GeoJSON.Polygon, PixelCityProperties> {
+  const features: Array<GeoJSON.Feature<GeoJSON.Polygon, PixelCityProperties>> = [];
+  const latitudeScale = 1 / 111_320;
+  const longitudeScale = 1 / (111_320 * Math.max(0.28, Math.cos(THREE.MathUtils.degToRad(center.lat))));
+  const gridSize = 11;
+  const blockPitch = 116;
+  const parcelHalfSize = 45;
+
+  const rectangle = (
+    id: string,
+    kind: PixelCityProperties["kind"],
+    xMin: number,
+    yMin: number,
+    xMax: number,
+    yMax: number,
+    height: number,
+    shade: number,
+  ): GeoJSON.Feature<GeoJSON.Polygon, PixelCityProperties> => ({
+    type: "Feature",
+    id,
+    properties: { id, kind, height, shade },
+    geometry: {
+      type: "Polygon",
+      coordinates: [[
+        [center.lng + xMin * longitudeScale, center.lat + yMin * latitudeScale],
+        [center.lng + xMax * longitudeScale, center.lat + yMin * latitudeScale],
+        [center.lng + xMax * longitudeScale, center.lat + yMax * latitudeScale],
+        [center.lng + xMin * longitudeScale, center.lat + yMax * latitudeScale],
+        [center.lng + xMin * longitudeScale, center.lat + yMin * latitudeScale],
+      ]],
+    },
+  });
+
+  for (let row = 0; row < gridSize; row += 1) {
+    for (let column = 0; column < gridSize; column += 1) {
+      const blockId = `${cityId}-pixel-${row}-${column}`;
+      const seed = pixelHash(blockId);
+      const centerX = (column - (gridSize - 1) / 2) * blockPitch;
+      const centerY = (row - (gridSize - 1) / 2) * blockPitch;
+      features.push(rectangle(
+        `${blockId}-parcel`,
+        "parcel",
+        centerX - parcelHalfSize,
+        centerY - parcelHalfSize,
+        centerX + parcelHalfSize,
+        centerY + parcelHalfSize,
+        0,
+        seed % 4,
+      ));
+
+      const layouts: Array<Array<[number, number, number, number]>> = [
+        [[-34, -34, 34, 34]],
+        [[-35, -34, -4, 34], [4, -34, 35, 34]],
+        [[-35, -35, -4, 35], [4, -35, 35, 4], [4, 12, 35, 35]],
+      ];
+      const layout = layouts[seed % layouts.length];
+      layout.forEach(([xMin, yMin, xMax, yMax], buildingIndex) => {
+        const buildingSeed = pixelHash(`${blockId}-${buildingIndex}`);
+        const height = 8 + (buildingSeed % 48) + (buildingSeed % 19 === 0 ? 38 : 0);
+        features.push(rectangle(
+          `${blockId}-building-${buildingIndex}`,
+          "building",
+          centerX + xMin,
+          centerY + yMin,
+          centerX + xMax,
+          centerY + yMax,
+          height,
+          buildingSeed % 4,
+        ));
+      });
+    }
+  }
+
+  return { type: "FeatureCollection", features };
+}
+
 function StreetMap({
   center,
   city,
@@ -262,11 +354,19 @@ function StreetMap({
   const exitRequested = useRef(false);
   const agentsById = useRef(new Map<string, Agent>());
   const agentData = useRef(streetAgentCollection(city.agents));
+  const pixelCityData = useMemo(
+    () => pixelCityCollection(center, city.id),
+    [center, city.id],
+  );
   const selectAgent = useRef(onAgentSelect);
   const [loaded, setLoaded] = useState(false);
   const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null);
 
   const activeAgents = city.agents.filter((agent) => agent.status !== "offline").length;
+  const pixelBuildingCount = useMemo(
+    () => pixelCityData.features.filter((feature) => feature.properties.kind === "building").length,
+    [pixelCityData],
+  );
 
   const exitStreetView = useCallback(() => {
     if (exitRequested.current) return;
@@ -280,7 +380,6 @@ function StreetMap({
     let map: import("maplibre-gl").Map | null = null;
     let hoveredBuildingId: string | number | null = null;
     let hoveredAgentId: string | number | null = null;
-    let pulseFrame = 0;
 
     void import("maplibre-gl").then(({ default: maplibregl }) => {
       if (cancelled || !container.current) return;
@@ -296,6 +395,10 @@ function StreetMap({
         dragRotate: false,
         pitchWithRotate: false,
         touchPitch: false,
+        renderWorldCopies: false,
+        maxTileCacheSize: 24,
+        fadeDuration: 0,
+        pixelRatio: Math.min(window.devicePixelRatio, 1.25),
         attributionControl: { compact: true },
       });
       mapInstance.current = map;
@@ -323,78 +426,91 @@ function StreetMap({
           if (map.getLayer(layerId)) map.setPaintProperty(layerId, "line-color", color);
         }
 
-        if (map.getSource("openmaptiles") && !map.getLayer("atlas-building-blocks")) {
-          const firstSymbolLayer = map.getStyle().layers.find((styleLayer) => styleLayer.type === "symbol");
-          const buildingLayer: import("maplibre-gl").FillExtrusionLayerSpecification = {
-            id: "atlas-building-blocks",
-            type: "fill-extrusion",
-            source: "openmaptiles",
-            "source-layer": "building",
-            minzoom: 12,
-            paint: {
-              "fill-extrusion-color": [
-                "case",
-                ["boolean", ["feature-state", "hover"], false],
-                "#e6bf65",
-                [
-                  "interpolate",
-                  ["linear"],
-                  ["coalesce", ["get", "render_height"], 7],
-                  0,
-                  "#0e2228",
-                  25,
-                  "#1a3d43",
-                  80,
-                  "#2d5960",
-                ],
-              ],
-              "fill-extrusion-height": [
-                "*",
-                [
-                  "max",
-                  ["coalesce", ["get", "render_height"], 7],
-                  ["+", ["coalesce", ["get", "render_min_height"], 0], 4],
-                ],
-                [
-                  "case",
-                  ["boolean", ["feature-state", "hover"], false],
-                  2.85,
-                  1,
-                ],
-              ],
-              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-              "fill-extrusion-opacity": 0.96,
-            },
-          };
-          map.addLayer(buildingLayer, firstSymbolLayer?.id);
-
-          map.on("mousemove", "atlas-building-blocks", (event) => {
-            const nextBuildingId = event.features?.[0]?.id;
-            if (nextBuildingId === undefined || nextBuildingId === null) return;
-            if (hoveredBuildingId !== null && hoveredBuildingId !== nextBuildingId) {
-              map?.setFeatureState(
-                { source: "openmaptiles", sourceLayer: "building", id: hoveredBuildingId },
-                { hover: false },
-              );
-            }
-            hoveredBuildingId = nextBuildingId;
-            map?.setFeatureState(
-              { source: "openmaptiles", sourceLayer: "building", id: nextBuildingId },
-              { hover: true },
-            );
-            map?.getCanvas().style.setProperty("cursor", "pointer");
-          });
-          map.on("mouseleave", "atlas-building-blocks", () => {
-            if (hoveredBuildingId !== null) {
-              map?.setFeatureState(
-                { source: "openmaptiles", sourceLayer: "building", id: hoveredBuildingId },
-                { hover: false },
-              );
-            }
-            hoveredBuildingId = null;
-            map?.getCanvas().style.setProperty("cursor", "grab");
-          });
+        for (const styleLayer of map.getStyle().layers) {
+          if ("source-layer" in styleLayer && styleLayer["source-layer"] === "building") {
+            map.setLayoutProperty(styleLayer.id, "visibility", "none");
+          }
         }
+
+        const firstRoadLayer = map.getStyle().layers.find((styleLayer) => (
+          styleLayer.type === "line" && styleLayer.id.startsWith("highway")
+        ));
+        map.addSource("atlas-pixel-city", {
+          type: "geojson",
+          data: pixelCityData,
+          promoteId: "id",
+        });
+        map.addLayer({
+          id: "atlas-pixel-parcels",
+          type: "fill",
+          source: "atlas-pixel-city",
+          filter: ["==", ["get", "kind"], "parcel"],
+          paint: {
+            "fill-color": [
+              "match",
+              ["get", "shade"],
+              0,
+              "#0b2026",
+              1,
+              "#0d252b",
+              2,
+              "#102a30",
+              "#132e34",
+            ],
+            "fill-opacity": 0.92,
+            "fill-outline-color": "#27515a",
+          },
+        }, firstRoadLayer?.id);
+        map.addLayer({
+          id: "atlas-pixel-buildings",
+          type: "fill-extrusion",
+          source: "atlas-pixel-city",
+          filter: ["==", ["get", "kind"], "building"],
+          paint: {
+            "fill-extrusion-color": [
+              "case",
+              ["boolean", ["feature-state", "hover"], false],
+              "#f0c66f",
+              [
+                "match",
+                ["get", "shade"],
+                0,
+                "#15363e",
+                1,
+                "#1b424a",
+                2,
+                "#25515a",
+                "#30616a",
+              ],
+            ],
+            "fill-extrusion-height": [
+              "*",
+              ["get", "height"],
+              ["case", ["boolean", ["feature-state", "hover"], false], 1.55, 1],
+            ],
+            "fill-extrusion-base": 1.4,
+            "fill-extrusion-opacity": 0.94,
+            "fill-extrusion-vertical-gradient": true,
+          },
+        }, firstRoadLayer?.id);
+
+        map.on("mousemove", "atlas-pixel-buildings", (event) => {
+          const nextBuildingId = event.features?.[0]?.id;
+          if (nextBuildingId === undefined || nextBuildingId === null) return;
+          if (hoveredBuildingId !== null && hoveredBuildingId !== nextBuildingId) {
+            map?.setFeatureState({ source: "atlas-pixel-city", id: hoveredBuildingId }, { hover: false });
+          }
+          hoveredBuildingId = nextBuildingId;
+          map?.setFeatureState({ source: "atlas-pixel-city", id: nextBuildingId }, { hover: true });
+          map?.getCanvas().style.setProperty("cursor", "pointer");
+        });
+        map.on("mouseleave", "atlas-pixel-buildings", () => {
+          if (hoveredBuildingId !== null) {
+            map?.setFeatureState({ source: "atlas-pixel-city", id: hoveredBuildingId }, { hover: false });
+          }
+          hoveredBuildingId = null;
+          map?.getCanvas().style.setProperty("cursor", "grab");
+        });
 
         const statusColor: import("maplibre-gl").ExpressionSpecification = [
           "match",
@@ -508,14 +624,6 @@ function StreetMap({
           if (agent) selectAgent.current(agent);
         });
 
-        const animatePulse = (time: number) => {
-          if (!map?.getLayer("atlas-agent-pulse")) return;
-          const phase = (Math.sin(time / 520) + 1) / 2;
-          map.setPaintProperty("atlas-agent-pulse", "circle-radius", 10 + phase * 9);
-          map.setPaintProperty("atlas-agent-pulse", "circle-opacity", 0.12 + phase * 0.24);
-          pulseFrame = requestAnimationFrame(animatePulse);
-        };
-        pulseFrame = requestAnimationFrame(animatePulse);
         setLoaded(true);
       });
       map.on("zoom", () => {
@@ -525,11 +633,10 @@ function StreetMap({
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(pulseFrame);
       mapInstance.current = null;
       map?.remove();
     };
-  }, [center.lat, center.lng, exitStreetView]);
+  }, [center.lat, center.lng, exitStreetView, pixelCityData]);
 
   useEffect(() => {
     agentsById.current = new Map(city.agents.map((agent) => [agent.id, agent]));
@@ -548,7 +655,7 @@ function StreetMap({
       <div className="streetMapReadout glassPanel">
         <span>{city.name.toUpperCase()} · LIVE STREET GRID</span>
         <b>{Math.abs(center.lat).toFixed(3)}°{center.lat >= 0 ? "N" : "S"} · {Math.abs(center.lng).toFixed(3)}°{center.lng >= 0 ? "E" : "W"}</b>
-        <small>{activeAgents} active · {city.agents.length} observed · north locked</small>
+        <small>{activeAgents} active · {pixelBuildingCount} pixel buildings · north locked</small>
       </div>
       <div className="streetAgentLegend glassPanel" aria-label="Street agent status legend">
         {(Object.keys(agentStatusColors) as Agent["status"][]).map((status) => (
@@ -566,7 +673,7 @@ function StreetMap({
       <button className="streetMapReturn glassPanel" onClick={exitStreetView}>
         <Globe2 size={13} /> Return to globe
       </button>
-      <div className="streetMapHint">Hover or click an agent · Hover a building to lift it · Drag to move · Scroll to zoom</div>
+      <div className="streetMapHint">Hover or click an agent · Hover a pixel building to lift it · Drag to move · Scroll to zoom</div>
     </div>
   );
 }
@@ -1404,6 +1511,10 @@ function Earth({
     counts[key] = (counts[key] ?? 0) + seededLiveAgents + (liveCounts[city.name] ?? 0);
     return counts;
   }, {}), [cities, liveCounts]);
+  const globeAgentPreview = useMemo(() => selectedCity.agents
+    .filter((agent) => agent.status !== "offline")
+    .sort((left, right) => right.energy - left.energy)
+    .slice(0, 36), [selectedCity.agents]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1587,14 +1698,14 @@ function Earth({
           position={city.position}
         />
       ))}
-      {labelDetail === 4 && cities.flatMap((city) => city.agents.map((agent) => (
+      {labelDetail === 4 && globeAgentPreview.map((agent) => (
         <AgentLight
           key={agent.id}
           agent={agent}
-          showLabel={labelDetail === 4 && city.id === selectedCity.id}
-          onSelect={(selectedAgent) => onAgentSelect(city, selectedAgent)}
+          showLabel
+          onSelect={(selectedAgent) => onAgentSelect(selectedCity, selectedAgent)}
         />
-      )))}
+      ))}
       {labelDetail === 4 && (
         <>
           {selectedCity.streets.map((street) => (
@@ -2099,6 +2210,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const selectedConnectedAgents = liveCounts[selectedCity.name] ?? 0;
   const selectedLiveAgents = selectedActiveAgents + selectedConnectedAgents;
   const selectedObservedAgents = selectedCity.agents.length + selectedConnectedAgents;
+  const selectedRosterAgents = selectedCity.agents.slice(0, 12);
+  const hiddenRosterAgentCount = Math.max(0, selectedCity.agents.length - selectedRosterAgents.length);
   const selectedDensity = agentDensityLevel(selectedLiveAgents);
   const selectedDensityBarWidth = agentDensityBarWidth(selectedDensity);
   const selectedHotTopics = selectedCity.hotTopics.length
@@ -2418,13 +2531,16 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
           ))}
         </div>
         <div className="agentRoster" aria-label={`${selectedCity.name} agents`}>
-          {selectedCity.agents.map((agent) => (
+          {selectedRosterAgents.map((agent) => (
             <button key={agent.id} onClick={() => chooseAgent(selectedCity, agent)} aria-label={`Open ${agent.name} agent signal`}>
               <i style={{ background: agentStatusColors[agent.status], boxShadow: `0 0 8px ${agentStatusColors[agent.status]}` }} />
               <span><b>{agent.name}</b><small>{agent.activity} · {agent.topic}</small></span>
               <em>{agent.status}</em>
             </button>
           ))}
+          {hiddenRosterAgentCount > 0 && (
+            <div className="agentRosterMore"><Bot size={11} />+{hiddenRosterAgentCount} more agents visible in street view</div>
+          )}
         </div>
         <button className="viewSignals agentSearchLink" onClick={() => openSearch(selectedCity.name)}>View all city signals <ArrowUpRight size={12} /></button>
       </aside>

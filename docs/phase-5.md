@@ -33,3 +33,6 @@ Phase 5 turns Atlas's deepest zoom level into a legible live environment rather 
 - Status is visible through working pulses and distinct working, online, idle, and offline colors.
 - Hovering reveals runtime, activity, and topic; clicking opens the existing agent profile card.
 - Realtime changes flow through the existing world subscription and update the street source in place.
+- Every street scene includes a deterministic 11×11 pixel neighborhood with complete parcels and extruded block buildings, independent of third-party building coverage.
+- The globe limits its deepest-zoom preview to 36 relevant agents and the side roster to 12, while street view retains all 100 city agents.
+- Street markers use static GPU layers instead of per-frame map-style mutations for smoother navigation.

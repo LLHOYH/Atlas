@@ -132,6 +132,13 @@ test("phase 5 renders dense Supabase agents in street view", () => {
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
+  assert.match(experienceSource, /function pixelCityCollection\(/);
+  assert.match(experienceSource, /const gridSize = 11/);
+  assert.match(experienceSource, /atlas-pixel-parcels/);
+  assert.match(experienceSource, /atlas-pixel-buildings/);
+  assert.match(experienceSource, /\.slice\(0, 36\)/);
+  assert.match(experienceSource, /selectedCity\.agents\.slice\(0, 12\)/);
+  assert.doesNotMatch(experienceSource, /requestAnimationFrame\(animatePulse\)/);
 });
 
 test("city detail uses bordered territories and the country label style", () => {
@@ -140,7 +147,7 @@ test("city detail uses bordered territories and the country label style", () => 
   assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
   assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
   assert.match(experienceSource, /detailLevel >= 3/);
-  assert.match(experienceSource, /labelDetail === 4 && cities\.flatMap/);
+  assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
   assert.match(experienceSource, /kind === "country" \|\| kind === "city" \? 1\.875/);
   assert.match(globalStylesSource, /\.mapLabel--country,\s*\.mapLabel--city \{[\s\S]*?color: #d9b76b;[\s\S]*?font-size: 6px;/);
