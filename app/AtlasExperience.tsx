@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
@@ -161,6 +161,7 @@ function normalizeLongitude(value: number) {
 
 const STREET_ENTRY_DISTANCE = 4.08;
 const STREET_ENTRY_RESET_DISTANCE = 4.36;
+const RENDERER_RELEASE_DELAY_MS = 600;
 
 function nearestCityToLocation(cities: City[], location: GeoCenter) {
   return cities.reduce((nearest, city) => {
@@ -1732,6 +1733,38 @@ function Earth({
   );
 }
 
+function RendererFallback({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rendererFallback" role="status">
+      <span className="rendererFallbackIcon" aria-hidden="true"><Globe2 size={22} /></span>
+      <div>
+        <strong>3D renderer is temporarily unavailable</strong>
+        <p>Atlas released the map renderer. Close duplicate Atlas tabs or reopen this tab, then retry.</p>
+      </div>
+      <button type="button" onClick={onRetry}>Retry globe</button>
+    </div>
+  );
+}
+
+class GlobeRendererBoundary extends Component<
+  { children: ReactNode; onRetry: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <RendererFallback onRetry={this.props.onRetry} />;
+    }
+
+    return this.props.children;
+  }
+}
+
 function EarthScene({
   cities,
   selectedCity,
@@ -1759,6 +1792,9 @@ function EarthScene({
 }) {
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
   const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
+  const [streetRendererActive, setStreetRendererActive] = useState(false);
+  const [rendererRetryKey, setRendererRetryKey] = useState(0);
+  const [rendererAvailability, setRendererAvailability] = useState<"checking" | "available" | "unavailable">("checking");
   const streetCenter = !viewTarget && !countryTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
     ? streetState.center
     : null;
@@ -1767,17 +1803,27 @@ function EarthScene({
     : null;
   const focusLocation = viewTarget ?? countryTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setStreetRendererActive(Boolean(streetCenter));
+    }, RENDERER_RELEASE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [streetCenter]);
+
   const enterStreetView = useCallback((center: GeoCenter) => {
     const streetCity = viewTarget || countryTarget
       ? selectedCity
       : nearestCityToLocation(cities, center);
+    setRendererAvailability("checking");
     onSelect(streetCity);
     setStreetState({ cityId: streetCity.id, center, viewRevision: viewRevision + 1 });
   }, [cities, countryTarget, onSelect, selectedCity, viewRevision, viewTarget]);
 
   const exitStreetView = useCallback((center: GeoCenter) => {
     setGlobeState({ cityId: selectedCity.id, center, viewRevision });
-    setStreetState(null);
+    setStreetRendererActive(false);
+    window.setTimeout(() => setStreetState(null), RENDERER_RELEASE_DELAY_MS);
   }, [selectedCity.id, viewRevision]);
 
   const selectActivityCity = useCallback((city: City) => {
@@ -1792,50 +1838,103 @@ function EarthScene({
     onCountrySelect(country);
   }, [onCountrySelect]);
 
+  const showGlobeRenderer = !streetCenter && !streetRendererActive;
+  const showStreetRenderer = Boolean(streetCenter && streetRendererActive);
+  const globeRendererReady = showGlobeRenderer && rendererAvailability === "available";
+  const handingOffRenderer = (!showGlobeRenderer && !showStreetRenderer)
+    || (showGlobeRenderer && rendererAvailability === "checking");
+
+  useEffect(() => {
+    if (!showGlobeRenderer || rendererAvailability !== "checking") return;
+
+    const probe = document.createElement("canvas");
+    const attributes: WebGLContextAttributes = {
+      alpha: true,
+      antialias: false,
+      powerPreference: "high-performance",
+      failIfMajorPerformanceCaveat: false,
+    };
+    const context = probe.getContext("webgl2", attributes) ?? probe.getContext("webgl", attributes);
+
+    if (!context) {
+      const timeout = window.setTimeout(() => setRendererAvailability("unavailable"), 0);
+      return () => window.clearTimeout(timeout);
+    }
+
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+    const timeout = window.setTimeout(() => {
+      setRendererAvailability("available");
+    }, RENDERER_RELEASE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [rendererAvailability, rendererRetryKey, showGlobeRenderer]);
+
+  const retryRenderer = useCallback(() => {
+    setRendererAvailability("checking");
+    setRendererRetryKey((key) => key + 1);
+  }, []);
+
   return (
     <>
-      <div className={`earthCanvasLayer ${streetCenter ? "streetMode" : ""}`}>
-        <Canvas
-          camera={{ position: [0, 0.1, 6.3], fov: 38, near: 0.1, far: 70 }}
-          dpr={[1, 1.7]}
-          gl={{ alpha: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.08 }}
+      {globeRendererReady && (
+        <GlobeRendererBoundary
+          key={rendererRetryKey}
+          onRetry={retryRenderer}
         >
-          <ambientLight intensity={0.24} color="#7ab9e8" />
-          <directionalLight position={[5, 3, 5]} intensity={2.35} color="#d9edff" />
-          <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
-          <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
-          <Suspense fallback={null}>
-            <Earth
-              cities={cities}
-              selectedCity={selectedCity}
-              selectedCountryKey={countryTarget?.key ?? null}
-              focusLocation={focusLocation}
-              focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
-              focusRevision={viewRevision}
-              layer={layer}
-              liveCounts={liveCounts}
-              onSelect={selectActivityCity}
-              onCountrySelect={selectActivityCountry}
-              onAgentSelect={onAgentSelect}
-              onDetailChange={onDetailChange}
-              onStreetEnter={enterStreetView}
-            />
-          </Suspense>
-          <OrbitControls
-            makeDefault
-            enableRotate={false}
-            enablePan={false}
-            enableZoom
-            enableDamping
-            dampingFactor={0.1}
-            zoomSpeed={0.7}
-            minDistance={3.65}
-            maxDistance={10}
-          />
-          <fog attach="fog" args={["#020508", 11, 42]} />
-        </Canvas>
-      </div>
-      {streetCenter && (
+          <div className="earthCanvasLayer">
+            <Canvas
+              camera={{ position: [0, 0.1, 6.3], fov: 38, near: 0.1, far: 70 }}
+              dpr={[1, 1.35]}
+              gl={{
+                alpha: true,
+                antialias: false,
+                powerPreference: "high-performance",
+                failIfMajorPerformanceCaveat: false,
+                toneMapping: THREE.ACESFilmicToneMapping,
+                toneMappingExposure: 1.08,
+              }}
+            >
+              <ambientLight intensity={0.24} color="#7ab9e8" />
+              <directionalLight position={[5, 3, 5]} intensity={2.35} color="#d9edff" />
+              <directionalLight position={[-4, -2, 1]} intensity={0.44} color="#6d47ff" />
+              <Stars radius={36} depth={18} count={1200} factor={1.5} saturation={0.25} fade speed={0.18} />
+              <Suspense fallback={null}>
+                <Earth
+                  cities={cities}
+                  selectedCity={selectedCity}
+                  selectedCountryKey={countryTarget?.key ?? null}
+                  focusLocation={focusLocation}
+                  focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
+                  focusRevision={viewRevision}
+                  layer={layer}
+                  liveCounts={liveCounts}
+                  onSelect={selectActivityCity}
+                  onCountrySelect={selectActivityCountry}
+                  onAgentSelect={onAgentSelect}
+                  onDetailChange={onDetailChange}
+                  onStreetEnter={enterStreetView}
+                />
+              </Suspense>
+              <OrbitControls
+                makeDefault
+                enableRotate={false}
+                enablePan={false}
+                enableZoom
+                enableDamping
+                dampingFactor={0.1}
+                zoomSpeed={0.7}
+                minDistance={3.65}
+                maxDistance={10}
+              />
+              <fog attach="fog" args={["#020508", 11, 42]} />
+            </Canvas>
+          </div>
+        </GlobeRendererBoundary>
+      )}
+      {showGlobeRenderer && rendererAvailability === "unavailable" && (
+        <RendererFallback onRetry={retryRenderer} />
+      )}
+      {showStreetRenderer && streetCenter && (
         <StreetMap
           center={streetCenter}
           city={selectedCity}
@@ -1843,6 +1942,7 @@ function EarthScene({
           onExit={exitStreetView}
         />
       )}
+      {handingOffRenderer && <div className="rendererHandoff" aria-hidden="true" />}
     </>
   );
 }

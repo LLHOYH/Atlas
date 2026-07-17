@@ -106,15 +106,65 @@ button {
   position: absolute;
   z-index: 1;
   inset: 0;
-  opacity: 1;
-  transform: scale(1);
-  transition: opacity 280ms ease, transform 420ms cubic-bezier(0.2, 0.75, 0.2, 1);
 }
 
-.earthCanvasLayer.streetMode {
-  pointer-events: none;
-  opacity: 0;
-  transform: scale(1.06);
+.rendererHandoff {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: radial-gradient(circle at 50% 42%, rgba(12, 45, 61, 0.32), #02070a 72%);
+}
+
+.rendererFallback {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: min(520px, calc(100vw - 48px));
+  padding: 18px;
+  border: 1px solid rgba(111, 194, 226, 0.24);
+  border-radius: 14px;
+  background: rgba(3, 13, 19, 0.94);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.52);
+  transform: translate(-50%, -50%);
+}
+
+.rendererFallbackIcon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(113, 208, 236, 0.28);
+  border-radius: 10px;
+  color: #83d6ed;
+  background: rgba(53, 160, 194, 0.12);
+}
+
+.rendererFallback strong {
+  display: block;
+  color: #dbeef4;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.rendererFallback p {
+  margin: 4px 0 0;
+  color: #78909a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.rendererFallback button {
+  padding: 9px 11px;
+  border: 1px solid rgba(217, 183, 107, 0.32);
+  border-radius: 8px;
+  color: #d9b76b;
+  background: rgba(217, 183, 107, 0.08);
+  white-space: nowrap;
 }
 
 .streetMapStage {

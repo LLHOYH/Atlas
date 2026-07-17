@@ -139,6 +139,18 @@ test("phase 5 renders dense Supabase agents in street view", () => {
   assert.match(experienceSource, /\.slice\(0, 36\)/);
   assert.match(experienceSource, /selectedCity\.agents\.slice\(0, 12\)/);
   assert.doesNotMatch(experienceSource, /requestAnimationFrame\(animatePulse\)/);
+  assert.match(experienceSource, /streetRendererActive/);
+  assert.match(experienceSource, /showGlobeRenderer/);
+  assert.match(experienceSource, /showStreetRenderer/);
+  assert.match(experienceSource, /setStreetRendererActive\(false\)/);
+  assert.match(experienceSource, /const RENDERER_RELEASE_DELAY_MS = 600/);
+  assert.match(experienceSource, /class GlobeRendererBoundary/);
+  assert.match(experienceSource, /probe\.getContext\("webgl2"/);
+  assert.match(experienceSource, /rendererAvailability === "unavailable"/);
+  assert.match(experienceSource, /Retry globe/);
+  assert.match(experienceSource, /dpr=\{\[1, 1\.35\]\}/);
+  assert.match(experienceSource, /antialias: false/);
+  assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
 });
 
 test("city detail uses bordered territories and the country label style", () => {
