@@ -24,3 +24,12 @@ Phase 5 turns Atlas's deepest zoom level into a legible live environment rather 
 - Clicking an agent opens the correct identity and activity details.
 - Realtime database changes update the rendered agent without reloading the page.
 - Dense cities remain usable on desktop and mobile without severe frame-rate degradation.
+
+## Implemented foundation
+
+- Supabase now contains 800 deterministic demo agents: 100 in each seeded city.
+- The seed also maintains more than 1,600 seven-day telemetry events and is safe to rerun.
+- Street view reads the selected city's real `atlas_agents` rows and renders them as a GPU-backed MapLibre layer.
+- Status is visible through working pulses and distinct working, online, idle, and offline colors.
+- Hovering reveals runtime, activity, and topic; clicking opens the existing agent profile card.
+- Realtime changes flow through the existing world subscription and update the street source in place.

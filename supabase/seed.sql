@@ -189,6 +189,83 @@ on conflict (id) do update set
   display_order = excluded.display_order,
   updated_at = now();
 
+-- Phase 5: keep one dense, deterministic street cluster around every seeded city.
+-- The coordinates are synthetic and deliberately city-scale rather than device GPS.
+-- Rerunning this seed replaces only these generated agents and their cascading events.
+delete from public.atlas_agents
+where id like 'dense-%'
+  and installation_id is null;
+
+with generated_agents as (
+  select
+    city.id as city_id,
+    city.name as city_name,
+    city.latitude as city_latitude,
+    city.longitude as city_longitude,
+    series.agent_number,
+    case
+      when mod(series.agent_number, 10) < 4 then 'working'
+      when mod(series.agent_number, 10) < 7 then 'online'
+      when mod(series.agent_number, 10) < 9 then 'idle'
+      else 'offline'
+    end as status,
+    (array['Coding', 'Researching', 'Analyzing', 'Planning', 'Testing', 'Writing', 'Monitoring', 'Designing'])[
+      mod(series.agent_number - 1, 8) + 1
+    ] as activity,
+    (array['Codex', 'Claude Code', 'Hermes', 'OpenClaw', 'Custom Node agent'])[
+      mod(series.agent_number - 1, 5) + 1
+    ] as runtime,
+    (array['Beacon', 'Weaver', 'Orbit', 'Relay', 'Scout', 'Nova', 'Index', 'Lumen', 'Vector', 'Harbor', 'Mosaic', 'Pulse'])[
+      mod(series.agent_number - 1, 12) + 1
+    ] as callsign
+  from public.atlas_cities as city
+  cross join generate_series(5, 100) as series(agent_number)
+), enriched_agents as (
+  select
+    generated.*,
+    topic.topic,
+    case generated.status
+      when 'working' then 96
+      when 'online' then 70
+      when 'idle' then 38
+      else 8
+    end - mod(generated.agent_number, 7) as energy
+  from generated_agents as generated
+  join public.atlas_city_topics as topic
+    on topic.city_id = generated.city_id
+    and topic.rank = mod(generated.agent_number - 1, 3) + 1
+)
+insert into public.atlas_agents
+  (id, city_id, display_name, runtime, package_name, package_version, status, activity, topic, detail, latitude, longitude, energy, last_seen_at, display_order)
+select
+  'dense-' || agent.city_id || '-' || lpad(agent.agent_number::text, 3, '0'),
+  agent.city_id,
+  agent.city_name || ' ' || agent.callsign || ' ' || lpad(agent.agent_number::text, 2, '0'),
+  agent.runtime,
+  'atlas-ai-sdk',
+  '0.1.0-dense-seed',
+  agent.status,
+  agent.activity,
+  agent.topic,
+  'Privacy-safe seeded ' || lower(agent.activity) || ' signal near ' || agent.city_name,
+  agent.city_latitude
+    + (floor((agent.agent_number - 5) / 12.0) - 3.5) * 0.00105
+    + (mod(agent.agent_number * 7, 5) - 2) * 0.00008,
+  agent.city_longitude
+    + (
+      (mod(agent.agent_number - 5, 12) - 5.5) * 0.00105
+      + (mod(agent.agent_number * 11, 5) - 2) * 0.00008
+    ) / greatest(cos(radians(agent.city_latitude)), 0.35),
+  agent.energy,
+  case agent.status
+    when 'working' then now() - make_interval(secs => mod(agent.agent_number * 17, 90) + 10)
+    when 'online' then now() - make_interval(mins => mod(agent.agent_number, 8) + 1)
+    when 'idle' then now() - make_interval(mins => mod(agent.agent_number * 3, 70) + 15)
+    else now() - make_interval(hours => mod(agent.agent_number, 16) + 2)
+  end,
+  agent.agent_number
+from enriched_agents as agent;
+
 insert into public.atlas_agent_events
   (id, agent_id, city_id, status, activity, topic, detail, energy, occurred_at)
 select
@@ -257,6 +334,68 @@ left join public.atlas_city_topics as topic
   and topic.rank = mod(agent.display_order + history.day_offset, 3) + 1
 where agent.package_version = '0.4.0-seed'
   and mod(agent.display_order + history.day_offset + length(agent.city_id), 5) <> 0
+on conflict (id) do update set
+  agent_id = excluded.agent_id,
+  city_id = excluded.city_id,
+  status = excluded.status,
+  activity = excluded.activity,
+  topic = excluded.topic,
+  detail = excluded.detail,
+  energy = excluded.energy,
+  occurred_at = excluded.occurred_at;
+
+insert into public.atlas_agent_events
+  (id, agent_id, city_id, status, activity, topic, detail, energy, occurred_at)
+select
+  'dense-current-' || agent.id,
+  agent.id,
+  agent.city_id,
+  agent.status,
+  agent.activity,
+  agent.topic,
+  agent.detail,
+  agent.energy,
+  agent.last_seen_at
+from public.atlas_agents as agent
+where agent.package_version = '0.1.0-dense-seed'
+on conflict (id) do update set
+  agent_id = excluded.agent_id,
+  city_id = excluded.city_id,
+  status = excluded.status,
+  activity = excluded.activity,
+  topic = excluded.topic,
+  detail = excluded.detail,
+  energy = excluded.energy,
+  occurred_at = excluded.occurred_at;
+
+insert into public.atlas_agent_events
+  (id, agent_id, city_id, status, activity, topic, detail, energy, occurred_at)
+select
+  'dense-history-' || agent.id || '-' || history.day_offset,
+  agent.id,
+  agent.city_id,
+  case
+    when agent.status = 'offline' then 'online'
+    when mod(agent.display_order + history.day_offset, 4) = 0 then 'idle'
+    else agent.status
+  end,
+  agent.activity,
+  coalesce(topic.topic, agent.topic),
+  'Daily privacy-safe dense-network heartbeat',
+  greatest(5, agent.energy - history.day_offset * 3),
+  least(
+    now() - interval '5 minutes',
+    date_trunc('day', now())
+      - make_interval(days => history.day_offset)
+      + make_interval(hours => mod(agent.display_order * 3 + length(agent.city_id), 20) + 1)
+  )
+from public.atlas_agents as agent
+cross join generate_series(0, 6) as history(day_offset)
+left join public.atlas_city_topics as topic
+  on topic.city_id = agent.city_id
+  and topic.rank = mod(agent.display_order + history.day_offset, 3) + 1
+where agent.package_version = '0.1.0-dense-seed'
+  and mod(agent.display_order, 8) = 0
 on conflict (id) do update set
   agent_id = excluded.agent_id,
   city_id = excluded.city_id,

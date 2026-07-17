@@ -198,11 +198,62 @@ function GlobeLabel({
   );
 }
 
-function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: GeoCenter) => void }) {
+type StreetAgentProperties = {
+  id: string;
+  name: string;
+  runtime: string;
+  status: Agent["status"];
+  activity: string;
+  topic: string;
+  energy: number;
+  color: string;
+};
+
+function streetAgentCollection(agents: Agent[]): GeoJSON.FeatureCollection<GeoJSON.Point, StreetAgentProperties> {
+  return {
+    type: "FeatureCollection",
+    features: agents.map((agent) => ({
+      type: "Feature",
+      id: agent.id,
+      geometry: {
+        type: "Point",
+        coordinates: [agent.lng, agent.lat],
+      },
+      properties: {
+        id: agent.id,
+        name: agent.name,
+        runtime: agent.runtime,
+        status: agent.status,
+        activity: agent.activity,
+        topic: agent.topic,
+        energy: agent.energy,
+        color: agentStatusColors[agent.status],
+      },
+    })),
+  };
+}
+
+function StreetMap({
+  center,
+  city,
+  onAgentSelect,
+  onExit,
+}: {
+  center: GeoCenter;
+  city: City;
+  onAgentSelect: (agent: Agent) => void;
+  onExit: (center: GeoCenter) => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<import("maplibre-gl").Map | null>(null);
   const exitRequested = useRef(false);
+  const agentsById = useRef(new Map<string, Agent>());
+  const agentData = useRef(streetAgentCollection(city.agents));
+  const selectAgent = useRef(onAgentSelect);
   const [loaded, setLoaded] = useState(false);
+  const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null);
+
+  const activeAgents = city.agents.filter((agent) => agent.status !== "offline").length;
 
   const exitStreetView = useCallback(() => {
     if (exitRequested.current) return;
@@ -215,6 +266,8 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
     let cancelled = false;
     let map: import("maplibre-gl").Map | null = null;
     let hoveredBuildingId: string | number | null = null;
+    let hoveredAgentId: string | number | null = null;
+    let pulseFrame = 0;
 
     void import("maplibre-gl").then(({ default: maplibregl }) => {
       if (cancelled || !container.current) return;
@@ -329,6 +382,124 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
             map?.getCanvas().style.setProperty("cursor", "grab");
           });
         }
+
+        const statusColor: import("maplibre-gl").ExpressionSpecification = [
+          "match",
+          ["get", "status"],
+          "working",
+          agentStatusColors.working,
+          "online",
+          agentStatusColors.online,
+          "idle",
+          agentStatusColors.idle,
+          agentStatusColors.offline,
+        ];
+        map.addSource("atlas-street-agents", {
+          type: "geojson",
+          data: agentData.current,
+          promoteId: "id",
+        });
+        map.addLayer({
+          id: "atlas-agent-glow",
+          type: "circle",
+          source: "atlas-street-agents",
+          paint: {
+            "circle-color": statusColor,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 8, 18, 17],
+            "circle-blur": 0.82,
+            "circle-opacity": ["case", ["==", ["get", "status"], "offline"], 0.16, 0.4],
+          },
+        });
+        map.addLayer({
+          id: "atlas-agent-pulse",
+          type: "circle",
+          source: "atlas-street-agents",
+          filter: ["==", ["get", "status"], "working"],
+          paint: {
+            "circle-color": agentStatusColors.working,
+            "circle-radius": 12,
+            "circle-blur": 0.55,
+            "circle-opacity": 0.28,
+            "circle-stroke-color": agentStatusColors.working,
+            "circle-stroke-width": 1,
+            "circle-stroke-opacity": 0.28,
+          },
+        });
+        map.addLayer({
+          id: "atlas-agent-core",
+          type: "circle",
+          source: "atlas-street-agents",
+          paint: {
+            "circle-color": statusColor,
+            "circle-radius": [
+              "case",
+              ["boolean", ["feature-state", "hover"], false],
+              8,
+              ["interpolate", ["linear"], ["zoom"], 13, 3.4, 18, 6.2],
+            ],
+            "circle-opacity": ["case", ["==", ["get", "status"], "offline"], 0.38, 0.96],
+            "circle-stroke-color": "#effcff",
+            "circle-stroke-width": ["case", ["boolean", ["feature-state", "hover"], false], 2, 0.8],
+            "circle-stroke-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.95, 0.46],
+          },
+        });
+        map.addLayer({
+          id: "atlas-agent-labels",
+          type: "symbol",
+          source: "atlas-street-agents",
+          minzoom: 16,
+          filter: ["!=", ["get", "status"], "offline"],
+          layout: {
+            "text-field": ["get", "name"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 16, 8, 19, 10],
+            "text-offset": [0, 1.15],
+            "text-anchor": "top",
+            "text-allow-overlap": false,
+            "text-padding": 4,
+            "symbol-sort-key": ["get", "energy"],
+          },
+          paint: {
+            "text-color": statusColor,
+            "text-halo-color": "#02080b",
+            "text-halo-width": 1.3,
+            "text-opacity": 0.88,
+          },
+        });
+
+        map.on("mousemove", "atlas-agent-core", (event) => {
+          const feature = event.features?.[0];
+          const nextAgentId = feature?.properties?.id as string | undefined;
+          if (!nextAgentId) return;
+          if (hoveredAgentId !== null && hoveredAgentId !== nextAgentId) {
+            map?.setFeatureState({ source: "atlas-street-agents", id: hoveredAgentId }, { hover: false });
+          }
+          hoveredAgentId = nextAgentId;
+          map?.setFeatureState({ source: "atlas-street-agents", id: nextAgentId }, { hover: true });
+          setHoveredAgent(agentsById.current.get(nextAgentId) ?? null);
+          map?.getCanvas().style.setProperty("cursor", "pointer");
+        });
+        map.on("mouseleave", "atlas-agent-core", () => {
+          if (hoveredAgentId !== null) {
+            map?.setFeatureState({ source: "atlas-street-agents", id: hoveredAgentId }, { hover: false });
+          }
+          hoveredAgentId = null;
+          setHoveredAgent(null);
+          map?.getCanvas().style.setProperty("cursor", "grab");
+        });
+        map.on("click", "atlas-agent-core", (event) => {
+          const agentId = event.features?.[0]?.properties?.id as string | undefined;
+          const agent = agentId ? agentsById.current.get(agentId) : undefined;
+          if (agent) selectAgent.current(agent);
+        });
+
+        const animatePulse = (time: number) => {
+          if (!map?.getLayer("atlas-agent-pulse")) return;
+          const phase = (Math.sin(time / 520) + 1) / 2;
+          map.setPaintProperty("atlas-agent-pulse", "circle-radius", 10 + phase * 9);
+          map.setPaintProperty("atlas-agent-pulse", "circle-opacity", 0.12 + phase * 0.24);
+          pulseFrame = requestAnimationFrame(animatePulse);
+        };
+        pulseFrame = requestAnimationFrame(animatePulse);
         setLoaded(true);
       });
       map.on("zoom", () => {
@@ -338,23 +509,48 @@ function StreetMap({ center, onExit }: { center: GeoCenter; onExit: (center: Geo
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(pulseFrame);
       mapInstance.current = null;
       map?.remove();
     };
   }, [center.lat, center.lng, exitStreetView]);
 
+  useEffect(() => {
+    agentsById.current = new Map(city.agents.map((agent) => [agent.id, agent]));
+    agentData.current = streetAgentCollection(city.agents);
+    const source = mapInstance.current?.getSource("atlas-street-agents") as import("maplibre-gl").GeoJSONSource | undefined;
+    source?.setData(agentData.current);
+  }, [city.agents]);
+
+  useEffect(() => {
+    selectAgent.current = onAgentSelect;
+  }, [onAgentSelect]);
+
   return (
     <div className={`streetMapStage ${loaded ? "loaded" : ""}`}>
       <div ref={container} className="streetMapCanvas" />
       <div className="streetMapReadout glassPanel">
-        <span>GLOBAL STREET GRID</span>
+        <span>{city.name.toUpperCase()} · LIVE STREET GRID</span>
         <b>{Math.abs(center.lat).toFixed(3)}°{center.lat >= 0 ? "N" : "S"} · {Math.abs(center.lng).toFixed(3)}°{center.lng >= 0 ? "E" : "W"}</b>
-        <small>3D blocks · north locked</small>
+        <small>{activeAgents} active · {city.agents.length} observed · north locked</small>
       </div>
+      <div className="streetAgentLegend glassPanel" aria-label="Street agent status legend">
+        {(Object.keys(agentStatusColors) as Agent["status"][]).map((status) => (
+          <span key={status}><i style={{ backgroundColor: agentStatusColors[status] }} />{status}</span>
+        ))}
+      </div>
+      {hoveredAgent && (
+        <div className="streetAgentHover glassPanel">
+          <span><i style={{ backgroundColor: agentStatusColors[hoveredAgent.status] }} />{hoveredAgent.status} · {hoveredAgent.runtime}</span>
+          <b>{hoveredAgent.name}</b>
+          <small>{hoveredAgent.activity} · {hoveredAgent.topic}</small>
+          <em>Click for agent profile</em>
+        </div>
+      )}
       <button className="streetMapReturn glassPanel" onClick={exitStreetView}>
         <Globe2 size={13} /> Return to globe
       </button>
-      <div className="streetMapHint">Hover a building to lift it · Drag to move · Scroll to zoom</div>
+      <div className="streetMapHint">Hover or click an agent · Hover a building to lift it · Drag to move · Scroll to zoom</div>
     </div>
   );
 }
@@ -1509,7 +1705,14 @@ function EarthScene({
           <fog attach="fog" args={["#020508", 11, 42]} />
         </Canvas>
       </div>
-      {streetCenter && <StreetMap center={streetCenter} onExit={exitStreetView} />}
+      {streetCenter && (
+        <StreetMap
+          center={streetCenter}
+          city={selectedCity}
+          onAgentSelect={(agent) => onAgentSelect(selectedCity, agent)}
+          onExit={exitStreetView}
+        />
+      )}
     </>
   );
 }

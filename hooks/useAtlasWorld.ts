@@ -31,13 +31,45 @@ export function useAtlasWorld() {
     }
 
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const loadAgentPages = async () => {
+      const data: AtlasAgentRow[] = [];
+      const pageSize = 1_000;
+      for (let from = 0; ; from += pageSize) {
+        const result = await client
+          .from("atlas_agents")
+          .select("*")
+          .order("city_id")
+          .order("display_order")
+          .range(from, from + pageSize - 1);
+        if (result.error) return { data, error: result.error };
+        const page = (result.data ?? []) as AtlasAgentRow[];
+        data.push(...page);
+        if (page.length < pageSize) return { data, error: null };
+      }
+    };
+    const loadAgentEventPages = async () => {
+      const data: AtlasAgentEventRow[] = [];
+      const pageSize = 1_000;
+      for (let from = 0; ; from += pageSize) {
+        const result = await client
+          .from("atlas_agent_events")
+          .select("*")
+          .gte("occurred_at", dayAgo)
+          .order("occurred_at", { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (result.error) return { data, error: result.error };
+        const page = (result.data ?? []) as AtlasAgentEventRow[];
+        data.push(...page);
+        if (page.length < pageSize) return { data, error: null };
+      }
+    };
     const [cityResult, topicResult, signalResult, streetResult, agentResult, agentEventResult, liveAgentHistoryResult] = await Promise.all([
       client.from("atlas_cities").select("*").order("display_order"),
       client.from("atlas_city_topics").select("*").order("city_id").order("rank"),
       client.from("atlas_ambient_signals").select("*").order("city_id").order("display_order"),
       client.from("atlas_city_streets").select("*").order("city_id").order("display_order"),
-      client.from("atlas_agents").select("*").order("city_id").order("display_order"),
-      client.from("atlas_agent_events").select("*").gte("occurred_at", dayAgo).order("occurred_at", { ascending: false }),
+      loadAgentPages(),
+      loadAgentEventPages(),
       client.rpc("atlas_live_agent_history", { p_days: 7 }),
     ]);
     const queryError = cityResult.error

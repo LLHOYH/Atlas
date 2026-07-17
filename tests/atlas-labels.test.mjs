@@ -115,6 +115,21 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });
 
+test("phase 5 renders dense Supabase agents in street view", () => {
+  assert.match(seedSource, /generate_series\(5, 100\)/);
+  assert.match(seedSource, /0\.1\.0-dense-seed/);
+  assert.match(experienceSource, /streetAgentCollection\(city\.agents\)/);
+  assert.match(experienceSource, /atlas-street-agents/);
+  assert.match(experienceSource, /atlas-agent-pulse/);
+  assert.match(experienceSource, /atlas-agent-core/);
+  assert.match(experienceSource, /atlas-agent-labels/);
+  assert.match(experienceSource, /onAgentSelect\(selectedCity, agent\)/);
+  assert.match(experienceSource, /Click for agent profile/);
+  assert.match(globalStylesSource, /\.streetAgentLegend/);
+  assert.match(globalStylesSource, /\.streetAgentHover/);
+  assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
+});
+
 test("city detail uses bordered territories and the country label style", () => {
   assert.match(experienceSource, /function buildCityTerritoryGeometry\(/);
   assert.match(experienceSource, /function CityTerritories\(/);

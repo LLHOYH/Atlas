@@ -3,24 +3,31 @@ export const expectedWorldCounts = Object.freeze({
   topics: 24,
   signals: 17,
   streets: 32,
-  agents: 32,
-  agentEvents: 200,
+  agents: 800,
+  agentEvents: 1_600,
 });
 
 async function fetchTable(config, table, select, order) {
   const endpoint = new URL(`/rest/v1/${table}`, config.url);
   endpoint.searchParams.set("select", select);
   endpoint.searchParams.set("order", order);
-  const response = await fetch(endpoint, {
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`${table} returned HTTP ${response.status}: ${await response.text()}`);
+  const rows = [];
+  const pageSize = 1_000;
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetch(endpoint, {
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        Range: `${offset}-${offset + pageSize - 1}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`${table} returned HTTP ${response.status}: ${await response.text()}`);
+    }
+    const page = await response.json();
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
   }
-  return response.json();
 }
 
 export async function readAtlasWorld(config) {
@@ -72,8 +79,8 @@ export function verifyAtlasWorld(world) {
     if (signalCount < 2) throw new Error(`${city.name} should have at least two ambient signals.`);
     if (!city.region) throw new Error(`${city.name} should have a region label.`);
     if (streetCount !== 4) throw new Error(`${city.name} should have exactly four named streets.`);
-    if (agentCount < 4) throw new Error(`${city.name} should have at least four seeded agents.`);
-    if (agentEventCount < 8) throw new Error(`${city.name} should have at least eight seeded agent events.`);
+    if (agentCount < 100) throw new Error(`${city.name} should have at least 100 seeded agents.`);
+    if (agentEventCount < 200) throw new Error(`${city.name} should have at least 200 seeded agent events.`);
   }
 
   const statusCounts = Object.fromEntries(
@@ -83,7 +90,7 @@ export function verifyAtlasWorld(world) {
     ]),
   );
   const agentEnergy = world.agents.reduce((sum, agent) => sum + Number(agent.energy), 0);
-  if (agentEnergy < 1_500) throw new Error("The seeded agent network has insufficient visible energy.");
+  if (agentEnergy < 40_000) throw new Error("The seeded agent network has insufficient visible energy.");
 
   return {
     cities: world.cities.length,
