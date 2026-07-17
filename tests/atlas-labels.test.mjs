@@ -128,7 +128,7 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.35/);
+  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 5\.1/);
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
@@ -166,7 +166,7 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
     assert.match(experienceSource, new RegExp(`label: "${label}"`));
   }
   assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "TOWN"\}/);
-  assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 10/);
+  assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 11/);
   assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE - 0\.1 : TOWN_MIN_DISTANCE\}/);
   assert.match(experienceSource, /streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE/);
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
@@ -178,9 +178,10 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
   assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
   assert.match(experienceSource, /levelSpan \/ ZOOM_SCROLLS_PER_LEVEL/);
-  assert.match(experienceSource, /function distanceForZoomProgress\(/);
-  assert.match(experienceSource, /semanticStep = \(100 \/ 3\) \/ ZOOM_SCROLLS_PER_LEVEL/);
-  assert.match(experienceSource, /enableZoom=\{false\}/);
+  assert.match(experienceSource, /camera=\{\{ position: \[0, 0\.1, GLOBE_MAX_DISTANCE\]/);
+  assert.match(experienceSource, /enableZoom\s+enableDamping/);
+  assert.match(experienceSource, /zoomSpeed=\{0\.5\}/);
+  assert.doesNotMatch(experienceSource, /addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
   assert.match(experienceSource, /label: "Streets", position: 100/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);

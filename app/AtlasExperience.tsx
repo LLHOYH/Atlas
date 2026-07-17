@@ -2,7 +2,7 @@
 
 import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import { geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
@@ -48,13 +48,15 @@ const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
 type DetailLevel = 1 | 2 | 3 | 4;
 
+const COUNTRY_FOCUS_DISTANCE = 10.2;
+
 const regionViews = [
-  { id: "north-america", label: "North America", lat: 43, lng: -102, distance: 6.15, anchorCityId: "san-francisco" },
-  { id: "south-america", label: "South America", lat: -17, lng: -60, distance: 6.15, anchorCityId: "sao-paulo" },
-  { id: "europe", label: "Europe", lat: 50, lng: 15, distance: 6.05, anchorCityId: "london" },
-  { id: "africa", label: "Africa", lat: 5, lng: 20, distance: 6.15, anchorCityId: "lagos" },
-  { id: "asia", label: "Asia", lat: 34, lng: 96, distance: 6.15, anchorCityId: "tokyo" },
-  { id: "oceania", label: "Oceania", lat: -24, lng: 140, distance: 6.15, anchorCityId: "sydney" },
+  { id: "north-america", label: "North America", lat: 43, lng: -102, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "san-francisco" },
+  { id: "south-america", label: "South America", lat: -17, lng: -60, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "sao-paulo" },
+  { id: "europe", label: "Europe", lat: 50, lng: 15, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "london" },
+  { id: "africa", label: "Africa", lat: 5, lng: 20, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "lagos" },
+  { id: "asia", label: "Asia", lat: 34, lng: 96, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "tokyo" },
+  { id: "oceania", label: "Oceania", lat: -24, lng: 140, distance: COUNTRY_FOCUS_DISTANCE, anchorCityId: "sydney" },
 ] as const;
 
 type RegionViewId = (typeof regionViews)[number]["id"];
@@ -158,20 +160,19 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const GLOBE_COUNTRY_DISTANCE = 6.15;
-const STREET_ENTRY_DISTANCE = 4.35;
-const STREET_ENTRY_RESET_DISTANCE = 4.55;
-const COUNTRY_DETAIL_DISTANCE = 5.7;
-const CITY_DETAIL_DISTANCE = 5.05;
+const STREET_ENTRY_DISTANCE = 5.1;
+const STREET_ENTRY_RESET_DISTANCE = 5.35;
+const COUNTRY_DETAIL_DISTANCE = 8.5;
+const CITY_DETAIL_DISTANCE = 6.6;
 const TOWN_MIN_DISTANCE = STREET_ENTRY_DISTANCE;
-const GLOBE_MAX_DISTANCE = 10;
+const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
 
 function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
   const thresholds = streetZoomAvailable
-    ? [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
-    : [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
+    ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
+    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
   const progressStops = [0, 33.333, 66.667, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
@@ -185,28 +186,6 @@ function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean)
   }
 
   return progressStops.at(-1) ?? 100;
-}
-
-function distanceForZoomProgress(progress: number, streetZoomAvailable: boolean) {
-  const thresholds = streetZoomAvailable
-    ? [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
-    : [GLOBE_COUNTRY_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
-  const progressStops = [0, 33.333, 66.667, 100];
-  const clampedProgress = THREE.MathUtils.clamp(progress, 0, 100);
-
-  for (let index = 0; index < progressStops.length - 1; index += 1) {
-    const start = progressStops[index];
-    const end = progressStops[index + 1];
-    if (clampedProgress <= end) {
-      return THREE.MathUtils.lerp(
-        thresholds[index],
-        thresholds[index + 1],
-        THREE.MathUtils.inverseLerp(start, end, clampedProgress),
-      );
-    }
-  }
-
-  return thresholds.at(-1) ?? TOWN_MIN_DISTANCE;
 }
 
 function nearestCityToLocation(cities: City[], location: GeoCenter) {
@@ -980,7 +959,7 @@ function CountrySurfaces({
             key: country.energyKey,
             lat: countryCenters[countryIndex].lat,
             lng: countryCenters[countryIndex].lng,
-            distance: 6.15,
+            distance: COUNTRY_FOCUS_DISTANCE,
           });
         }}
       >
@@ -1442,7 +1421,6 @@ function Earth({
   onStreetEnter: (center: GeoCenter) => void;
   streetZoomAvailable: boolean;
 }) {
-  const { camera, gl } = useThree();
   const globe = useRef<THREE.Group>(null);
   const drag = useRef({ active: false, x: 0, y: 0 });
   const velocity = useRef({ x: 0, y: 0 });
@@ -1501,55 +1479,6 @@ function Earth({
 
     focus.current = targetOrientation;
   }, [focusDistance, focusLocation.lat, focusLocation.lng, focusRevision]);
-
-  useEffect(() => {
-    const element = gl.domElement;
-    const semanticStep = (100 / 3) / ZOOM_SCROLLS_PER_LEVEL;
-    const overviewStep = (GLOBE_MAX_DISTANCE - GLOBE_COUNTRY_DISTANCE) / ZOOM_SCROLLS_PER_LEVEL;
-    let wheelGestureLocked = false;
-    let wheelGestureTimer: number | undefined;
-
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      if (event.deltaY === 0) return;
-      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
-      wheelGestureTimer = window.setTimeout(() => {
-        wheelGestureLocked = false;
-      }, 120);
-      if (wheelGestureLocked) return;
-      wheelGestureLocked = true;
-
-      const currentDistance = focusDistanceTarget.current ?? camera.position.length();
-      const zoomingIn = event.deltaY < 0;
-      let nextDistance: number;
-      if (currentDistance > GLOBE_COUNTRY_DISTANCE) {
-        nextDistance = THREE.MathUtils.clamp(
-          currentDistance + (zoomingIn ? -overviewStep : overviewStep),
-          GLOBE_COUNTRY_DISTANCE,
-          GLOBE_MAX_DISTANCE,
-        );
-      } else {
-        const currentProgress = zoomProgressForDistance(currentDistance, streetZoomAvailable);
-        if (!zoomingIn && currentProgress <= 0) {
-          nextDistance = Math.min(GLOBE_MAX_DISTANCE, currentDistance + overviewStep);
-        } else {
-          const nextProgress = THREE.MathUtils.clamp(
-            currentProgress + (zoomingIn ? semanticStep : -semanticStep),
-            0,
-            100,
-          );
-          nextDistance = distanceForZoomProgress(nextProgress, streetZoomAvailable);
-        }
-      }
-      focusDistanceTarget.current = nextDistance;
-    };
-
-    element.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    return () => {
-      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
-      element.removeEventListener("wheel", onWheel, { capture: true });
-    };
-  }, [camera, gl, streetZoomAvailable]);
 
   useFrame(({ camera }, delta) => {
     if (!globe.current) return;
@@ -1840,7 +1769,7 @@ function CanvasWorldFallback({
     if (!element || !context) return;
 
     const initialProgress = focusDistance === null
-      ? Math.round(zoomProgressForDistance(6.3, streetZoomAvailable))
+      ? Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE, streetZoomAvailable))
       : Math.round(zoomProgressForDistance(focusDistance, streetZoomAvailable));
     const view = {
       lat: focusLocation.lat,
@@ -1889,7 +1818,7 @@ function CanvasWorldFallback({
       context.clearRect(0, 0, width, height);
 
       const maximumScale = streetZoomAvailable ? 28 : 18;
-      const scaleMultiplier = 0.78 * Math.pow(maximumScale, view.progress / 100);
+      const scaleMultiplier = 0.72 * Math.pow(maximumScale, view.progress / 100);
       const globeRadius = Math.min(width, height) * 0.34 * scaleMultiplier;
       projection = geoOrthographic()
         .translate([width / 2, height / 2])
@@ -2110,7 +2039,7 @@ function CanvasWorldFallback({
           key: country.key,
           lat: country.lat,
           lng: country.lng,
-          distance: 6.15,
+          distance: COUNTRY_FOCUS_DISTANCE,
         });
       }
     };
@@ -2353,7 +2282,7 @@ function EarthScene({
         >
           <div className="earthCanvasLayer">
             <Canvas
-              camera={{ position: [0, 0.1, 6.3], fov: 38, near: 0.1, far: 70 }}
+              camera={{ position: [0, 0.1, GLOBE_MAX_DISTANCE], fov: 38, near: 0.1, far: 70 }}
               dpr={[1, 1.35]}
               gl={{
                 alpha: true,
@@ -2391,9 +2320,10 @@ function EarthScene({
                 makeDefault
                 enableRotate={false}
                 enablePan={false}
-                enableZoom={false}
+                enableZoom
                 enableDamping
                 dampingFactor={0.1}
+                zoomSpeed={0.5}
                 minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : TOWN_MIN_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
@@ -2742,7 +2672,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
-  const [zoomProgress, setZoomProgress] = useState(() => Math.round(zoomProgressForDistance(6.3, true)));
+  const [zoomProgress, setZoomProgress] = useState(() => Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE, true)));
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchSelectionIndex, setSearchSelectionIndex] = useState(0);
@@ -2887,7 +2817,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             key: countryEnergyKey(country.name),
             lat: country.lat,
             lng: country.lng,
-            distance: 6.15,
+            distance: COUNTRY_FOCUS_DISTANCE,
           },
         }))
       : [];
