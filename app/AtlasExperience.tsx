@@ -120,26 +120,25 @@ type AtlasSearchResult =
 type GeographicLabel = {
   id: string;
   name: string;
+  rank: number;
   position: THREE.Vector3;
 };
 
 const globalCountryLabels: GeographicLabel[] = atlasLabelData.countries.map((label) => ({
   id: label.id,
   name: label.name,
+  rank: label.rank,
   position: latLngToVector3(label.lat, label.lng, 3.105),
-}));
-
-const globalRegionLabels: GeographicLabel[] = atlasLabelData.regions.map((label) => ({
-  id: label.id,
-  name: label.name,
-  position: latLngToVector3(label.lat, label.lng, 3.12),
 }));
 
 const globalCityLabels: GeographicLabel[] = atlasLabelData.cities.map((label) => ({
   id: label.id,
   name: label.name,
+  rank: label.rank,
   position: latLngToVector3(label.lat, label.lng, 3.135),
 }));
+
+const globalMajorCityLabels = globalCityLabels.filter((label) => label.rank <= 2);
 
 function normalizeLabelName(value: string) {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
@@ -833,7 +832,7 @@ function CountrySurfaces({
       const density = agentDensityLevel(liveAgentCount);
       const densityColor = densityColors[density.level];
       const isSelected = selectedCountryKey === country.energyKey;
-      const cityLayerActive = detailLevel >= 3;
+      const cityLayerActive = detailLevel >= 2;
       const target = cityLayerActive ? 0 : hoveredCountry.current === index ? 1 : isSelected ? 0.74 : 0;
       const current = hoverStrengths[index];
       const next = THREE.MathUtils.damp(current, target, 12, delta);
@@ -869,7 +868,7 @@ function CountrySurfaces({
         <sphereGeometry args={[3, 36, 24]} />
         <meshBasicMaterial color="#245c68" wireframe transparent opacity={0.035} depthWrite={false} />
       </mesh>
-      {detailLevel < 3 && <mesh
+      {detailLevel < 2 && <mesh
         onPointerMove={(event) => {
           const nextCountry = findCountryAtPoint(event.point, event.eventObject);
           hoveredCountry.current = nextCountry;
@@ -1448,7 +1447,7 @@ function Earth({
 
     const streetOpacity = 1 - THREE.MathUtils.smoothstep(distance, 3.88, 4.6);
     if (streetMaterial.current) streetMaterial.current.opacity = streetOpacity * 0.72;
-    if (cityTerritories.current) cityTerritories.current.visible = nextDetail >= 3;
+    if (cityTerritories.current) cityTerritories.current.visible = nextDetail >= 2;
 
     if (focus.current) {
       orientation.current.pitch = THREE.MathUtils.damp(orientation.current.pitch, focus.current.pitch, 9, delta);
@@ -1543,12 +1542,12 @@ function Earth({
           position={country.position}
         />
       ))}
-      {labelDetail === 2 && globalRegionLabels.map((region) => (
+      {labelDetail === 2 && globalMajorCityLabels.map((city) => (
         <GlobeLabel
-          key={region.id}
-          label={region.name}
-          kind="region"
-          position={region.position}
+          key={city.id}
+          label={city.name}
+          kind="city"
+          position={city.position}
         />
       ))}
       {(labelDetail === 3 || labelDetail === 4) && globalCityLabels.map((city) => (
@@ -1752,7 +1751,7 @@ function CanvasWorldFallback({
       const detail = detailForProgress(view.progress);
       context.textAlign = "center";
       context.textBaseline = "middle";
-      if (detail <= 2) {
+      if (detail === 1) {
         context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
         context.fillStyle = "#d9b76b";
         for (const country of fallbackCountries) {
@@ -1763,11 +1762,11 @@ function CanvasWorldFallback({
         }
       }
 
-      if (detail === 3) {
+      if (detail === 2 || detail === 3) {
         const visibleCities = atlasLabelData.cities
-          .filter((city) => city.rank <= 2 && isVisible(city.lng, city.lat))
+          .filter((city) => (detail === 3 || city.rank <= 2) && isVisible(city.lng, city.lat))
           .sort((left, right) => right.population - left.population)
-          .slice(0, 60);
+          .slice(0, detail === 2 ? 66 : 120);
         context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
         context.fillStyle = "#d9b76b";
         for (const city of visibleCities) {

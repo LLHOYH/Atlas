@@ -170,6 +170,10 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
+  assert.match(experienceSource, /labelDetail === 2 && globalMajorCityLabels\.map/);
+  assert.match(experienceSource, /globalMajorCityLabels = globalCityLabels\.filter\(\(label\) => label\.rank <= 2\)/);
+  assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
+  assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
 });
 
 test("city detail uses bordered territories and the country label style", () => {
@@ -177,7 +181,7 @@ test("city detail uses bordered territories and the country label style", () => 
   assert.match(experienceSource, /function CityTerritories\(/);
   assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
   assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
-  assert.match(experienceSource, /detailLevel >= 3/);
+  assert.match(experienceSource, /detailLevel >= 2/);
   assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
   assert.match(experienceSource, /kind === "country" \|\| kind === "city" \? 1\.875/);
