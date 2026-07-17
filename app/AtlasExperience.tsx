@@ -109,7 +109,7 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
   );
 }
 
-type LabelKind = "country" | "region" | "city" | "street";
+type LabelKind = "country" | "region" | "city" | "town" | "street";
 type GeoCenter = { lat: number; lng: number };
 type CountrySelection = GeoCenter & { name: string; key: string; distance: number };
 type AtlasSearchResult =
@@ -160,15 +160,18 @@ function normalizeLongitude(value: number) {
 
 const STREET_ENTRY_DISTANCE = 4.08;
 const STREET_ENTRY_RESET_DISTANCE = 4.36;
-const COUNTRY_DETAIL_DISTANCE = 6;
+const COUNTRY_DETAIL_DISTANCE = 5.7;
 const CITY_DETAIL_DISTANCE = 5.05;
 const TOWN_DETAIL_DISTANCE = 4.42;
-const GLOBE_MAX_DISTANCE = 10;
+const GLOBE_MAX_DISTANCE = 6.3;
+const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
 
 function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
-  const thresholds = [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_DETAIL_DISTANCE];
-  const progressStops = streetZoomAvailable ? [0, 25, 50, 75] : [0, 33.333, 66.667, 100];
+  const thresholds = streetZoomAvailable
+    ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
+    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_DETAIL_DISTANCE];
+  const progressStops = streetZoomAvailable ? [0, 25, 50, 75, 100] : [0, 33.333, 66.667, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
   for (let index = 0; index < thresholds.length - 1; index += 1) {
@@ -209,7 +212,15 @@ function GlobeLabel({
   const worldPosition = useMemo(() => new THREE.Vector3(), []);
   const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
   const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const distanceFactor = kind === "country" || kind === "city" ? 1.875 : kind === "region" ? 1.5 : 0.9;
+  const distanceFactor = kind === "country"
+    ? 1.875
+    : kind === "city"
+      ? 1.55
+      : kind === "town"
+        ? 1.15
+        : kind === "region"
+          ? 1.5
+          : 0.9;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -325,19 +336,36 @@ function StreetMap({
       });
       mapInstance.current = map;
       map.touchZoomRotate.disableRotation();
+      map.scrollZoom.setZoomRate(1 / 600);
+      map.scrollZoom.setWheelZoomRate(1 / 1800);
       map.on("load", () => {
         if (cancelled || !map) return;
         for (const layerId of ["highway_name_other", "highway_name_motorway"]) {
           if (!map.getLayer(layerId)) continue;
-          map.setPaintProperty(layerId, "text-color", "#d9b76b");
+          map.setPaintProperty(layerId, "text-color", "#d2a95d");
           map.setPaintProperty(layerId, "text-halo-color", "#071013");
           map.setPaintProperty(layerId, "text-halo-width", 1);
+          map.setLayoutProperty(layerId, "text-size", 8);
         }
-        for (const layerId of ["place_village", "place_town", "place_city", "place_city_large", "place_state"]) {
+        for (const layerId of ["place_city", "place_city_large"]) {
           if (!map.getLayer(layerId)) continue;
-          map.setPaintProperty(layerId, "text-color", "#9fcbd0");
+          map.setPaintProperty(layerId, "text-color", "#7fdde7");
           map.setPaintProperty(layerId, "text-halo-color", "#061014");
           map.setPaintProperty(layerId, "text-halo-width", 1.2);
+          map.setLayoutProperty(layerId, "text-size", 9);
+        }
+        for (const layerId of ["place_village", "place_town"]) {
+          if (!map.getLayer(layerId)) continue;
+          map.setPaintProperty(layerId, "text-color", "#9cb7bb");
+          map.setPaintProperty(layerId, "text-halo-color", "#061014");
+          map.setPaintProperty(layerId, "text-halo-width", 1);
+          map.setLayoutProperty(layerId, "text-size", 7);
+        }
+        if (map.getLayer("place_state")) {
+          map.setPaintProperty("place_state", "text-color", "#6f8f95");
+          map.setPaintProperty("place_state", "text-halo-color", "#061014");
+          map.setPaintProperty("place_state", "text-halo-width", 1);
+          map.setLayoutProperty("place_state", "text-size", 8);
         }
         for (const [layerId, color] of [
           ["highway_minor", "#1d3c42"],
@@ -466,14 +494,11 @@ function StreetMap({
           if (agent) selectAgent.current(agent);
         });
 
-        onZoomChange(75);
+        onZoomChange(100);
         setLoaded(true);
       });
       map.on("zoom", () => {
-        if (map) {
-          const streetProgress = 75 + THREE.MathUtils.clamp((map.getZoom() - 15) / 3, 0, 1) * 25;
-          onZoomChange(streetProgress);
-        }
+        if (map) onZoomChange(100);
         if (map && map.getZoom() <= 5.5) exitStreetView();
       });
     });
@@ -1554,7 +1579,7 @@ function Earth({
         <GlobeLabel
           key={city.id}
           label={city.name}
-          kind="city"
+          kind="town"
           position={city.position}
         />
       ))}
@@ -1667,6 +1692,8 @@ function CanvasWorldFallback({
     let moved = false;
     let lastX = 0;
     let lastY = 0;
+    let wheelGestureLocked = false;
+    let wheelGestureTimer: number | undefined;
 
     const detailForProgress = (progress: number): DetailLevel => {
       if (streetZoomAvailable) {
@@ -1767,8 +1794,10 @@ function CanvasWorldFallback({
           .filter((city) => (detail === 3 || city.rank <= 2) && isVisible(city.lng, city.lat))
           .sort((left, right) => right.population - left.population)
           .slice(0, detail === 2 ? 66 : 120);
-        context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
-        context.fillStyle = "#d9b76b";
+        context.font = detail === 2
+          ? "600 7px ui-monospace, SFMono-Regular, Menlo, monospace"
+          : "520 6px ui-monospace, SFMono-Regular, Menlo, monospace";
+        context.fillStyle = detail === 2 ? "#7fdde7" : "#9cb7bb";
         for (const city of visibleCities) {
           const point = projection([city.lng, city.lat]);
           if (point) context.fillText(city.name.toUpperCase(), point[0], point[1]);
@@ -1794,8 +1823,8 @@ function CanvasWorldFallback({
           context.strokeStyle = street.roadClass === "primary" ? "rgba(217, 183, 107, 0.86)" : "rgba(91, 168, 178, 0.72)";
           context.lineWidth = street.roadClass === "primary" ? 2.2 : 1.2;
           context.stroke();
-          context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
-          context.fillStyle = "#d9b76b";
+          context.font = "600 5px ui-monospace, SFMono-Regular, Menlo, monospace";
+          context.fillStyle = "#d2a95d";
           context.fillText(street.name.toUpperCase(), (start[0] + end[0]) / 2, (start[1] + end[1]) / 2 - 7);
         }
 
@@ -1890,8 +1919,21 @@ function CanvasWorldFallback({
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      if (event.deltaY === 0) return;
+      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
+      wheelGestureTimer = window.setTimeout(() => {
+        wheelGestureLocked = false;
+      }, 120);
+      if (wheelGestureLocked) return;
+      wheelGestureLocked = true;
       const previousDetail = detailForProgress(view.progress);
-      view.progress = THREE.MathUtils.clamp(view.progress - event.deltaY * 0.045, 0, 100);
+      const levelSpan = streetZoomAvailable ? 25 : 100 / 3;
+      const progressStep = levelSpan / ZOOM_SCROLLS_PER_LEVEL;
+      view.progress = THREE.MathUtils.clamp(
+        view.progress - Math.sign(event.deltaY) * progressStep,
+        0,
+        100,
+      );
       const nextDetail = detailForProgress(view.progress);
       if (streetZoomAvailable && previousDetail < 4 && nextDetail === 4) {
         view.lat = selectedCity.lat;
@@ -1925,6 +1967,7 @@ function CanvasWorldFallback({
     return () => {
       observer.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
+      if (wheelGestureTimer !== undefined) window.clearTimeout(wheelGestureTimer);
       element.removeEventListener("pointerdown", onPointerDown);
       element.removeEventListener("pointermove", onPointerMove);
       element.removeEventListener("pointerup", onPointerUp);
@@ -2150,7 +2193,7 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={0.7}
+                zoomSpeed={0.2}
                 minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE : TOWN_DETAIL_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />

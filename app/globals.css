@@ -355,14 +355,33 @@ button {
   text-shadow: 0 1px 3px #020507, 0 0 8px #020507, 0 0 14px rgba(74, 203, 220, 0.34);
 }
 
-.mapLabel--country,
-.mapLabel--city {
+.mapLabel--country {
   padding: 1px 3px;
   color: #d9b76b;
   font-size: 6px;
   font-weight: 540;
   letter-spacing: 0.13em;
   text-shadow: 0 1px 3px #020507, 0 0 7px #020507, 0 0 11px rgba(217, 183, 107, 0.42);
+  text-transform: uppercase;
+}
+
+.mapLabel--city {
+  padding: 1px 3px;
+  color: #7fdde7;
+  font-size: 5.25px;
+  font-weight: 580;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 3px #020507, 0 0 7px #020507, 0 0 11px rgba(127, 221, 231, 0.42);
+  text-transform: uppercase;
+}
+
+.mapLabel--town {
+  padding: 1px 2px;
+  color: #9cb7bb;
+  font-size: 4.25px;
+  font-weight: 520;
+  letter-spacing: 0.07em;
+  text-shadow: 0 1px 3px #020507, 0 0 6px #020507, 0 0 9px rgba(105, 160, 169, 0.3);
   text-transform: uppercase;
 }
 
@@ -379,12 +398,15 @@ button {
 }
 
 .mapLabel--street {
-  padding: 2px 4px;
+  padding: 1px 3px;
   border-left: 1px solid currentColor;
   background: rgba(2, 9, 13, 0.76);
-  font-size: 6.5px;
+  color: #d2a95d;
+  font-size: 3.75px;
   font-weight: 520;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 3px #020507, 0 0 6px rgba(210, 169, 93, 0.36);
+  text-transform: uppercase;
 }
 
 .agentMapLabel {

@@ -174,9 +174,14 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(experienceSource, /globalMajorCityLabels = globalCityLabels\.filter\(\(label\) => label\.rank <= 2\)/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
+  assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
+  assert.match(experienceSource, /levelSpan \/ ZOOM_SCROLLS_PER_LEVEL/);
+  assert.match(experienceSource, /zoomSpeed=\{0\.2\}/);
+  assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
+  assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
 });
 
-test("city detail uses bordered territories and the country label style", () => {
+test("city detail uses bordered territories and distinct city, town, and street label styles", () => {
   assert.match(experienceSource, /function buildCityTerritoryGeometry\(/);
   assert.match(experienceSource, /function CityTerritories\(/);
   assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
@@ -184,8 +189,11 @@ test("city detail uses bordered territories and the country label style", () => 
   assert.match(experienceSource, /detailLevel >= 2/);
   assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
-  assert.match(experienceSource, /kind === "country" \|\| kind === "city" \? 1\.875/);
-  assert.match(globalStylesSource, /\.mapLabel--country,\s*\.mapLabel--city \{[\s\S]*?color: #d9b76b;[\s\S]*?font-size: 6px;/);
+  assert.match(experienceSource, /kind="town"/);
+  assert.match(globalStylesSource, /\.mapLabel--country \{[\s\S]*?color: #d9b76b;[\s\S]*?font-size: 6px;/);
+  assert.match(globalStylesSource, /\.mapLabel--city \{[\s\S]*?color: #7fdde7;[\s\S]*?font-size: 5\.25px;/);
+  assert.match(globalStylesSource, /\.mapLabel--town \{[\s\S]*?color: #9cb7bb;[\s\S]*?font-size: 4\.25px;/);
+  assert.match(globalStylesSource, /\.mapLabel--street \{[\s\S]*?color: #d2a95d;[\s\S]*?font-size: 3\.75px;/);
   assert.doesNotMatch(globalStylesSource, /\.mapLabel--city::before/);
 });
 
