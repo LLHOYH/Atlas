@@ -147,7 +147,12 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(experienceSource, /class GlobeRendererBoundary/);
   assert.match(experienceSource, /probe\.getContext\("webgl2"/);
   assert.match(experienceSource, /rendererAvailability === "unavailable"/);
-  assert.match(experienceSource, /Retry globe/);
+  assert.match(experienceSource, /function CanvasWorldFallback\(/);
+  assert.match(experienceSource, /getContext\("2d"\)/);
+  assert.match(experienceSource, /geoOrthographic\(\)/);
+  assert.match(experienceSource, /2D MAP · COMPATIBILITY MODE/);
+  assert.doesNotMatch(experienceSource, /3D renderer is temporarily unavailable|Retry globe/);
+  assert.match(globalStylesSource, /\.canvasWorldFallback canvas/);
   assert.match(experienceSource, /dpr=\{\[1, 1\.35\]\}/);
   assert.match(experienceSource, /antialias: false/);
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);

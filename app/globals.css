@@ -115,56 +115,41 @@ button {
   background: radial-gradient(circle at 50% 42%, rgba(12, 45, 61, 0.32), #02070a 72%);
 }
 
-.rendererFallback {
+.canvasWorldFallback {
   position: absolute;
-  z-index: 3;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  width: min(520px, calc(100vw - 48px));
-  padding: 18px;
-  border: 1px solid rgba(111, 194, 226, 0.24);
-  border-radius: 14px;
-  background: rgba(3, 13, 19, 0.94);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.52);
-  transform: translate(-50%, -50%);
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(20, 83, 99, 0.16), transparent 45%),
+    #02070a;
 }
 
-.rendererFallbackIcon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(113, 208, 236, 0.28);
-  border-radius: 10px;
-  color: #83d6ed;
-  background: rgba(53, 160, 194, 0.12);
-}
-
-.rendererFallback strong {
+.canvasWorldFallback canvas {
   display: block;
-  color: #dbeef4;
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
 }
 
-.rendererFallback p {
-  margin: 4px 0 0;
-  color: #78909a;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.rendererFallback button {
-  padding: 9px 11px;
-  border: 1px solid rgba(217, 183, 107, 0.32);
-  border-radius: 8px;
-  color: #d9b76b;
-  background: rgba(217, 183, 107, 0.08);
-  white-space: nowrap;
+.canvasWorldMode {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 9px;
+  border: 1px solid rgba(103, 190, 204, 0.16);
+  border-radius: 7px;
+  background: rgba(3, 14, 20, 0.72);
+  color: #607981;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  letter-spacing: 0.11em;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .streetMapStage {

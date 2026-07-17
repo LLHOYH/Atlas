@@ -5,7 +5,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { geoCentroid, geoContains } from "d3-geo";
+import { geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import atlasGeoData from "./atlas-geo-data.json";
 import atlasLabelData from "./atlas-label-data.json";
 import {
@@ -1593,21 +1593,372 @@ function Earth({
   );
 }
 
-function RendererFallback({ onRetry }: { onRetry: () => void }) {
+function CanvasWorldFallback({
+  cities,
+  selectedCity,
+  selectedCountryKey,
+  focusLocation,
+  focusDistance,
+  liveCounts,
+  streetZoomAvailable,
+  onSelect,
+  onCountrySelect,
+  onAgentSelect,
+  onDetailChange,
+  onZoomChange,
+}: {
+  cities: City[];
+  selectedCity: City;
+  selectedCountryKey: string | null;
+  focusLocation: GeoCenter;
+  focusDistance: number | null;
+  liveCounts: Record<string, number>;
+  streetZoomAvailable: boolean;
+  onSelect: (city: City) => void;
+  onCountrySelect: (country: CountrySelection) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
+  onDetailChange: (level: DetailLevel) => void;
+  onZoomChange: (progress: number) => void;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const fallbackCountries = useMemo(() => atlasGeoData.countries.map((country) => {
+    const key = countryEnergyKey(country.name);
+    const label = atlasLabelData.countries.find((candidate) => countryEnergyKey(candidate.name) === key);
+    const geometry = countryToGeoJson(country);
+    const feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> = {
+      type: "Feature",
+      properties: { name: country.name, key },
+      geometry,
+    };
+    const centroid = geoCentroid(feature);
+    return {
+      name: label?.name ?? country.name,
+      key,
+      lat: label?.lat ?? centroid[1],
+      lng: label?.lng ?? centroid[0],
+      rank: label?.rank ?? 3,
+      geometry,
+      feature,
+    };
+  }), []);
+  const countryLiveAgents = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
+    const key = countryEnergyKey(city.country);
+    const seeded = city.agents.filter((agent) => agent.status !== "offline").length;
+    counts[key] = (counts[key] ?? 0) + seeded + (liveCounts[city.name] ?? 0);
+    return counts;
+  }, {}), [cities, liveCounts]);
+
+  useEffect(() => {
+    const element = canvas.current;
+    const context = element?.getContext("2d");
+    if (!element || !context) return;
+
+    const initialProgress = focusDistance === null
+      ? Math.round(zoomProgressForDistance(6.3, streetZoomAvailable))
+      : Math.round(zoomProgressForDistance(focusDistance, streetZoomAvailable));
+    const view = {
+      lat: focusLocation.lat,
+      lng: focusLocation.lng,
+      progress: initialProgress,
+      hoveredCountryKey: null as string | null,
+    };
+    let projection = geoOrthographic();
+    let frame = 0;
+    let dragging = false;
+    let moved = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const detailForProgress = (progress: number): DetailLevel => {
+      if (streetZoomAvailable) {
+        if (progress >= 75) return 4;
+        if (progress >= 50) return 3;
+        if (progress >= 25) return 2;
+        return 1;
+      }
+      if (progress >= 66.667) return 3;
+      if (progress >= 33.333) return 2;
+      return 1;
+    };
+
+    const isVisible = (lng: number, lat: number) => (
+      geoDistance([view.lng, view.lat], [lng, lat]) < Math.PI / 2
+    );
+
+    const draw = () => {
+      frame = 0;
+      const width = Math.max(1, element.clientWidth);
+      const height = Math.max(1, element.clientHeight);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const pixelWidth = Math.round(width * dpr);
+      const pixelHeight = Math.round(height * dpr);
+      if (element.width !== pixelWidth || element.height !== pixelHeight) {
+        element.width = pixelWidth;
+        element.height = pixelHeight;
+      }
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.clearRect(0, 0, width, height);
+
+      const maximumScale = streetZoomAvailable ? 28 : 18;
+      const scaleMultiplier = 0.78 * Math.pow(maximumScale, view.progress / 100);
+      const globeRadius = Math.min(width, height) * 0.34 * scaleMultiplier;
+      projection = geoOrthographic()
+        .translate([width / 2, height / 2])
+        .scale(globeRadius)
+        .rotate([-view.lng, -view.lat, 0])
+        .clipAngle(90)
+        .precision(0.4);
+      const path = geoPath(projection, context);
+
+      const oceanGlow = context.createRadialGradient(
+        width / 2 - globeRadius * 0.22,
+        height / 2 - globeRadius * 0.25,
+        globeRadius * 0.08,
+        width / 2,
+        height / 2,
+        globeRadius,
+      );
+      oceanGlow.addColorStop(0, "#0b3543");
+      oceanGlow.addColorStop(0.62, "#061b25");
+      oceanGlow.addColorStop(1, "#02080d");
+      context.beginPath();
+      context.arc(width / 2, height / 2, globeRadius, 0, Math.PI * 2);
+      context.fillStyle = oceanGlow;
+      context.fill();
+      context.strokeStyle = "rgba(99, 185, 202, 0.22)";
+      context.lineWidth = 1;
+      context.stroke();
+
+      context.beginPath();
+      path(geoGraticule10());
+      context.strokeStyle = "rgba(80, 150, 164, 0.09)";
+      context.lineWidth = 0.55;
+      context.stroke();
+
+      for (const country of fallbackCountries) {
+        context.beginPath();
+        path(country.feature);
+        const density = agentDensityLevel(countryLiveAgents[country.key] ?? 0);
+        const highlighted = country.key === view.hoveredCountryKey || country.key === selectedCountryKey;
+        context.globalAlpha = highlighted ? 0.96 : 0.72;
+        context.fillStyle = highlighted ? "#b48a3c" : density.color;
+        context.fill();
+        context.globalAlpha = 1;
+        context.strokeStyle = highlighted ? "rgba(255, 220, 142, 0.92)" : "rgba(92, 164, 174, 0.34)";
+        context.lineWidth = highlighted ? 1.35 : 0.55;
+        context.stroke();
+      }
+
+      const detail = detailForProgress(view.progress);
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      if (detail <= 2) {
+        context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
+        context.fillStyle = "#d9b76b";
+        for (const country of fallbackCountries) {
+          if (country.rank > 2 || !isVisible(country.lng, country.lat)) continue;
+          const point = projection([country.lng, country.lat]);
+          if (!point) continue;
+          context.fillText(country.name.toUpperCase(), point[0], point[1]);
+        }
+      }
+
+      if (detail === 3) {
+        const visibleCities = atlasLabelData.cities
+          .filter((city) => city.rank <= 2 && isVisible(city.lng, city.lat))
+          .sort((left, right) => right.population - left.population)
+          .slice(0, 60);
+        context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
+        context.fillStyle = "#d9b76b";
+        for (const city of visibleCities) {
+          const point = projection([city.lng, city.lat]);
+          if (point) context.fillText(city.name.toUpperCase(), point[0], point[1]);
+        }
+      }
+
+      if (detail === 4) {
+        context.lineCap = "round";
+        for (const street of selectedCity.streets) {
+          const bearing = THREE.MathUtils.degToRad(street.bearingDegrees);
+          const halfLength = street.lengthDegrees / 2;
+          const centerLat = selectedCity.lat + street.offsetLatitude;
+          const centerLng = selectedCity.lng + street.offsetLongitude;
+          const longitudeScale = Math.max(0.25, Math.cos(THREE.MathUtils.degToRad(centerLat)));
+          const latitudeDelta = Math.cos(bearing) * halfLength;
+          const longitudeDelta = (Math.sin(bearing) * halfLength) / longitudeScale;
+          const start = projection([centerLng - longitudeDelta, centerLat - latitudeDelta]);
+          const end = projection([centerLng + longitudeDelta, centerLat + latitudeDelta]);
+          if (!start || !end) continue;
+          context.beginPath();
+          context.moveTo(start[0], start[1]);
+          context.lineTo(end[0], end[1]);
+          context.strokeStyle = street.roadClass === "primary" ? "rgba(217, 183, 107, 0.86)" : "rgba(91, 168, 178, 0.72)";
+          context.lineWidth = street.roadClass === "primary" ? 2.2 : 1.2;
+          context.stroke();
+          context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
+          context.fillStyle = "#d9b76b";
+          context.fillText(street.name.toUpperCase(), (start[0] + end[0]) / 2, (start[1] + end[1]) / 2 - 7);
+        }
+
+        for (const agent of selectedCity.agents) {
+          const point = projection([agent.lng, agent.lat]);
+          if (!point) continue;
+          context.beginPath();
+          context.arc(point[0], point[1], agent.status === "working" ? 4 : 2.8, 0, Math.PI * 2);
+          context.fillStyle = agentStatusColors[agent.status];
+          context.globalAlpha = agent.status === "offline" ? 0.34 : 0.92;
+          context.fill();
+          context.globalAlpha = 1;
+        }
+      }
+
+      if (view.hoveredCountryKey) {
+        const hovered = fallbackCountries.find((country) => country.key === view.hoveredCountryKey);
+        if (hovered) {
+          context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+          context.fillStyle = "#f0c66f";
+          context.textAlign = "left";
+          context.fillText(hovered.name.toUpperCase(), 22, height - 28);
+        }
+      }
+    };
+
+    const requestDraw = () => {
+      if (!frame) frame = window.requestAnimationFrame(draw);
+    };
+    const pointerPosition = (event: PointerEvent) => {
+      const bounds = element.getBoundingClientRect();
+      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    };
+    const hitCountry = (x: number, y: number) => {
+      const location = projection.invert?.([x, y]);
+      if (!location) return null;
+      return fallbackCountries.find((country) => geoContains(country.geometry, location)) ?? null;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const point = pointerPosition(event);
+      dragging = true;
+      moved = false;
+      lastX = point.x;
+      lastY = point.y;
+      element.setPointerCapture(event.pointerId);
+      element.style.cursor = "grabbing";
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const point = pointerPosition(event);
+      if (dragging) {
+        const deltaX = point.x - lastX;
+        const deltaY = point.y - lastY;
+        if (Math.abs(deltaX) + Math.abs(deltaY) > 1) moved = true;
+        view.lng = normalizeLongitude(view.lng - deltaX * 0.22);
+        view.lat = THREE.MathUtils.clamp(view.lat + deltaY * 0.18, -82, 82);
+        lastX = point.x;
+        lastY = point.y;
+      } else {
+        view.hoveredCountryKey = hitCountry(point.x, point.y)?.key ?? null;
+        element.style.cursor = view.hoveredCountryKey ? "pointer" : "grab";
+      }
+      requestDraw();
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const point = pointerPosition(event);
+      dragging = false;
+      element.releasePointerCapture(event.pointerId);
+      element.style.cursor = "grab";
+      if (moved) return;
+
+      if (detailForProgress(view.progress) >= 3) {
+        const city = cities.find((candidate) => {
+          const projected = projection([candidate.lng, candidate.lat]);
+          return projected && Math.hypot(projected[0] - point.x, projected[1] - point.y) <= 16;
+        });
+        if (city) {
+          onSelect(city);
+          return;
+        }
+      }
+
+      const country = hitCountry(point.x, point.y);
+      if (country) {
+        onCountrySelect({
+          name: country.name,
+          key: country.key,
+          lat: country.lat,
+          lng: country.lng,
+          distance: 6.15,
+        });
+      }
+    };
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const previousDetail = detailForProgress(view.progress);
+      view.progress = THREE.MathUtils.clamp(view.progress - event.deltaY * 0.045, 0, 100);
+      const nextDetail = detailForProgress(view.progress);
+      if (streetZoomAvailable && previousDetail < 4 && nextDetail === 4) {
+        view.lat = selectedCity.lat;
+        view.lng = selectedCity.lng;
+      }
+      onZoomChange(view.progress);
+      if (nextDetail !== previousDetail) onDetailChange(nextDetail);
+      requestDraw();
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      if (detailForProgress(view.progress) !== 4) return;
+      const point = pointerPosition(event as unknown as PointerEvent);
+      const agent = selectedCity.agents.find((candidate) => {
+        const projected = projection([candidate.lng, candidate.lat]);
+        return projected && Math.hypot(projected[0] - point.x, projected[1] - point.y) <= 10;
+      });
+      if (agent) onAgentSelect(selectedCity, agent);
+    };
+
+    const observer = new ResizeObserver(requestDraw);
+    observer.observe(element);
+    element.addEventListener("pointerdown", onPointerDown);
+    element.addEventListener("pointermove", onPointerMove);
+    element.addEventListener("pointerup", onPointerUp);
+    element.addEventListener("wheel", onWheel, { passive: false });
+    element.addEventListener("dblclick", onDoubleClick);
+    onZoomChange(view.progress);
+    onDetailChange(detailForProgress(view.progress));
+    requestDraw();
+
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      element.removeEventListener("pointerdown", onPointerDown);
+      element.removeEventListener("pointermove", onPointerMove);
+      element.removeEventListener("pointerup", onPointerUp);
+      element.removeEventListener("wheel", onWheel);
+      element.removeEventListener("dblclick", onDoubleClick);
+    };
+  }, [
+    cities,
+    countryLiveAgents,
+    fallbackCountries,
+    focusDistance,
+    focusLocation.lat,
+    focusLocation.lng,
+    onAgentSelect,
+    onCountrySelect,
+    onDetailChange,
+    onSelect,
+    onZoomChange,
+    selectedCity,
+    selectedCountryKey,
+    streetZoomAvailable,
+  ]);
+
   return (
-    <div className="rendererFallback" role="status">
-      <span className="rendererFallbackIcon" aria-hidden="true"><Globe2 size={22} /></span>
-      <div>
-        <strong>3D renderer is temporarily unavailable</strong>
-        <p>Atlas released the map renderer. Close duplicate Atlas tabs or reopen this tab, then retry.</p>
-      </div>
-      <button type="button" onClick={onRetry}>Retry globe</button>
+    <div className="canvasWorldFallback" aria-label="Interactive Atlas compatibility globe">
+      <canvas ref={canvas} />
+      <span className="canvasWorldMode"><Globe2 size={11} /> 2D MAP · COMPATIBILITY MODE</span>
     </div>
   );
 }
 
 class GlobeRendererBoundary extends Component<
-  { children: ReactNode; onRetry: () => void },
+  { children: ReactNode; fallback: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -1618,7 +1969,7 @@ class GlobeRendererBoundary extends Component<
 
   render() {
     if (this.state.failed) {
-      return <RendererFallback onRetry={this.props.onRetry} />;
+      return this.props.fallback;
     }
 
     return this.props.children;
@@ -1655,7 +2006,6 @@ function EarthScene({
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
   const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
   const [streetRendererActive, setStreetRendererActive] = useState(false);
-  const [rendererRetryKey, setRendererRetryKey] = useState(0);
   const [rendererAvailability, setRendererAvailability] = useState<"checking" | "available" | "unavailable">("checking");
   const streetCenter = !viewTarget && !countryTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
     ? streetState.center
@@ -1733,19 +2083,30 @@ function EarthScene({
     }, RENDERER_RELEASE_DELAY_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [rendererAvailability, rendererRetryKey, showGlobeRenderer]);
+  }, [rendererAvailability, showGlobeRenderer]);
 
-  const retryRenderer = useCallback(() => {
-    setRendererAvailability("checking");
-    setRendererRetryKey((key) => key + 1);
-  }, []);
+  const compatibilityGlobe = (
+    <CanvasWorldFallback
+      cities={cities}
+      selectedCity={selectedCity}
+      selectedCountryKey={countryTarget?.key ?? null}
+      focusLocation={focusLocation}
+      focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
+      liveCounts={liveCounts}
+      streetZoomAvailable={streetZoomAvailable}
+      onSelect={selectActivityCity}
+      onCountrySelect={selectActivityCountry}
+      onAgentSelect={onAgentSelect}
+      onDetailChange={onDetailChange}
+      onZoomChange={onZoomChange}
+    />
+  );
 
   return (
     <>
       {globeRendererReady && (
         <GlobeRendererBoundary
-          key={rendererRetryKey}
-          onRetry={retryRenderer}
+          fallback={compatibilityGlobe}
         >
           <div className="earthCanvasLayer">
             <Canvas
@@ -1800,7 +2161,7 @@ function EarthScene({
         </GlobeRendererBoundary>
       )}
       {showGlobeRenderer && rendererAvailability === "unavailable" && (
-        <RendererFallback onRetry={retryRenderer} />
+        compatibilityGlobe
       )}
       {showStreetRenderer && streetCenter && (
         <StreetMap
