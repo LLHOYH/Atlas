@@ -160,10 +160,10 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const STREET_ENTRY_DISTANCE = 5.1;
-const STREET_ENTRY_RESET_DISTANCE = 5.35;
-const COUNTRY_DETAIL_DISTANCE = 8.5;
-const CITY_DETAIL_DISTANCE = 6.6;
+const STREET_ENTRY_DISTANCE = 4.9;
+const STREET_ENTRY_RESET_DISTANCE = 5.15;
+const COUNTRY_DETAIL_DISTANCE = 6.9;
+const CITY_DETAIL_DISTANCE = 5.8;
 const TOWN_MIN_DISTANCE = STREET_ENTRY_DISTANCE;
 const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
@@ -1007,10 +1007,12 @@ function CountrySurfaces({
 
 function CityTerritories({
   cities,
+  countryKey,
   selectedCityId,
   onSelect,
 }: {
   cities: City[];
+  countryKey: string;
   selectedCityId: string;
   onSelect: (city: City) => void;
 }) {
@@ -1029,11 +1031,13 @@ function CityTerritories({
     return groups;
   }, new Map()), []);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
-  const territories = useMemo(() => atlasLabelData.cities.map((label) => {
+  const territories = useMemo(() => atlasLabelData.cities
+    .filter((label) => countryEnergyKey(label.country) === countryKey)
+    .map((label) => {
     const city = cityByName.get(normalizeLabelName(label.name)) ?? null;
-    const countryKey = countryEnergyKey(label.country);
-    const countryArea = countryAreas.get(countryKey);
-    const ring = buildCityTerritoryRing(label, countryArea, labelsByCountry.get(countryKey) ?? [label]);
+    const labelCountryKey = countryEnergyKey(label.country);
+    const countryArea = countryAreas.get(labelCountryKey);
+    const ring = buildCityTerritoryRing(label, countryArea, labelsByCountry.get(labelCountryKey) ?? [label]);
     const baseColor = new THREE.Color(city?.color ?? "#287982").lerp(new THREE.Color("#214f58"), city ? 0.3 : 0.55);
     return {
       id: label.id,
@@ -1042,7 +1046,7 @@ function CityTerritories({
       baseColor,
       ...buildCityTerritoryGeometry(label, ring),
     };
-  }), [cityByName, countryAreas, labelsByCountry]);
+  }), [cityByName, countryAreas, countryKey, labelsByCountry]);
 
   useFrame((_, delta) => {
     territories.forEach((territory, index) => {
@@ -1613,7 +1617,12 @@ function Earth({
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
       <group ref={cityTerritories} visible={false}>
-        <CityTerritories cities={cities} selectedCityId={selectedCity.id} onSelect={onSelect} />
+        <CityTerritories
+          cities={cities}
+          countryKey={selectedCountryKey ?? countryEnergyKey(selectedCity.country)}
+          selectedCityId={selectedCity.id}
+          onSelect={onSelect}
+        />
       </group>
       {labelDetail === 1 && globalCountryLabels.map((country) => (
         <GlobeLabel
@@ -1664,7 +1673,7 @@ function Earth({
           ))}
         </>
       )}
-      {cities.length >= 5 && <>
+      {labelDetail === 1 && layer === "Attention" && cities.length >= 5 && <>
         <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
         <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />
         <AttentionFlow from={cities[2]} to={cities[1]} color="#6eb7ff" delay={0.72} />
@@ -1752,6 +1761,7 @@ function CanvasWorldFallback({
       return [{
         id: label.id,
         label,
+        countryKey,
         city: cityByName.get(normalizeLabelName(label.name)) ?? null,
         geometry,
         feature: {
@@ -1762,6 +1772,7 @@ function CanvasWorldFallback({
       }];
     });
   }, [cities, fallbackCountries]);
+  const focusedCityCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
 
   useEffect(() => {
     const element = canvas.current;
@@ -1870,6 +1881,7 @@ function CanvasWorldFallback({
 
       if (detail >= 2) {
         for (const territory of fallbackCityTerritories) {
+          if (territory.countryKey !== focusedCityCountryKey) continue;
           if (!isVisible(territory.label.lng, territory.label.lat)) continue;
           const highlighted = territory.id === view.hoveredCityId || territory.city?.id === selectedCity.id;
           context.beginPath();
@@ -1986,7 +1998,9 @@ function CanvasWorldFallback({
     const hitCityTerritory = (x: number, y: number) => {
       const location = projection.invert?.([x, y]);
       if (!location) return null;
-      return fallbackCityTerritories.find((territory) => geoContains(territory.geometry, location)) ?? null;
+      return fallbackCityTerritories.find((territory) => (
+        territory.countryKey === focusedCityCountryKey && geoContains(territory.geometry, location)
+      )) ?? null;
     };
     const onPointerDown = (event: PointerEvent) => {
       const point = pointerPosition(event);
@@ -2106,6 +2120,7 @@ function CanvasWorldFallback({
     countryLiveAgents,
     fallbackCityTerritories,
     fallbackCountries,
+    focusedCityCountryKey,
     focusDistance,
     focusLocation.lat,
     focusLocation.lng,
@@ -2323,7 +2338,7 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={0.5}
+                zoomSpeed={0.35}
                 minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : TOWN_MIN_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />

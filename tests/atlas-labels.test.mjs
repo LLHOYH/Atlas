@@ -128,7 +128,7 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 5\.1/);
+  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.9/);
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
@@ -180,7 +180,7 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(experienceSource, /levelSpan \/ ZOOM_SCROLLS_PER_LEVEL/);
   assert.match(experienceSource, /camera=\{\{ position: \[0, 0\.1, GLOBE_MAX_DISTANCE\]/);
   assert.match(experienceSource, /enableZoom\s+enableDamping/);
-  assert.match(experienceSource, /zoomSpeed=\{0\.5\}/);
+  assert.match(experienceSource, /zoomSpeed=\{0\.35\}/);
   assert.doesNotMatch(experienceSource, /addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
   assert.match(experienceSource, /label: "Streets", position: 100/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
@@ -192,7 +192,10 @@ test("city detail uses bordered territories and distinct city, town, and street 
   assert.match(experienceSource, /function clipTerritoryPolygon\(/);
   assert.match(experienceSource, /labelsByCountry\.get\(countryKey\)/);
   assert.match(experienceSource, /function CityTerritories\(/);
-  assert.match(experienceSource, /<CityTerritories cities=\{cities\}/);
+  assert.match(experienceSource, /<CityTerritories[\s\S]*?cities=\{cities\}[\s\S]*?countryKey=\{selectedCountryKey \?\? countryEnergyKey\(selectedCity\.country\)\}/);
+  assert.match(experienceSource, /filter\(\(label\) => countryEnergyKey\(label\.country\) === countryKey\)/);
+  assert.match(experienceSource, /territory\.countryKey !== focusedCityCountryKey/);
+  assert.match(experienceSource, /labelDetail === 1 && layer === "Attention"/);
   assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
   assert.match(experienceSource, /detailLevel >= 2/);
   assert.match(experienceSource, /hitCityTerritory\(point\.x, point\.y\)/);
