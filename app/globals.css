@@ -651,7 +651,7 @@ button {
 .searchBar,
 .coordinates,
 .dragHint,
-.lodIndicator {
+.zoomIndicator {
   position: absolute;
   z-index: 10;
 }
@@ -1344,52 +1344,117 @@ button {
   letter-spacing: 0.02em;
 }
 
-.lodIndicator {
+.zoomIndicator {
   right: 30px;
   bottom: 93px;
-  display: grid;
-  grid-template-columns: 35px 1fr;
-  gap: 9px;
-  align-items: center;
-  min-width: 151px;
-  padding: 8px 10px;
+  width: min(330px, calc(100vw - 60px));
+  padding: 10px 12px 12px;
   border-radius: 9px;
 }
 
-.lodIndicator > span {
+.zoomIndicatorHeader {
   display: grid;
-  height: 29px;
-  place-items: center;
-  border: 1px solid rgba(98, 201, 212, 0.25);
-  border-radius: 5px;
-  background: rgba(56, 175, 187, 0.08);
-  color: #69d2dd;
+  grid-template-columns: auto 1fr auto;
+  gap: 9px;
+  align-items: center;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 9px;
-  box-shadow: inset 0 0 12px rgba(73, 204, 217, 0.04);
 }
 
-.lodIndicator > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.lodIndicator b {
-  color: #bdc9cd;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 8px;
-  font-weight: 560;
-  letter-spacing: 0.11em;
-}
-
-.lodIndicator small {
-  overflow: hidden;
-  margin-top: 2px;
-  color: #56666e;
+.zoomIndicatorHeader span {
+  color: #6f858e;
   font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.zoomIndicatorHeader b {
+  color: #d9b76b;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.zoomIndicatorHeader small {
+  color: #55717a;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.zoomScale {
+  margin-top: 9px;
+}
+
+.zoomScaleTrack {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(34, 73, 82, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(125, 199, 210, 0.1);
+}
+
+.zoomScaleFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #397b83, #78d5dc 62%, #f0c66f);
+  box-shadow: 0 0 10px rgba(105, 210, 221, 0.32);
+  transition: width 100ms linear;
+}
+
+.zoomScaleThumb {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #081217;
+  border-radius: 50%;
+  background: #f0c66f;
+  box-shadow: 0 0 10px rgba(240, 198, 111, 0.78);
+  transform: translate(-50%, -50%);
+  transition: left 100ms linear;
+}
+
+.zoomScaleBreakpoint {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 11px;
+  border-radius: 1px;
+  background: #25434b;
+  transform: translate(-50%, -50%);
+}
+
+.zoomScaleBreakpoint.active {
+  background: #77cbd3;
+  box-shadow: 0 0 6px rgba(119, 203, 211, 0.46);
+}
+
+.zoomScaleLabels {
+  position: relative;
+  height: 13px;
+  margin-top: 6px;
+}
+
+.zoomScaleLabels span {
+  position: absolute;
+  color: #51666e;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
   white-space: nowrap;
-  text-overflow: ellipsis;
+}
+
+.zoomScaleLabels span:first-child {
+  transform: translateX(0);
+}
+
+.zoomScaleLabels span.active {
+  color: #d9b76b;
+  text-shadow: 0 0 8px rgba(217, 183, 107, 0.38);
 }
 
 .layerControl {
@@ -2081,7 +2146,7 @@ kbd {
   .bottomDock .searchBar { grid-column: 2; width: 100%; }
   .dragHint { bottom: 76px; }
   .coordinates { display: none; }
-  .lodIndicator { right: 16px; bottom: 68px; }
+  .zoomIndicator { right: 16px; bottom: 68px; width: min(300px, calc(100vw - 32px)); }
 }
 
 @media (max-width: 600px) {
@@ -2124,7 +2189,7 @@ kbd {
   .energyLevelLegend { grid-template-columns: repeat(4, 1fr); gap: 5px 8px; margin-top: 7px; }
   .statusLegend { margin-top: 7px; padding-top: 7px; }
   .statusLegend > div { grid-template-columns: repeat(4, 1fr); gap: 5px 7px; margin-top: 5px; }
-  .lodIndicator { top: 205px; right: auto; bottom: auto; left: 12px; min-width: 139px; }
+  .zoomIndicator { top: 205px; right: 12px; bottom: auto; left: 12px; width: auto; }
   .profilePanel { top: 80px; right: 12px; left: 12px; width: auto; }
   .modalScrim { padding: 12px; }
   .presenceStudio { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }

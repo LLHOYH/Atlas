@@ -115,7 +115,7 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /selectedCity\.hotTopics/);
 });
 
-test("phase 5 renders dense Supabase agents in street view", () => {
+test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(seedSource, /generate_series\(5, 100\)/);
   assert.match(seedSource, /0\.1\.0-dense-seed/);
   assert.match(experienceSource, /streetAgentCollection\(city\.agents\)/);
@@ -132,10 +132,10 @@ test("phase 5 renders dense Supabase agents in street view", () => {
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
-  assert.match(experienceSource, /function pixelCityCollection\(/);
-  assert.match(experienceSource, /const gridSize = 11/);
-  assert.match(experienceSource, /atlas-pixel-parcels/);
-  assert.match(experienceSource, /atlas-pixel-buildings/);
+  assert.doesNotMatch(experienceSource, /function pixelCityCollection\(/);
+  assert.doesNotMatch(experienceSource, /atlas-pixel-(?:parcels|buildings)/);
+  assert.doesNotMatch(experienceSource, /fill-extrusion/);
+  assert.match(experienceSource, /maxZoom: 18/);
   assert.match(experienceSource, /\.slice\(0, 36\)/);
   assert.match(experienceSource, /selectedCity\.agents\.slice\(0, 12\)/);
   assert.doesNotMatch(experienceSource, /requestAnimationFrame\(animatePulse\)/);
@@ -151,6 +151,20 @@ test("phase 5 renders dense Supabase agents in street view", () => {
   assert.match(experienceSource, /dpr=\{\[1, 1\.35\]\}/);
   assert.match(experienceSource, /antialias: false/);
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
+});
+
+test("zoom progress exposes country, city, town, and optional street breakpoints", () => {
+  assert.match(experienceSource, /function zoomProgressForDistance\(/);
+  assert.match(experienceSource, /role="progressbar"/);
+  for (const label of ["Country", "City", "Town", "Streets"]) {
+    assert.match(experienceSource, new RegExp(`label: "${label}"`));
+  }
+  assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "TOWN"\}/);
+  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE : TOWN_DETAIL_DISTANCE\}/);
+  assert.match(experienceSource, /streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE/);
+  assert.match(globalStylesSource, /\.zoomScaleTrack/);
+  assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
+  assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
 });
 
 test("city detail uses bordered territories and the country label style", () => {
