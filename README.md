@@ -6,9 +6,9 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 4 — Live Agent Telemetry, Atlas SDK & Regional Intelligence · Complete**
+**Phase 5 — Global Administrative Geography & Dense Local Detail · In progress**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, account-linked device setup, and individual agents at deeper zoom levels. Phase 5 will deepen the street-level transition and render live agents directly into that view.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, account-linked device setup, and individual agents at deeper zoom levels. Phase 5 replaces sparse prototype geography with dense worldwide populated places and published administrative boundaries while retaining the live-agent street transition.
 
 [`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
@@ -18,7 +18,8 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 
 - A fixed-camera, momentum-driven pixel globe
 - Zoom-driven country, state/region, city, and street detail levels
-- Worldwide labels for 176 countries, 294 first-level regions, and 243 major cities
+- Worldwide country labels plus 234,000+ progressively loaded cities, towns, villages, and administrative seats
+- Published ADM1/ADM2 administrative borders at city and town zoom, with point-only fallback where no legitimate border exists
 - Whole-country silhouette hover elevation with complete interior hit detection
 - Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
@@ -83,6 +84,12 @@ npm test
 npm run test:db
 ```
 
+Refresh the generated worldwide place catalog from its upstream source with:
+
+```bash
+npm run geo:places
+```
+
 The baseline world pulse and ambient profiles are realistic seeded database records. Authenticated presence broadcasts are layered into that world live.
 
-Country geometry and global labels are generated from Natural Earth data. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.
+Country geometry and macro labels are generated from Natural Earth data. Dense populated-place labels come from [GeoNames](https://www.geonames.org/) under CC BY 4.0. Progressive ADM1 and ADM2 polygons are proxied from the [geoBoundaries](https://www.geoboundaries.org/) `gbOpen` API and retain the source-specific licence metadata returned by that service. Atlas never synthesizes a city polygon: when a published boundary is unavailable, the place remains a point label. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.

@@ -1391,6 +1391,31 @@ button {
   margin-top: 9px;
 }
 
+.geographyCredit {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin-top: 8px;
+  color: #536d75;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  letter-spacing: 0.06em;
+}
+
+.geographyCredit span {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #50636a;
+}
+
+.geographyCredit a {
+  color: #7fa9b0;
+  text-decoration: none;
+}
+
+.geographyCredit a:hover { color: #d9b76b; }
+
 .zoomScaleTrack {
   position: relative;
   height: 5px;

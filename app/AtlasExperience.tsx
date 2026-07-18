@@ -43,6 +43,12 @@ import type {
   AtlasSignal as Signal,
 } from "../lib/atlas/world";
 import { AtlasAuthOptions } from "./AtlasAuthOptions";
+import {
+  useAtlasBoundaries,
+  useAtlasPlaces,
+  type AtlasBoundaryFeature,
+  type AtlasPlace,
+} from "../hooks/useAtlasGeography";
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
@@ -133,14 +139,16 @@ const globalCountryLabels: GeographicLabel[] = atlasLabelData.countries.map((lab
   position: latLngToVector3(label.lat, label.lng, 3.105),
 }));
 
-const globalCityLabels: GeographicLabel[] = atlasLabelData.cities.map((label) => ({
-  id: label.id,
-  name: label.name,
-  rank: label.rank,
-  position: latLngToVector3(label.lat, label.lng, 3.135),
-}));
+const countryLabelByKey = new Map(atlasLabelData.countries.map((label) => [
+  countryEnergyKey(label.name),
+  label,
+]));
 
-const globalMajorCityLabels = globalCityLabels.filter((label) => label.rank <= 2);
+function iso3ForCountryKey(countryKey: string | null) {
+  if (!countryKey) return null;
+  const id = countryLabelByKey.get(countryKey)?.id.toUpperCase();
+  return id && /^[A-Z]{3}$/.test(id) ? id : null;
+}
 
 function normalizeLabelName(value: string) {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
@@ -557,9 +565,8 @@ type CountryPoint = { lng: number; lat: number };
 const COUNTRY_BOTTOM_RADIUS = 3.003;
 const COUNTRY_TOP_RADIUS = 3.026;
 const COUNTRY_HOVER_RADIUS = 3.22;
-const CITY_BOTTOM_RADIUS = 3.03;
-const CITY_TOP_RADIUS = 3.048;
-const CITY_HOVER_RADIUS = 3.14;
+const ADMIN_BASE_RADIUS = 3.052;
+const ADMIN_HOVER_RADIUS = 3.135;
 
 function unpackCountryRing(flatRing: number[]) {
   const ring: CountryPoint[] = [];
@@ -713,140 +720,113 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
   return { geometry, outline };
 }
 
-type CountryHitArea = ReturnType<typeof countryToGeoJson>;
-type CityMapLabel = (typeof atlasLabelData.cities)[number];
-
-type TerritoryPlanePoint = { x: number; y: number };
-
-function clipTerritoryPolygon(
-  polygon: TerritoryPlanePoint[],
-  normalX: number,
-  normalY: number,
-  maximumDot: number,
-) {
-  const clipped: TerritoryPlanePoint[] = [];
-  for (let index = 0; index < polygon.length; index += 1) {
-    const start = polygon[index];
-    const end = polygon[(index + 1) % polygon.length];
-    const startDistance = start.x * normalX + start.y * normalY - maximumDot;
-    const endDistance = end.x * normalX + end.y * normalY - maximumDot;
-    const startInside = startDistance <= 0;
-    const endInside = endDistance <= 0;
-    if (startInside) clipped.push(start);
-    if (startInside === endInside) continue;
-    const fraction = startDistance / (startDistance - endDistance);
-    clipped.push({
-      x: THREE.MathUtils.lerp(start.x, end.x, fraction),
-      y: THREE.MathUtils.lerp(start.y, end.y, fraction),
-    });
-  }
-  return clipped;
+function boundaryFeatureName(feature: AtlasBoundaryFeature) {
+  return String(feature.properties?.shapeName ?? feature.properties?.name ?? "Administrative area");
 }
 
-function buildCityTerritoryRing(
-  label: CityMapLabel,
-  countryArea: CountryHitArea | undefined,
-  countryLabels: CityMapLabel[],
-) {
-  const longitudeScale = Math.max(0.18, Math.cos(THREE.MathUtils.degToRad(label.lat)));
-  let territory = Array.from({ length: 48 }, (_, index) => {
-    const angle = (index / 48) * Math.PI * 2;
-    return { x: Math.cos(angle) * 180 * longitudeScale, y: Math.sin(angle) * 88 };
-  });
-
-  for (const neighbor of countryLabels) {
-    if (neighbor.id === label.id) continue;
-    const deltaX = normalizeLongitude(neighbor.lng - label.lng) * longitudeScale;
-    const deltaY = neighbor.lat - label.lat;
-    const squaredDistance = deltaX * deltaX + deltaY * deltaY;
-    if (squaredDistance < 0.0001) continue;
-    territory = clipTerritoryPolygon(territory, deltaX, deltaY, squaredDistance / 2);
-    if (territory.length < 3) break;
+function prepareBoundaryRing(coordinates: GeoJSON.Position[]) {
+  const ring = coordinates
+    .filter((coordinate) => coordinate.length >= 2)
+    .map((coordinate) => ({ lng: coordinate[0], lat: coordinate[1] }));
+  const first = ring[0];
+  const last = ring.at(-1);
+  if (first && last && first.lng === last.lng && first.lat === last.lat) ring.pop();
+  for (let index = 1; index < ring.length; index += 1) {
+    while (ring[index].lng - ring[index - 1].lng > 180) ring[index].lng -= 360;
+    while (ring[index].lng - ring[index - 1].lng < -180) ring[index].lng += 360;
   }
+  return ring;
+}
 
-  const center: [number, number] = [normalizeLongitude(label.lng), label.lat];
-  const centerInsideCountry = countryArea ? geoContains(countryArea, center) : false;
-  const ring: CountryPoint[] = [];
-
-  for (let index = 0; index < territory.length; index += 1) {
-    const start = territory[index];
-    const end = territory[(index + 1) % territory.length];
-    const divisions = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 2.5));
-    for (let division = 0; division < divisions; division += 1) {
-      const fraction = division / divisions;
-      const localX = THREE.MathUtils.lerp(start.x, end.x, fraction);
-      const localY = THREE.MathUtils.lerp(start.y, end.y, fraction);
-      const targetLng = normalizeLongitude(label.lng + localX / longitudeScale);
-      const targetLat = THREE.MathUtils.clamp(label.lat + localY, -89.5, 89.5);
-      if (!countryArea || !centerInsideCountry || geoContains(countryArea, [targetLng, targetLat])) {
-        ring.push({ lng: targetLng, lat: targetLat });
-        continue;
-      }
-
-      const longitudeDelta = normalizeLongitude(targetLng - label.lng);
-      let insideFraction = 0;
-      let outsideFraction = 1;
-      for (let iteration = 0; iteration < 12; iteration += 1) {
-        const candidateFraction = (insideFraction + outsideFraction) / 2;
-        const candidate: [number, number] = [
-          normalizeLongitude(label.lng + longitudeDelta * candidateFraction),
-          label.lat + (targetLat - label.lat) * candidateFraction,
-        ];
-        if (geoContains(countryArea, candidate)) insideFraction = candidateFraction;
-        else outsideFraction = candidateFraction;
-      }
-      const clippedFraction = insideFraction * 0.992;
-      ring.push({
-        lng: normalizeLongitude(label.lng + longitudeDelta * clippedFraction),
-        lat: label.lat + (targetLat - label.lat) * clippedFraction,
+function boundaryPolygons(feature: AtlasBoundaryFeature) {
+  const polygons = feature.geometry.type === "Polygon"
+    ? [feature.geometry.coordinates]
+    : feature.geometry.coordinates;
+  return polygons.map((polygon) => {
+    const rings = polygon.map(prepareBoundaryRing).filter((ring) => ring.length >= 3);
+    if (!rings.length) return rings;
+    const outerMean = rings[0].reduce((sum, point) => sum + point.lng, 0) / rings[0].length;
+    for (let index = 1; index < rings.length; index += 1) {
+      const holeMean = rings[index].reduce((sum, point) => sum + point.lng, 0) / rings[index].length;
+      const longitudeShift = Math.round((outerMean - holeMean) / 360) * 360;
+      rings[index].forEach((point) => {
+        point.lng += longitudeShift;
       });
     }
-  }
-
-  return ring.filter((point, index) => {
-    const previous = ring[(index - 1 + ring.length) % ring.length];
-    return !previous || Math.abs(point.lng - previous.lng) + Math.abs(point.lat - previous.lat) > 0.0001;
-  });
+    return rings;
+  }).filter((rings) => rings.length > 0);
 }
 
-function buildCityTerritoryGeometry(label: CityMapLabel, ring: CountryPoint[]) {
+function appendBoundaryTriangle(
+  positions: number[],
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  radius: number,
+  depth = 0,
+) {
+  const edges = [
+    { length: a.angleTo(b), start: a, end: b, opposite: c },
+    { length: b.angleTo(c), start: b, end: c, opposite: a },
+    { length: c.angleTo(a), start: c, end: a, opposite: b },
+  ].sort((left, right) => right.length - left.length);
+  const longest = edges[0];
+  if (longest.length > 0.14 && depth < 7) {
+    const midpoint = longest.start.clone().add(longest.end).normalize();
+    appendBoundaryTriangle(positions, longest.start, midpoint, longest.opposite, radius, depth + 1);
+    appendBoundaryTriangle(positions, midpoint, longest.end, longest.opposite, radius, depth + 1);
+    return;
+  }
+
+  let second = b;
+  let third = c;
+  if (b.clone().sub(a).cross(c.clone().sub(a)).dot(a) < 0) {
+    second = c;
+    third = b;
+  }
+  for (const point of [a, second, third]) {
+    const surface = point.clone().multiplyScalar(radius);
+    positions.push(surface.x, surface.y, surface.z);
+  }
+}
+
+function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number) {
   const positions: number[] = [];
-  const raisedPositions: number[] = [];
   const outlinePositions: number[] = [];
-  const center = sphericalDirection({ lng: label.lng, lat: label.lat });
 
-  for (let index = 0; index < ring.length; index += 1) {
-    const start = sphericalDirection(ring[index]);
-    const end = sphericalDirection(ring[(index + 1) % ring.length]);
-    for (const point of [center, start, end]) {
-      const base = point.clone().multiplyScalar(CITY_TOP_RADIUS);
-      const raised = point.clone().multiplyScalar(CITY_HOVER_RADIUS);
-      positions.push(base.x, base.y, base.z);
-      raisedPositions.push(raised.x, raised.y, raised.z);
+  for (const feature of features) {
+    for (const rings of boundaryPolygons(feature)) {
+      const contour = rings[0].map((point) => new THREE.Vector2(point.lng, point.lat));
+      const holes = rings.slice(1).map((ring) => ring.map((point) => new THREE.Vector2(point.lng, point.lat)));
+      const flattened = contour.concat(...holes);
+      for (const face of THREE.ShapeUtils.triangulateShape(contour, holes)) {
+        appendBoundaryTriangle(
+          positions,
+          sphericalDirection({ lng: flattened[face[0]].x, lat: flattened[face[0]].y }),
+          sphericalDirection({ lng: flattened[face[1]].x, lat: flattened[face[1]].y }),
+          sphericalDirection({ lng: flattened[face[2]].x, lat: flattened[face[2]].y }),
+          radius,
+        );
+      }
+      for (const ring of rings) {
+        for (let index = 0; index < ring.length; index += 1) {
+          const start = sphericalDirection(ring[index]);
+          const end = sphericalDirection(ring[(index + 1) % ring.length]);
+          const divisions = Math.max(1, Math.ceil(start.angleTo(end) / 0.045));
+          for (let division = 0; division < divisions; division += 1) {
+            const from = start.clone().lerp(end, division / divisions).normalize().multiplyScalar(radius + 0.002);
+            const to = start.clone().lerp(end, (division + 1) / divisions).normalize().multiplyScalar(radius + 0.002);
+            outlinePositions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+          }
+        }
+      }
     }
-
-    const bottomStart = start.clone().multiplyScalar(CITY_BOTTOM_RADIUS);
-    const bottomEnd = end.clone().multiplyScalar(CITY_BOTTOM_RADIUS);
-    const topStart = start.clone().multiplyScalar(CITY_TOP_RADIUS);
-    const topEnd = end.clone().multiplyScalar(CITY_TOP_RADIUS);
-    const raisedTopStart = start.clone().multiplyScalar(CITY_HOVER_RADIUS);
-    const raisedTopEnd = end.clone().multiplyScalar(CITY_HOVER_RADIUS);
-    for (const point of [bottomStart, bottomEnd, topEnd, bottomStart, topEnd, topStart]) {
-      positions.push(point.x, point.y, point.z);
-    }
-    for (const point of [bottomStart, bottomEnd, raisedTopEnd, bottomStart, raisedTopEnd, raisedTopStart]) {
-      raisedPositions.push(point.x, point.y, point.z);
-    }
-    outlinePositions.push(topStart.x, topStart.y, topStart.z, topEnd.x, topEnd.y, topEnd.z);
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.morphAttributes.position = [new THREE.Float32BufferAttribute(raisedPositions, 3)];
-  geometry.morphTargetsRelative = false;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-
   const outline = new THREE.BufferGeometry();
   outline.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
   outline.computeBoundingSphere();
@@ -1005,127 +985,117 @@ function CountrySurfaces({
   );
 }
 
-function CityTerritories({
+function AdministrativeTerritories({
+  features,
+  detailLevel,
   cities,
-  countryKey,
-  selectedCityId,
   onSelect,
 }: {
+  features: AtlasBoundaryFeature[];
+  detailLevel: DetailLevel;
   cities: City[];
-  countryKey: string;
-  selectedCityId: string;
   onSelect: (city: City) => void;
 }) {
-  const meshes = useRef<Array<THREE.Mesh | null>>([]);
-  const outlines = useRef<Array<THREE.LineSegments | null>>([]);
-  const hoveredCity = useRef<number | null>(null);
-  const hoverStrengths = useMemo(() => new Float32Array(atlasLabelData.cities.length), []);
-  const gold = useMemo(() => new THREE.Color("#ffd36f"), []);
-  const countryAreas = useMemo(() => new Map(atlasGeoData.countries.map((country) => [
-    countryEnergyKey(country.name),
-    countryToGeoJson(country),
-  ])), []);
-  const labelsByCountry = useMemo(() => atlasLabelData.cities.reduce<Map<string, CityMapLabel[]>>((groups, label) => {
-    const key = countryEnergyKey(label.country);
-    groups.set(key, [...(groups.get(key) ?? []), label]);
-    return groups;
-  }, new Map()), []);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
-  const territories = useMemo(() => atlasLabelData.cities
-    .filter((label) => countryEnergyKey(label.country) === countryKey)
-    .map((label) => {
-    const city = cityByName.get(normalizeLabelName(label.name)) ?? null;
-    const labelCountryKey = countryEnergyKey(label.country);
-    const countryArea = countryAreas.get(labelCountryKey);
-    const ring = buildCityTerritoryRing(label, countryArea, labelsByCountry.get(labelCountryKey) ?? [label]);
-    const baseColor = new THREE.Color(city?.color ?? "#287982").lerp(new THREE.Color("#214f58"), city ? 0.3 : 0.55);
-    return {
-      id: label.id,
-      name: label.name,
-      city,
-      baseColor,
-      ...buildCityTerritoryGeometry(label, ring),
-    };
-  }), [cityByName, countryAreas, countryKey, labelsByCountry]);
+  const baseGeometry = useMemo(() => features.length ? buildBoundaryGeometry(features, ADMIN_BASE_RADIUS) : null, [features]);
+  const hoveredFeature = hoveredIndex === null ? null : features[hoveredIndex] ?? null;
+  const hoveredGeometry = useMemo(
+    () => hoveredFeature ? buildBoundaryGeometry([hoveredFeature], ADMIN_HOVER_RADIUS) : null,
+    [hoveredFeature],
+  );
+  const hoveredCenter = useMemo(() => {
+    if (!hoveredFeature) return null;
+    const [lng, lat] = geoCentroid(hoveredFeature);
+    return latLngToVector3(lat, lng, ADMIN_HOVER_RADIUS + 0.025);
+  }, [hoveredFeature]);
 
-  useFrame((_, delta) => {
-    territories.forEach((territory, index) => {
-      const isSelected = territory.city?.id === selectedCityId;
-      const target = hoveredCity.current === index ? 1 : isSelected ? 0.62 : 0;
-      const next = THREE.MathUtils.damp(hoverStrengths[index], target, 14, delta);
-      hoverStrengths[index] = next;
-      const mesh = meshes.current[index];
-      const outline = outlines.current[index];
-      if (mesh?.morphTargetInfluences) mesh.morphTargetInfluences[0] = next;
-      if (mesh?.material instanceof THREE.MeshStandardMaterial) {
-        mesh.material.color.copy(territory.baseColor).lerp(gold, next * 0.72);
-        mesh.material.emissive.copy(territory.baseColor).lerp(gold, next);
-        mesh.material.emissiveIntensity = 0.26 + next * 1.15;
-        mesh.material.opacity = 0.055 + next * 0.68;
-      }
-      if (outline) {
-        const radiusScale = 1 + next * (CITY_HOVER_RADIUS / CITY_TOP_RADIUS - 1);
-        outline.scale.setScalar(radiusScale);
-        if (outline.material instanceof THREE.LineBasicMaterial) {
-          outline.material.color.copy(territory.baseColor).lerp(gold, 0.42 + next * 0.58);
-          outline.material.opacity = 0.56 + next * 0.34;
-        }
-      }
-    });
-  });
+  if (!features.length || !baseGeometry) return null;
 
-  return territories.map((territory, index) => (
-    <group key={territory.id}>
+  const findFeatureAtPoint = (worldPoint: THREE.Vector3, hitSurface: THREE.Object3D) => {
+    const geo = vectorToGeoCenter(hitSurface.worldToLocal(worldPoint.clone()));
+    for (let index = 0; index < features.length; index += 1) {
+      if (geoContains(features[index], [geo.lng, geo.lat])) return index;
+    }
+    return null;
+  };
+
+  return (
+    <group>
+      <mesh geometry={baseGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
+        <meshStandardMaterial
+          color={detailLevel === 2 ? "#1d7680" : "#245d67"}
+          emissive="#185965"
+          emissiveIntensity={0.28}
+          roughness={0.62}
+          metalness={0.12}
+          transparent
+          opacity={detailLevel === 2 ? 0.13 : 0.075}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <lineSegments geometry={baseGeometry.outline} frustumCulled={false} raycast={() => undefined}>
+        <lineBasicMaterial
+          color={detailLevel === 2 ? "#82dbe2" : "#659ca5"}
+          transparent
+          opacity={detailLevel === 2 ? 0.62 : 0.46}
+          depthWrite={false}
+        />
+      </lineSegments>
+      {hoveredFeature && hoveredGeometry && (
+        <group>
+          <mesh geometry={hoveredGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
+            <meshStandardMaterial
+              color="#d9a846"
+              emissive="#ffd36f"
+              emissiveIntensity={1.1}
+              roughness={0.42}
+              metalness={0.16}
+              transparent
+              opacity={0.72}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <lineSegments geometry={hoveredGeometry.outline} frustumCulled={false} raycast={() => undefined}>
+            <lineBasicMaterial color="#ffe4a3" transparent opacity={0.98} depthWrite={false} />
+          </lineSegments>
+          {hoveredCenter && (
+            <GlobeLabel
+              label={boundaryFeatureName(hoveredFeature)}
+              kind={detailLevel === 2 ? "region" : "town"}
+              position={hoveredCenter}
+              color="#ffd36f"
+            />
+          )}
+        </group>
+      )}
       <mesh
-        ref={(node) => {
-          meshes.current[index] = node;
-          node?.updateMorphTargets();
-        }}
-        geometry={territory.geometry}
-        frustumCulled={false}
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          hoveredCity.current = index;
-          document.body.style.cursor = "pointer";
-        }}
         onPointerMove={(event) => {
-          event.stopPropagation();
-          hoveredCity.current = index;
+          const nextIndex = findFeatureAtPoint(event.point, event.eventObject);
+          setHoveredIndex(nextIndex);
+          if (event.buttons === 0) document.body.style.cursor = nextIndex === null ? "grab" : "pointer";
         }}
         onPointerOut={() => {
-          if (hoveredCity.current === index) hoveredCity.current = null;
+          setHoveredIndex(null);
           document.body.style.cursor = "grab";
         }}
         onClick={(event) => {
-          if (!territory.city || event.delta > 5) return;
+          if (event.delta > 5) return;
+          const index = hoveredIndex ?? findFeatureAtPoint(event.point, event.eventObject);
+          if (index === null) return;
+          const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
+          if (!city) return;
           event.stopPropagation();
-          onSelect(territory.city);
+          onSelect(city);
         }}
       >
-        <meshStandardMaterial
-          color={territory.baseColor}
-          emissive={territory.baseColor}
-          emissiveIntensity={0.26}
-          roughness={0.5}
-          metalness={0.18}
-          side={THREE.DoubleSide}
-          transparent
-          opacity={0.055}
-          depthWrite={false}
-        />
+        <sphereGeometry args={[ADMIN_HOVER_RADIUS + 0.015, 96, 64]} />
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
-      <lineSegments
-        ref={(node) => {
-          outlines.current[index] = node;
-        }}
-        geometry={territory.outline}
-        frustumCulled={false}
-        raycast={() => undefined}
-      >
-        <lineBasicMaterial color="#d9b76b" transparent opacity={0.56} depthWrite={false} />
-      </lineSegments>
     </group>
-  ));
+  );
 }
 
 function StreetMesh({
@@ -1440,8 +1410,13 @@ function Earth({
   const currentDetail = useRef<DetailLevel>(1);
   const currentZoomProgress = useRef(-1);
   const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
-  const cityTerritories = useRef<THREE.Group>(null);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
+  const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
+  const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
+  const boundaryLevel = labelDetail >= 3 ? "ADM2" : "ADM1";
+  const prefetchFocusedGeography = selectedCountryKey !== null || (labelDetail >= 2 && labelDetail <= 3);
+  const { data: placesPayload } = useAtlasPlaces(focusedIso3, prefetchFocusedGeography);
+  const { data: boundaryPayload } = useAtlasBoundaries(focusedIso3, boundaryLevel, prefetchFocusedGeography);
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
     const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
@@ -1452,6 +1427,32 @@ function Earth({
     .filter((agent) => agent.status !== "offline")
     .sort((left, right) => right.energy - left.energy)
     .slice(0, 36), [selectedCity.agents]);
+  const detailedPlaceLabels = useMemo(() => {
+    if (labelDetail < 2 || labelDetail > 3) return [];
+    const maximumRank = labelDetail === 2 ? 3 : 5;
+    const limit = labelDetail === 2 ? 72 : 180;
+    const source: AtlasPlace[] = placesPayload?.places ?? [];
+    if (source.length) {
+      return source
+        .filter((place) => place.rank <= maximumRank)
+        .slice(0, limit)
+        .map((place): GeographicLabel => ({
+          id: `geonames-${place.id}`,
+          name: place.name,
+          rank: place.rank,
+          position: latLngToVector3(place.lat, place.lng, labelDetail === 2 ? 3.12 : 3.13),
+        }));
+    }
+    return atlasLabelData.cities
+      .filter((place) => countryEnergyKey(place.country) === focusedCountryKey && place.rank <= maximumRank)
+      .slice(0, limit)
+      .map((place): GeographicLabel => ({
+        id: place.id,
+        name: place.name,
+        rank: place.rank,
+        position: latLngToVector3(place.lat, place.lng, labelDetail === 2 ? 3.12 : 3.13),
+      }));
+  }, [focusedCountryKey, labelDetail, placesPayload?.places]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1532,8 +1533,6 @@ function Earth({
 
     const streetOpacity = 1 - THREE.MathUtils.smoothstep(distance, 3.88, 4.6);
     if (streetMaterial.current) streetMaterial.current.opacity = streetOpacity * 0.72;
-    if (cityTerritories.current) cityTerritories.current.visible = nextDetail >= 2;
-
     if (focus.current) {
       orientation.current.pitch = THREE.MathUtils.damp(orientation.current.pitch, focus.current.pitch, 9, delta);
       orientation.current.yaw = THREE.MathUtils.damp(orientation.current.yaw, focus.current.yaw, 9, delta);
@@ -1616,14 +1615,14 @@ function Earth({
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <group ref={cityTerritories} visible={false}>
-        <CityTerritories
+      {labelDetail >= 2 && labelDetail <= 3 && boundaryPayload?.available && (
+        <AdministrativeTerritories
+          features={boundaryPayload.features}
+          detailLevel={labelDetail}
           cities={cities}
-          countryKey={selectedCountryKey ?? countryEnergyKey(selectedCity.country)}
-          selectedCityId={selectedCity.id}
           onSelect={onSelect}
         />
-      </group>
+      )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
         <GlobeLabel
           key={country.id}
@@ -1632,7 +1631,7 @@ function Earth({
           position={country.position}
         />
       ))}
-      {labelDetail === 2 && globalMajorCityLabels.map((city) => (
+      {labelDetail === 2 && detailedPlaceLabels.map((city) => (
         <GlobeLabel
           key={city.id}
           label={city.name}
@@ -1640,7 +1639,7 @@ function Earth({
           position={city.position}
         />
       ))}
-      {(labelDetail === 3 || labelDetail === 4) && globalCityLabels.map((city) => (
+      {labelDetail === 3 && detailedPlaceLabels.map((city) => (
         <GlobeLabel
           key={city.id}
           label={city.name}
@@ -1738,41 +1737,27 @@ function CanvasWorldFallback({
     counts[key] = (counts[key] ?? 0) + seeded + (liveCounts[city.name] ?? 0);
     return counts;
   }, {}), [cities, liveCounts]);
-  const fallbackCityTerritories = useMemo(() => {
-    const countryAreas = new Map(fallbackCountries.map((country) => [country.key, country.geometry]));
-    const cityByName = new Map(cities.map((city) => [normalizeLabelName(city.name), city]));
-    const labelsByCountry = atlasLabelData.cities.reduce<Map<string, CityMapLabel[]>>((groups, label) => {
-      const key = countryEnergyKey(label.country);
-      groups.set(key, [...(groups.get(key) ?? []), label]);
-      return groups;
-    }, new Map());
-
-    return atlasLabelData.cities.flatMap((label) => {
-      const countryKey = countryEnergyKey(label.country);
-      const ring = buildCityTerritoryRing(
-        label,
-        countryAreas.get(countryKey),
-        labelsByCountry.get(countryKey) ?? [label],
-      );
-      if (ring.length < 3) return [];
-      const coordinates = ring.map((point): [number, number] => [point.lng, point.lat]);
-      coordinates.push(coordinates[0]);
-      const geometry: GeoJSON.Polygon = { type: "Polygon", coordinates: [coordinates] };
-      return [{
-        id: label.id,
-        label,
-        countryKey,
-        city: cityByName.get(normalizeLabelName(label.name)) ?? null,
-        geometry,
-        feature: {
-          type: "Feature" as const,
-          properties: { id: label.id, name: label.name },
-          geometry,
-        },
-      }];
-    });
-  }, [cities, fallbackCountries]);
   const focusedCityCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
+  const focusedCountryIso = iso3ForCountryKey(focusedCityCountryKey);
+  const [fallbackDetail, setFallbackDetail] = useState<DetailLevel>(1);
+  const fallbackBoundaryLevel = fallbackDetail >= 3 ? "ADM2" : "ADM1";
+  const { data: fallbackBoundaryPayload } = useAtlasBoundaries(
+    focusedCountryIso,
+    fallbackBoundaryLevel,
+    selectedCountryKey !== null || (fallbackDetail >= 2 && fallbackDetail <= 3),
+  );
+  const { data: fallbackPlacesPayload } = useAtlasPlaces(
+    focusedCountryIso,
+    selectedCountryKey !== null || (fallbackDetail >= 2 && fallbackDetail <= 3),
+  );
+  const fallbackBoundaryFeatures = useMemo(
+    () => fallbackBoundaryPayload?.available ? fallbackBoundaryPayload.features : [],
+    [fallbackBoundaryPayload],
+  );
+  const fallbackCityByName = useMemo(
+    () => new Map(cities.map((city) => [normalizeLabelName(city.name), city])),
+    [cities],
+  );
 
   useEffect(() => {
     const element = canvas.current;
@@ -1787,7 +1772,7 @@ function CanvasWorldFallback({
       lng: focusLocation.lng,
       progress: initialProgress,
       hoveredCountryKey: null as string | null,
-      hoveredCityId: null as string | null,
+      hoveredBoundaryIndex: null as number | null,
     };
     let projection = geoOrthographic();
     let frame = 0;
@@ -1879,25 +1864,23 @@ function CanvasWorldFallback({
         context.stroke();
       }
 
-      if (detail >= 2) {
-        for (const territory of fallbackCityTerritories) {
-          if (territory.countryKey !== focusedCityCountryKey) continue;
-          if (!isVisible(territory.label.lng, territory.label.lat)) continue;
-          const highlighted = territory.id === view.hoveredCityId || territory.city?.id === selectedCity.id;
+      if (detail >= 2 && detail <= 3) {
+        fallbackBoundaryFeatures.forEach((feature, index) => {
+          const highlighted = index === view.hoveredBoundaryIndex;
           context.beginPath();
-          path(territory.feature);
+          path(feature);
           if (highlighted) {
-            context.globalAlpha = territory.id === view.hoveredCityId ? 0.42 : 0.2;
-            context.fillStyle = territory.id === view.hoveredCityId ? "#e8b957" : "#367c86";
+            context.globalAlpha = 0.42;
+            context.fillStyle = "#e8b957";
             context.fill();
             context.globalAlpha = 1;
           }
-          context.strokeStyle = territory.id === view.hoveredCityId
+          context.strokeStyle = highlighted
             ? "rgba(255, 220, 142, 0.96)"
             : "rgba(99, 196, 207, 0.58)";
-          context.lineWidth = territory.id === view.hoveredCityId ? 1.6 : 0.72;
+          context.lineWidth = highlighted ? 1.6 : 0.72;
           context.stroke();
-        }
+        });
       }
 
       context.textAlign = "center";
@@ -1914,10 +1897,11 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2 || detail === 3) {
-        const visibleCities = atlasLabelData.cities
-          .filter((city) => (detail === 3 || city.rank <= 2) && isVisible(city.lng, city.lat))
+        const maximumRank = detail === 2 ? 3 : 5;
+        const visibleCities = (fallbackPlacesPayload?.places ?? [])
+          .filter((city) => city.rank <= maximumRank && isVisible(city.lng, city.lat))
           .sort((left, right) => right.population - left.population)
-          .slice(0, detail === 2 ? 66 : 120);
+          .slice(0, detail === 2 ? 72 : 180);
         context.font = detail === 2
           ? "600 7px ui-monospace, SFMono-Regular, Menlo, monospace"
           : "520 6px ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -1964,13 +1948,13 @@ function CanvasWorldFallback({
         }
       }
 
-      if (view.hoveredCityId) {
-        const hovered = fallbackCityTerritories.find((territory) => territory.id === view.hoveredCityId);
+      if (view.hoveredBoundaryIndex !== null) {
+        const hovered = fallbackBoundaryFeatures[view.hoveredBoundaryIndex];
         if (hovered) {
           context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
           context.fillStyle = "#f0c66f";
           context.textAlign = "left";
-          context.fillText(hovered.label.name.toUpperCase(), 22, height - 28);
+          context.fillText(boundaryFeatureName(hovered).toUpperCase(), 22, height - 28);
         }
       } else if (view.hoveredCountryKey) {
         const hovered = fallbackCountries.find((country) => country.key === view.hoveredCountryKey);
@@ -1995,12 +1979,11 @@ function CanvasWorldFallback({
       if (!location) return null;
       return fallbackCountries.find((country) => geoContains(country.geometry, location)) ?? null;
     };
-    const hitCityTerritory = (x: number, y: number) => {
+    const hitBoundary = (x: number, y: number) => {
       const location = projection.invert?.([x, y]);
       if (!location) return null;
-      return fallbackCityTerritories.find((territory) => (
-        territory.countryKey === focusedCityCountryKey && geoContains(territory.geometry, location)
-      )) ?? null;
+      const index = fallbackBoundaryFeatures.findIndex((feature) => geoContains(feature, location));
+      return index < 0 ? null : { index, feature: fallbackBoundaryFeatures[index] };
     };
     const onPointerDown = (event: PointerEvent) => {
       const point = pointerPosition(event);
@@ -2022,12 +2005,12 @@ function CanvasWorldFallback({
         lastX = point.x;
         lastY = point.y;
       } else {
-        const cityTerritory = detailForProgress(view.progress) >= 2
-          ? hitCityTerritory(point.x, point.y)
+        const boundary = detailForProgress(view.progress) >= 2
+          ? hitBoundary(point.x, point.y)
           : null;
-        view.hoveredCityId = cityTerritory?.id ?? null;
-        view.hoveredCountryKey = cityTerritory ? null : hitCountry(point.x, point.y)?.key ?? null;
-        element.style.cursor = view.hoveredCityId || view.hoveredCountryKey ? "pointer" : "grab";
+        view.hoveredBoundaryIndex = boundary?.index ?? null;
+        view.hoveredCountryKey = boundary ? null : hitCountry(point.x, point.y)?.key ?? null;
+        element.style.cursor = view.hoveredBoundaryIndex !== null || view.hoveredCountryKey ? "pointer" : "grab";
       }
       requestDraw();
     };
@@ -2039,9 +2022,10 @@ function CanvasWorldFallback({
       if (moved) return;
 
       if (detailForProgress(view.progress) >= 2) {
-        const territory = hitCityTerritory(point.x, point.y);
-        if (territory) {
-          if (territory.city) onSelect(territory.city);
+        const boundary = hitBoundary(point.x, point.y);
+        if (boundary) {
+          const city = fallbackCityByName.get(normalizeLabelName(boundaryFeatureName(boundary.feature)));
+          if (city) onSelect(city);
           return;
         }
       }
@@ -2081,7 +2065,10 @@ function CanvasWorldFallback({
         onStreetEnter({ lat: selectedCity.lat, lng: selectedCity.lng });
       }
       onZoomChange(view.progress);
-      if (nextDetail !== previousDetail) onDetailChange(nextDetail);
+      if (nextDetail !== previousDetail) {
+        setFallbackDetail(nextDetail);
+        onDetailChange(nextDetail);
+      }
       requestDraw();
     };
     const onDoubleClick = (event: MouseEvent) => {
@@ -2102,7 +2089,9 @@ function CanvasWorldFallback({
     element.addEventListener("wheel", onWheel, { passive: false });
     element.addEventListener("dblclick", onDoubleClick);
     onZoomChange(view.progress);
-    onDetailChange(detailForProgress(view.progress));
+    const initialDetail = detailForProgress(view.progress);
+    setFallbackDetail(initialDetail);
+    onDetailChange(initialDetail);
     requestDraw();
 
     return () => {
@@ -2118,9 +2107,10 @@ function CanvasWorldFallback({
   }, [
     cities,
     countryLiveAgents,
-    fallbackCityTerritories,
+    fallbackBoundaryFeatures,
     fallbackCountries,
-    focusedCityCountryKey,
+    fallbackCityByName,
+    fallbackPlacesPayload?.places,
     focusDistance,
     focusLocation.lat,
     focusLocation.lng,
@@ -3122,6 +3112,13 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             ))}
           </div>
         </div>
+        {detailLevel >= 2 && detailLevel <= 3 && (
+          <div className="geographyCredit">
+            PLACES <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GEONAMES</a>
+            <span /> BORDERS <a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a>
+            · {detailLevel === 2 ? "ADM1" : "ADM2"}
+          </div>
+        )}
       </div>
 
       <div className="dragHint"><Move size={13} /><span>Drag to rotate · Scroll or pinch to zoom</span></div>

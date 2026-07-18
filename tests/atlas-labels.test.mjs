@@ -21,6 +21,24 @@ const labelGeneratorSource = await readFile(
   new URL("../scripts/generate-atlas-labels.mjs", import.meta.url),
   "utf8",
 );
+const placeGeneratorSource = await readFile(
+  new URL("../scripts/generate-atlas-places.mjs", import.meta.url),
+  "utf8",
+);
+const placesManifest = JSON.parse(
+  await readFile(new URL("../public/atlas-geography/places/manifest.json", import.meta.url), "utf8"),
+);
+const japanPlaces = JSON.parse(
+  await readFile(new URL("../public/atlas-geography/places/JPN.json", import.meta.url), "utf8"),
+);
+const geographyHookSource = await readFile(
+  new URL("../hooks/useAtlasGeography.ts", import.meta.url),
+  "utf8",
+);
+const geographyRouteSource = await readFile(
+  new URL("../app/api/atlas/v1/geography/route.ts", import.meta.url),
+  "utf8",
+);
 const worldHookSource = await readFile(
   new URL("../hooks/useAtlasWorld.ts", import.meta.url),
   "utf8",
@@ -54,6 +72,20 @@ test("world map labels cover countries, regions, and major cities globally", () 
     { lat: 66.0678, lng: 95.7853 },
   );
   assert.match(labelGeneratorSource, /\["RUS", \{ lat: 66\.0678, lng: 95\.7853 \}\]/);
+});
+
+test("dense place catalog covers the world and remains reproducible from GeoNames", () => {
+  assert.equal(placesManifest.source.name, "GeoNames");
+  assert.equal(placesManifest.source.license, "CC BY 4.0");
+  assert.ok(placesManifest.placeCount >= 200_000);
+  assert.ok(placesManifest.countryCount >= 240);
+  assert.ok(japanPlaces.places.length >= 2_000);
+  for (const city of ["Tokyo", "Yokohama", "Osaka", "Kyoto", "Sapporo", "Fukuoka"]) {
+    assert.ok(japanPlaces.places.some((place) => place.name === city), `Missing ${city}`);
+  }
+  assert.match(placeGeneratorSource, /cities500\.zip/);
+  assert.match(placeGeneratorSource, /CC BY 4\.0/);
+  assert.match(placeGeneratorSource, /columns\[6\] !== "P"/);
 });
 
 test("globe land is built from complete country silhouettes instead of sampling cells", () => {
@@ -172,8 +204,8 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && globalMajorCityLabels\.map/);
-  assert.match(experienceSource, /globalMajorCityLabels = globalCityLabels\.filter\(\(label\) => label\.rank <= 2\)/);
+  assert.match(experienceSource, /labelDetail === 2 && detailedPlaceLabels\.map/);
+  assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
   assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
@@ -187,19 +219,24 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
 });
 
-test("city detail uses bordered territories and distinct city, town, and street label styles", () => {
-  assert.match(experienceSource, /function buildCityTerritoryGeometry\(/);
-  assert.match(experienceSource, /function clipTerritoryPolygon\(/);
-  assert.match(experienceSource, /labelsByCountry\.get\(countryKey\)/);
-  assert.match(experienceSource, /function CityTerritories\(/);
-  assert.match(experienceSource, /<CityTerritories[\s\S]*?cities=\{cities\}[\s\S]*?countryKey=\{selectedCountryKey \?\? countryEnergyKey\(selectedCity\.country\)\}/);
-  assert.match(experienceSource, /filter\(\(label\) => countryEnergyKey\(label\.country\) === countryKey\)/);
-  assert.match(experienceSource, /territory\.countryKey !== focusedCityCountryKey/);
+test("city and town detail use published administrative boundaries without fabricated territories", () => {
+  assert.match(experienceSource, /function AdministrativeTerritories\(/);
+  assert.match(experienceSource, /<AdministrativeTerritories/);
+  assert.match(experienceSource, /const boundaryLevel = labelDetail >= 3 \? "ADM2" : "ADM1"/);
+  assert.match(experienceSource, /useAtlasBoundaries\(focusedIso3, boundaryLevel/);
+  assert.match(experienceSource, /geoContains\(features\[index\]/);
+  assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.135/);
+  assert.match(experienceSource, /emissive="#ffd36f"/);
+  assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);
+  assert.match(geographyRouteSource, /www\.geoboundaries\.org\/api\/current\/gbOpen/);
+  assert.match(geographyRouteSource, /simplifiedGeometryGeoJSON/);
+  assert.match(geographyRouteSource, /boundaryLicense/);
+  assert.match(geographyRouteSource, /No open administrative boundary is published/);
+  assert.match(geographyHookSource, /atlas-geography\/places/);
+  assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
   assert.match(experienceSource, /labelDetail === 1 && layer === "Attention"/);
-  assert.match(experienceSource, /const CITY_HOVER_RADIUS = 3\.14/);
   assert.match(experienceSource, /detailLevel >= 2/);
-  assert.match(experienceSource, /hitCityTerritory\(point\.x, point\.y\)/);
-  assert.match(experienceSource, /mesh\.material\.opacity = 0\.055 \+ next \* 0\.68/);
+  assert.match(experienceSource, /hitBoundary\(point\.x, point\.y\)/);
   assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
   assert.match(experienceSource, /kind="town"/);

@@ -17,7 +17,8 @@
     "db:generate": "drizzle-kit generate",
     "db:seed": "node scripts/seed-atlas.mjs",
     "geo:generate": "node scripts/generate-atlas-geo.mjs",
-    "geo:labels": "node scripts/generate-atlas-labels.mjs"
+    "geo:labels": "node scripts/generate-atlas-labels.mjs",
+    "geo:places": "node scripts/generate-atlas-places.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -51,6 +52,7 @@
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "fflate": "^0.7.4",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "topojson-client": "^3.1.0",
