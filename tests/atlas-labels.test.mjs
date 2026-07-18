@@ -200,9 +200,9 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   for (const label of ["Country", "City", "Town", "Streets"]) {
     assert.match(experienceSource, new RegExp(`label: "${label}"`));
   }
-  assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "TOWN"\}/);
+  assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "CITY"\}/);
   assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 11/);
-  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE - 0\.1 : TOWN_MIN_DISTANCE\}/);
+  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE - 0\.1 : CITY_ONLY_MIN_DISTANCE\}/);
   assert.match(experienceSource, /streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE/);
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
@@ -226,6 +226,9 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.doesNotMatch(experienceSource, /onZoomChange\(100\)/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
+  assert.match(experienceSource, /const completeDeepDetailCountries = new Set\(\["united states"\]\)/);
+  assert.match(experienceSource, /hasCompleteDeepDetail\(focusedCountryKey\) && cities\.some/);
+  assert.match(experienceSource, /!streetZoomAvailable[\s\S]*?\? 2/);
 });
 
 test("city and town detail use published administrative boundaries without fabricated territories", () => {
@@ -234,6 +237,10 @@ test("city and town detail use published administrative boundaries without fabri
   assert.match(experienceSource, /const boundaryLevel = labelDetail >= 3 \? "ADM2" : "ADM1"/);
   assert.match(experienceSource, /useAtlasBoundaries\(focusedIso3, boundaryLevel/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
+  assert.match(experienceSource, /onFocus\(\{ lat, lng \}\)/);
+  assert.match(experienceSource, /onFocus=\{focusOnGeography\}/);
+  assert.match(experienceSource, /focus\.current = \{/);
+  assert.match(experienceSource, /const \[lng, lat\] = geoCentroid\(boundary\.feature\)/);
   assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.135/);
   assert.match(experienceSource, /emissive="#ffd36f"/);
   assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);

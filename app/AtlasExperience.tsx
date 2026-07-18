@@ -173,7 +173,7 @@ const STREET_ENTRY_RESET_DISTANCE = 4.48;
 const STREET_EXIT_GLOBE_DISTANCE = 4.55;
 const COUNTRY_DETAIL_DISTANCE = 6.9;
 const CITY_DETAIL_DISTANCE = 5.8;
-const TOWN_MIN_DISTANCE = STREET_ENTRY_DISTANCE;
+const CITY_ONLY_MIN_DISTANCE = 4.9;
 const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
@@ -183,14 +183,19 @@ const STREET_ENTRY_PROGRESS = 85;
 const STREET_MAP_ENTRY_ZOOM = 12.8;
 const STREET_MAP_INITIAL_ZOOM = 13.6;
 const STREET_MAP_MAX_ZOOM = 18;
+const completeDeepDetailCountries = new Set(["united states"]);
+
+function hasCompleteDeepDetail(countryKey: string) {
+  return completeDeepDetailCountries.has(countryKey);
+}
 
 function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
   const thresholds = streetZoomAvailable
     ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
-    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
+    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_ONLY_MIN_DISTANCE];
   const progressStops = streetZoomAvailable
     ? [0, CITY_PROGRESS, TOWN_PROGRESS, STREET_ENTRY_PROGRESS]
-    : [0, CITY_PROGRESS, TOWN_PROGRESS, 100];
+    : [0, CITY_PROGRESS, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
   for (let index = 0; index < thresholds.length - 1; index += 1) {
@@ -1018,11 +1023,13 @@ function AdministrativeTerritories({
   detailLevel,
   cities,
   onSelect,
+  onFocus,
 }: {
   features: AtlasBoundaryFeature[];
   detailLevel: DetailLevel;
   cities: City[];
   onSelect: (city: City) => void;
+  onFocus: (center: GeoCenter) => void;
 }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
@@ -1113,10 +1120,11 @@ function AdministrativeTerritories({
           if (event.delta > 5) return;
           const index = hoveredIndex ?? findFeatureAtPoint(event.point, event.eventObject);
           if (index === null) return;
-          const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
-          if (!city) return;
           event.stopPropagation();
-          onSelect(city);
+          const [lng, lat] = geoCentroid(features[index]);
+          onFocus({ lat, lng });
+          const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
+          if (city) onSelect(city);
         }}
       >
         <sphereGeometry args={[ADMIN_HOVER_RADIUS + 0.015, 96, 64]} />
@@ -1489,6 +1497,17 @@ function Earth({
     globe.current.quaternion.copy(pitchRotation.current).multiply(yawRotation.current);
   };
 
+  const focusOnGeography = useCallback((location: GeoCenter) => {
+    velocity.current = { x: 0, y: 0 };
+    focus.current = {
+      pitch: THREE.MathUtils.degToRad(location.lat),
+      yaw: nearestEquivalentAngle(
+        -Math.PI / 2 - THREE.MathUtils.degToRad(location.lng),
+        orientation.current.yaw,
+      ),
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!globe.current) return;
     const targetOrientation = {
@@ -1540,13 +1559,13 @@ function Earth({
     }
     const nextDetail: DetailLevel = distance > COUNTRY_DETAIL_DISTANCE
       ? 1
-      : distance > CITY_DETAIL_DISTANCE
+      : !streetZoomAvailable
         ? 2
-        : distance > STREET_ENTRY_DISTANCE
-          ? 3
-          : streetZoomAvailable
-            ? 4
-            : 3;
+        : distance > CITY_DETAIL_DISTANCE
+          ? 2
+          : distance > STREET_ENTRY_DISTANCE
+            ? 3
+            : 4;
     if (nextDetail !== currentDetail.current) {
       currentDetail.current = nextDetail;
       setLabelDetail(nextDetail);
@@ -1649,6 +1668,7 @@ function Earth({
           detailLevel={labelDetail}
           cities={cities}
           onSelect={onSelect}
+          onFocus={focusOnGeography}
         />
       )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
@@ -1818,7 +1838,6 @@ function CanvasWorldFallback({
         if (progress >= CITY_PROGRESS) return 2;
         return 1;
       }
-      if (progress >= TOWN_PROGRESS) return 3;
       if (progress >= CITY_PROGRESS) return 2;
       return 1;
     };
@@ -2052,6 +2071,10 @@ function CanvasWorldFallback({
       if (detailForProgress(view.progress) >= 2) {
         const boundary = hitBoundary(point.x, point.y);
         if (boundary) {
+          const [lng, lat] = geoCentroid(boundary.feature);
+          view.lng = normalizeLongitude(lng);
+          view.lat = THREE.MathUtils.clamp(lat, -82, 82);
+          requestDraw();
           const city = fallbackCityByName.get(normalizeLabelName(boundaryFeatureName(boundary.feature)));
           if (city) onSelect(city);
           return;
@@ -2222,7 +2245,7 @@ function EarthScene({
     ?? countryTarget?.distance
     ?? (globeOverride ? globeState?.distance ?? null : null);
   const focusedCountryKey = countryTarget?.key ?? countryEnergyKey(selectedCity.country);
-  const streetZoomAvailable = cities.some((city) => (
+  const streetZoomAvailable = hasCompleteDeepDetail(focusedCountryKey) && cities.some((city) => (
     countryEnergyKey(city.country) === focusedCountryKey && city.streets.length > 0
   ));
 
@@ -2367,7 +2390,7 @@ function EarthScene({
                 enableDamping
                 dampingFactor={0.1}
                 zoomSpeed={sceneDetail >= 2 ? 0.28 : 0.35}
-                minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : TOWN_MIN_DISTANCE}
+                minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : CITY_ONLY_MIN_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
               <fog attach="fog" args={["#020508", 11, 42]} />
@@ -2739,7 +2762,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
   const activeFocusLocation = activeRegionView ?? selectedCountry ?? selectedCity;
   const focusedCountryKey = selectedCountry?.key ?? countryEnergyKey(selectedCity.country);
-  const streetZoomAvailable = cities.some((city) => (
+  const streetZoomAvailable = hasCompleteDeepDetail(focusedCountryKey) && cities.some((city) => (
     countryEnergyKey(city.country) === focusedCountryKey && city.streets.length > 0
   ));
   const zoomStops = streetZoomAvailable
@@ -2752,7 +2775,6 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     : [
         { level: 1 as DetailLevel, label: "Country", position: 0 },
         { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
-        { level: 3 as DetailLevel, label: "Town", position: TOWN_PROGRESS },
       ];
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
@@ -3125,7 +3147,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
         <div className="zoomIndicatorHeader">
           <span>ZOOM · {zoomProgress}%</span>
           <b>{detailLabels[detailLevel].title}</b>
-          <small>MAX {streetZoomAvailable ? "STREETS" : "TOWN"}</small>
+          <small>MAX {streetZoomAvailable ? "STREETS" : "CITY"}</small>
         </div>
         <div
           className="zoomScale"
