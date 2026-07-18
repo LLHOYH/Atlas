@@ -131,7 +131,8 @@ test("regional view tabs cover the six continental regions without dropdown-only
   assert.doesNotMatch(experienceSource, /id: "world"|Current focus/);
   assert.match(experienceSource, /aria-label="Region views"/);
   assert.match(experienceSource, /aria-pressed=\{regionViewId === view\.id\}/);
-  assert.match(experienceSource, /focusDistance=\{viewTarget\?\.distance \?\? countryTarget\?\.distance \?\? null\}/);
+  assert.match(experienceSource, /const globeFocusDistance = viewTarget\?\.distance/);
+  assert.match(experienceSource, /focusDistance=\{globeFocusDistance\}/);
 });
 
 test("phase 4 agent telemetry is visible from country energy through individual agents", () => {
@@ -160,14 +161,14 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.9/);
+  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.25/);
   assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
   assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
   assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
   assert.doesNotMatch(experienceSource, /function pixelCityCollection\(/);
   assert.doesNotMatch(experienceSource, /atlas-pixel-(?:parcels|buildings)/);
   assert.doesNotMatch(experienceSource, /fill-extrusion/);
-  assert.match(experienceSource, /maxZoom: 18/);
+  assert.match(experienceSource, /maxZoom: STREET_MAP_MAX_ZOOM/);
   assert.match(experienceSource, /\.slice\(0, 36\)/);
   assert.match(experienceSource, /selectedCity\.agents\.slice\(0, 12\)/);
   assert.doesNotMatch(experienceSource, /requestAnimationFrame\(animatePulse\)/);
@@ -186,6 +187,8 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(experienceSource, /2D MAP · COMPATIBILITY MODE/);
   assert.doesNotMatch(experienceSource, /3D renderer is temporarily unavailable|Retry globe/);
   assert.match(globalStylesSource, /\.canvasWorldFallback canvas/);
+  assert.match(globalStylesSource, /\.streetMapLoading/);
+  assert.match(globalStylesSource, /\.rendererHandoffStatus/);
   assert.match(experienceSource, /dpr=\{\[1, 1\.35\]\}/);
   assert.match(experienceSource, /antialias: false/);
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
@@ -209,12 +212,18 @@ test("zoom progress exposes country, city, town, and optional street breakpoints
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
   assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
-  assert.match(experienceSource, /levelSpan \/ ZOOM_SCROLLS_PER_LEVEL/);
+  assert.match(experienceSource, /\(STREET_ENTRY_PROGRESS - TOWN_PROGRESS\) \/ ZOOM_SCROLLS_PER_LEVEL/);
   assert.match(experienceSource, /camera=\{\{ position: \[0, 0\.1, GLOBE_MAX_DISTANCE\]/);
   assert.match(experienceSource, /enableZoom\s+enableDamping/);
-  assert.match(experienceSource, /zoomSpeed=\{0\.35\}/);
+  assert.match(experienceSource, /zoomSpeed=\{sceneDetail >= 2 \? 0\.28 : 0\.35\}/);
   assert.doesNotMatch(experienceSource, /addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
-  assert.match(experienceSource, /label: "Streets", position: 100/);
+  assert.match(experienceSource, /const STREET_ENTRY_PROGRESS = 85/);
+  assert.match(experienceSource, /label: "Streets", position: STREET_ENTRY_PROGRESS/);
+  assert.match(experienceSource, /function streetProgressForMapZoom\(/);
+  assert.match(experienceSource, /onZoomChange\(streetProgressForMapZoom\(zoom\)\)/);
+  assert.match(experienceSource, /zoom <= STREET_MAP_ENTRY_ZOOM/);
+  assert.match(experienceSource, /distance: STREET_EXIT_GLOBE_DISTANCE/);
+  assert.doesNotMatch(experienceSource, /onZoomChange\(100\)/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
 });

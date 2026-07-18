@@ -168,20 +168,29 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const STREET_ENTRY_DISTANCE = 4.9;
-const STREET_ENTRY_RESET_DISTANCE = 5.15;
+const STREET_ENTRY_DISTANCE = 4.25;
+const STREET_ENTRY_RESET_DISTANCE = 4.48;
+const STREET_EXIT_GLOBE_DISTANCE = 4.55;
 const COUNTRY_DETAIL_DISTANCE = 6.9;
 const CITY_DETAIL_DISTANCE = 5.8;
 const TOWN_MIN_DISTANCE = STREET_ENTRY_DISTANCE;
 const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
+const CITY_PROGRESS = 30;
+const TOWN_PROGRESS = 60;
+const STREET_ENTRY_PROGRESS = 85;
+const STREET_MAP_ENTRY_ZOOM = 12.8;
+const STREET_MAP_INITIAL_ZOOM = 13.6;
+const STREET_MAP_MAX_ZOOM = 18;
 
 function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
   const thresholds = streetZoomAvailable
     ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
     : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, TOWN_MIN_DISTANCE];
-  const progressStops = [0, 33.333, 66.667, 100];
+  const progressStops = streetZoomAvailable
+    ? [0, CITY_PROGRESS, TOWN_PROGRESS, STREET_ENTRY_PROGRESS]
+    : [0, CITY_PROGRESS, TOWN_PROGRESS, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
   for (let index = 0; index < thresholds.length - 1; index += 1) {
@@ -193,7 +202,16 @@ function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean)
     }
   }
 
-  return progressStops.at(-1) ?? 100;
+  return progressStops.at(-1) ?? (streetZoomAvailable ? STREET_ENTRY_PROGRESS : 100);
+}
+
+function streetProgressForMapZoom(zoom: number) {
+  const normalized = THREE.MathUtils.inverseLerp(
+    STREET_MAP_ENTRY_ZOOM,
+    STREET_MAP_MAX_ZOOM,
+    THREE.MathUtils.clamp(zoom, STREET_MAP_ENTRY_ZOOM, STREET_MAP_MAX_ZOOM),
+  );
+  return THREE.MathUtils.lerp(STREET_ENTRY_PROGRESS, 100, normalized);
 }
 
 function nearestCityToLocation(cities: City[], location: GeoCenter) {
@@ -316,8 +334,9 @@ function StreetMap({
     if (exitRequested.current) return;
     exitRequested.current = true;
     const mapCenter = mapInstance.current?.getCenter();
+    onZoomChange(STREET_ENTRY_PROGRESS - 1);
     onExit(mapCenter ? { lat: mapCenter.lat, lng: mapCenter.lng } : center);
-  }, [center, onExit]);
+  }, [center, onExit, onZoomChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,9 +349,9 @@ function StreetMap({
         container: container.current,
         style: "https://tiles.openfreemap.org/styles/dark",
         center: [center.lng, center.lat],
-        zoom: 15,
-        minZoom: 3.5,
-        maxZoom: 18,
+        zoom: STREET_MAP_INITIAL_ZOOM,
+        minZoom: STREET_MAP_ENTRY_ZOOM - 0.7,
+        maxZoom: STREET_MAP_MAX_ZOOM,
         bearing: 0,
         pitch: 34,
         dragRotate: false,
@@ -504,12 +523,14 @@ function StreetMap({
           if (agent) selectAgent.current(agent);
         });
 
-        onZoomChange(100);
+        onZoomChange(streetProgressForMapZoom(map.getZoom()));
         setLoaded(true);
       });
       map.on("zoom", () => {
-        if (map) onZoomChange(100);
-        if (map && map.getZoom() <= 5.5) exitStreetView();
+        if (!map) return;
+        const zoom = map.getZoom();
+        onZoomChange(streetProgressForMapZoom(zoom));
+        if (zoom <= STREET_MAP_ENTRY_ZOOM) exitStreetView();
       });
     });
 
@@ -534,6 +555,13 @@ function StreetMap({
   return (
     <div className={`streetMapStage ${loaded ? "loaded" : ""}`}>
       <div ref={container} className="streetMapCanvas" />
+      {!loaded && (
+        <div className="streetMapLoading" role="status">
+          <i />
+          <span>ALIGNING STREET GRID</span>
+          <small>{city.name.toUpperCase()} · NORTH LOCKED</small>
+        </div>
+      )}
       <div className="streetMapReadout glassPanel">
         <span>{city.name.toUpperCase()} · LIVE STREET VIEW</span>
         <b>{Math.abs(center.lat).toFixed(3)}°{center.lat >= 0 ? "N" : "S"} · {Math.abs(center.lng).toFixed(3)}°{center.lng >= 0 ? "E" : "W"}</b>
@@ -1785,13 +1813,13 @@ function CanvasWorldFallback({
 
     const detailForProgress = (progress: number): DetailLevel => {
       if (streetZoomAvailable) {
-        if (progress >= 100) return 4;
-        if (progress >= 66.667) return 3;
-        if (progress >= 33.333) return 2;
+        if (progress >= STREET_ENTRY_PROGRESS) return 4;
+        if (progress >= TOWN_PROGRESS) return 3;
+        if (progress >= CITY_PROGRESS) return 2;
         return 1;
       }
-      if (progress >= 66.667) return 3;
-      if (progress >= 33.333) return 2;
+      if (progress >= TOWN_PROGRESS) return 3;
+      if (progress >= CITY_PROGRESS) return 2;
       return 1;
     };
 
@@ -2051,12 +2079,11 @@ function CanvasWorldFallback({
       if (wheelGestureLocked) return;
       wheelGestureLocked = true;
       const previousDetail = detailForProgress(view.progress);
-      const levelSpan = 100 / 3;
-      const progressStep = levelSpan / ZOOM_SCROLLS_PER_LEVEL;
+      const progressStep = (STREET_ENTRY_PROGRESS - TOWN_PROGRESS) / ZOOM_SCROLLS_PER_LEVEL;
       view.progress = THREE.MathUtils.clamp(
         view.progress - Math.sign(event.deltaY) * progressStep,
         0,
-        100,
+        streetZoomAvailable ? STREET_ENTRY_PROGRESS : 100,
       );
       const nextDetail = detailForProgress(view.progress);
       if (streetZoomAvailable && previousDetail < 4 && nextDetail === 4) {
@@ -2180,8 +2207,9 @@ function EarthScene({
   onZoomChange: (progress: number) => void;
 }) {
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
-  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
+  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; distance: number; viewRevision: number } | null>(null);
   const [streetRendererActive, setStreetRendererActive] = useState(false);
+  const [sceneDetail, setSceneDetail] = useState<DetailLevel>(1);
   const [rendererAvailability, setRendererAvailability] = useState<"checking" | "available" | "unavailable">("checking");
   const streetCenter = !viewTarget && !countryTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
     ? streetState.center
@@ -2190,6 +2218,9 @@ function EarthScene({
     ? globeState.center
     : null;
   const focusLocation = viewTarget ?? countryTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+  const globeFocusDistance = viewTarget?.distance
+    ?? countryTarget?.distance
+    ?? (globeOverride ? globeState?.distance ?? null : null);
   const focusedCountryKey = countryTarget?.key ?? countryEnergyKey(selectedCity.country);
   const streetZoomAvailable = cities.some((city) => (
     countryEnergyKey(city.country) === focusedCountryKey && city.streets.length > 0
@@ -2213,10 +2244,17 @@ function EarthScene({
   }, [cities, countryTarget, onSelect, selectedCity, viewRevision, viewTarget]);
 
   const exitStreetView = useCallback((center: GeoCenter) => {
-    setGlobeState({ cityId: selectedCity.id, center, viewRevision });
+    setGlobeState({ cityId: selectedCity.id, center, distance: STREET_EXIT_GLOBE_DISTANCE, viewRevision });
+    setSceneDetail(3);
+    onDetailChange(3);
     setStreetRendererActive(false);
     window.setTimeout(() => setStreetState(null), RENDERER_RELEASE_DELAY_MS);
-  }, [selectedCity.id, viewRevision]);
+  }, [onDetailChange, selectedCity.id, viewRevision]);
+
+  const handleSceneDetailChange = useCallback((level: DetailLevel) => {
+    setSceneDetail(level);
+    onDetailChange(level);
+  }, [onDetailChange]);
 
   const selectActivityCity = useCallback((city: City) => {
     setStreetState(null);
@@ -2267,13 +2305,13 @@ function EarthScene({
       selectedCity={selectedCity}
       selectedCountryKey={countryTarget?.key ?? null}
       focusLocation={focusLocation}
-      focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
+      focusDistance={globeFocusDistance}
       liveCounts={liveCounts}
       streetZoomAvailable={streetZoomAvailable}
       onSelect={selectActivityCity}
       onCountrySelect={selectActivityCountry}
       onAgentSelect={onAgentSelect}
-      onDetailChange={onDetailChange}
+      onDetailChange={handleSceneDetailChange}
       onZoomChange={onZoomChange}
       onStreetEnter={enterStreetView}
     />
@@ -2308,14 +2346,14 @@ function EarthScene({
                   selectedCity={selectedCity}
                   selectedCountryKey={countryTarget?.key ?? null}
                   focusLocation={focusLocation}
-                  focusDistance={viewTarget?.distance ?? countryTarget?.distance ?? null}
+                  focusDistance={globeFocusDistance}
                   focusRevision={viewRevision}
                   layer={layer}
                   liveCounts={liveCounts}
                   onSelect={selectActivityCity}
                   onCountrySelect={selectActivityCountry}
                   onAgentSelect={onAgentSelect}
-                  onDetailChange={onDetailChange}
+                  onDetailChange={handleSceneDetailChange}
                   onZoomChange={onZoomChange}
                   onStreetEnter={enterStreetView}
                   streetZoomAvailable={streetZoomAvailable}
@@ -2328,7 +2366,7 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={0.35}
+                zoomSpeed={sceneDetail >= 2 ? 0.28 : 0.35}
                 minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : TOWN_MIN_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
@@ -2349,7 +2387,15 @@ function EarthScene({
           onZoomChange={onZoomChange}
         />
       )}
-      {handingOffRenderer && <div className="rendererHandoff" aria-hidden="true" />}
+      {handingOffRenderer && (
+        <div className="rendererHandoff" role="status">
+          <div className="rendererHandoffStatus">
+            <i />
+            <span>{streetCenter ? "DESCENDING TO STREET GRID" : "RESTORING GLOBE VIEW"}</span>
+            <small>{selectedCity.name.toUpperCase()} · NORTH LOCKED</small>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -2699,14 +2745,14 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const zoomStops = streetZoomAvailable
     ? [
         { level: 1 as DetailLevel, label: "Country", position: 0 },
-        { level: 2 as DetailLevel, label: "City", position: 33.333 },
-        { level: 3 as DetailLevel, label: "Town", position: 66.667 },
-        { level: 4 as DetailLevel, label: "Streets", position: 100 },
+        { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
+        { level: 3 as DetailLevel, label: "Town", position: TOWN_PROGRESS },
+        { level: 4 as DetailLevel, label: "Streets", position: STREET_ENTRY_PROGRESS },
       ]
     : [
         { level: 1 as DetailLevel, label: "Country", position: 0 },
-        { level: 2 as DetailLevel, label: "City", position: 33.333 },
-        { level: 3 as DetailLevel, label: "Town", position: 66.667 },
+        { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
+        { level: 3 as DetailLevel, label: "Town", position: TOWN_PROGRESS },
       ];
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
