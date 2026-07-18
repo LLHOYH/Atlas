@@ -137,15 +137,15 @@ test("regional view tabs cover the six continental regions without dropdown-only
 
 test("phase 4 agent telemetry is visible from country energy through individual agents", () => {
   assert.match(experienceSource, /<CountrySurfaces liveAgentsByCountry=\{liveAgentsByCountry\}/);
-  assert.match(experienceSource, /function AgentLight\(/);
+  assert.match(experienceSource, /function CityProfileCard\(/);
   assert.match(experienceSource, /AGENT PULSE · NOW/);
   assert.match(experienceSource, /className="pulseLegend"/);
   assert.doesNotMatch(experienceSource, /className="energyLegend/);
   assert.match(experienceSource, /LIVE AGENTS PER COUNTRY/);
   assert.match(experienceSource, /className="energyMeter"/);
-  assert.match(experienceSource, /selectedDensityBarWidth/);
+  assert.match(experienceSource, /densityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
-  assert.match(experienceSource, /selectedCity\.hotTopics/);
+  assert.match(experienceSource, /city\.hotTopics\.length/);
 });
 
 test("phase 5 renders dense Supabase agents in a capped street view", () => {
@@ -161,16 +161,17 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(globalStylesSource, /\.streetAgentLegend/);
   assert.match(globalStylesSource, /\.streetAgentHover/);
   assert.match(worldHookSource, /range\(from, from \+ pageSize - 1\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_DISTANCE = 4\.25/);
-  assert.match(experienceSource, /nearestCityToLocation\(cities, center\)/);
-  assert.match(experienceSource, /viewRevision: viewRevision \+ 1/);
-  assert.doesNotMatch(experienceSource, /if \(countryTarget\) return/);
+  assert.match(experienceSource, /const STREET_MAP_INITIAL_ZOOM = 13\.6/);
+  assert.match(experienceSource, /streetViewRequested && streetViewAvailable/);
+  assert.match(experienceSource, /cityAreaTarget\?\.cityId === selectedCity\.id/);
+  assert.match(experienceSource, /Show Street View/);
+  assert.match(experienceSource, /Show Globe/);
+  assert.doesNotMatch(experienceSource, /onStreetEnter/);
   assert.doesNotMatch(experienceSource, /function pixelCityCollection\(/);
   assert.doesNotMatch(experienceSource, /atlas-pixel-(?:parcels|buildings)/);
   assert.doesNotMatch(experienceSource, /fill-extrusion/);
   assert.match(experienceSource, /maxZoom: STREET_MAP_MAX_ZOOM/);
-  assert.match(experienceSource, /\.slice\(0, 36\)/);
-  assert.match(experienceSource, /selectedCity\.agents\.slice\(0, 12\)/);
+  assert.match(experienceSource, /city\?\.agents\.slice\(0, 12\)/);
   assert.doesNotMatch(experienceSource, /requestAnimationFrame\(animatePulse\)/);
   assert.match(experienceSource, /streetRendererActive/);
   assert.match(experienceSource, /showGlobeRenderer/);
@@ -181,7 +182,6 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(experienceSource, /probe\.getContext\("webgl2"/);
   assert.match(experienceSource, /rendererAvailability === "unavailable"/);
   assert.match(experienceSource, /function CanvasWorldFallback\(/);
-  assert.match(experienceSource, /onStreetEnter\(\{ lat: selectedCity\.lat, lng: selectedCity\.lng \}\)/);
   assert.match(experienceSource, /getContext\("2d"\)/);
   assert.match(experienceSource, /geoOrthographic\(\)/);
   assert.match(experienceSource, /2D MAP · COMPATIBILITY MODE/);
@@ -194,48 +194,43 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
 });
 
-test("zoom progress exposes country, city, town, and optional street breakpoints", () => {
+test("zoom progress exposes only country and a deep city range", () => {
   assert.match(experienceSource, /function zoomProgressForDistance\(/);
   assert.match(experienceSource, /role="progressbar"/);
-  for (const label of ["Country", "City", "Town", "Streets"]) {
+  for (const label of ["Country", "City"]) {
     assert.match(experienceSource, new RegExp(`label: "${label}"`));
   }
-  assert.match(experienceSource, /MAX \{streetZoomAvailable \? "STREETS" : "CITY"\}/);
+  assert.doesNotMatch(experienceSource, /label: "Town"|label: "Streets"/);
+  assert.match(experienceSource, /<small>MAX CITY<\/small>/);
   assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 11/);
-  assert.match(experienceSource, /minDistance=\{streetZoomAvailable \? STREET_ENTRY_DISTANCE - 0\.1 : CITY_ONLY_MIN_DISTANCE\}/);
-  assert.match(experienceSource, /streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE/);
+  assert.match(experienceSource, /const CITY_MAX_DISTANCE = 3\.75/);
+  assert.match(experienceSource, /minDistance=\{CITY_MAX_DISTANCE\}/);
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
+  assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
   assert.match(experienceSource, /labelDetail === 2 && detailedPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
-  assert.match(experienceSource, /detail === 2 \|\| detail === 3/);
+  assert.match(experienceSource, /if \(detail === 2\)/);
   assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 10/);
-  assert.match(experienceSource, /\(STREET_ENTRY_PROGRESS - TOWN_PROGRESS\) \/ ZOOM_SCROLLS_PER_LEVEL/);
+  assert.match(experienceSource, /\(100 - CITY_PROGRESS\) \/ \(ZOOM_SCROLLS_PER_LEVEL \* 2\)/);
   assert.match(experienceSource, /camera=\{\{ position: \[0, 0\.1, GLOBE_MAX_DISTANCE\]/);
   assert.match(experienceSource, /enableZoom\s+enableDamping/);
-  assert.match(experienceSource, /zoomSpeed=\{sceneDetail >= 2 \? 0\.28 : 0\.35\}/);
+  assert.match(experienceSource, /zoomSpeed=\{sceneDetail >= 2 \? 0\.2 : 0\.35\}/);
   assert.doesNotMatch(experienceSource, /addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
-  assert.match(experienceSource, /const STREET_ENTRY_PROGRESS = 85/);
-  assert.match(experienceSource, /label: "Streets", position: STREET_ENTRY_PROGRESS/);
-  assert.match(experienceSource, /function streetProgressForMapZoom\(/);
-  assert.match(experienceSource, /onZoomChange\(streetProgressForMapZoom\(zoom\)\)/);
-  assert.match(experienceSource, /zoom <= STREET_MAP_ENTRY_ZOOM/);
-  assert.match(experienceSource, /distance: STREET_EXIT_GLOBE_DISTANCE/);
-  assert.doesNotMatch(experienceSource, /onZoomChange\(100\)/);
+  assert.doesNotMatch(experienceSource, /STREET_ENTRY_PROGRESS|TOWN_PROGRESS|streetProgressForMapZoom/);
+  assert.match(experienceSource, /onZoomChange\(100\)/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
   assert.match(experienceSource, /const completeDeepDetailCountries = new Set\(\["united states"\]\)/);
-  assert.match(experienceSource, /hasCompleteDeepDetail\(focusedCountryKey\) && cities\.some/);
-  assert.match(experienceSource, /!streetZoomAvailable[\s\S]*?\? 2/);
+  assert.match(experienceSource, /hasCompleteDeepDetail\(selectedCityArea\.countryKey\)/);
 });
 
-test("city and town detail use published administrative boundaries without fabricated territories", () => {
+test("city detail uses selectable published administrative boundaries and place labels", () => {
   assert.match(experienceSource, /function AdministrativeTerritories\(/);
   assert.match(experienceSource, /<AdministrativeTerritories/);
-  assert.match(experienceSource, /const boundaryLevel = labelDetail >= 3 \? "ADM2" : "ADM1"/);
-  assert.match(experienceSource, /useAtlasBoundaries\(focusedIso3, boundaryLevel/);
+  assert.match(experienceSource, /useAtlasBoundaries\(focusedIso3, "ADM1"/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /onFocus\(\{ lat, lng \}\)/);
   assert.match(experienceSource, /onFocus=\{focusOnGeography\}/);
@@ -251,15 +246,15 @@ test("city and town detail use published administrative boundaries without fabri
   assert.match(geographyHookSource, /atlas-geography\/places/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
   assert.match(experienceSource, /labelDetail === 1 && layer === "Attention"/);
-  assert.match(experienceSource, /detailLevel >= 2/);
   assert.match(experienceSource, /hitBoundary\(point\.x, point\.y\)/);
-  assert.match(experienceSource, /labelDetail === 4 && globeAgentPreview\.map/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
-  assert.match(experienceSource, /kind="town"/);
+  assert.match(experienceSource, /onCityAreaSelect\(\{/);
+  assert.match(experienceSource, /CITY PROFILE · \{selection\.countryName\.toUpperCase\(\)\}/);
+  assert.match(experienceSource, /mapLabel--interactive/);
+  assert.doesNotMatch(experienceSource, /kind="town"/);
   assert.match(globalStylesSource, /\.mapLabel--country \{[\s\S]*?color: #d9b76b;[\s\S]*?font-size: 6px;/);
   assert.match(globalStylesSource, /\.mapLabel--city \{[\s\S]*?color: #7fdde7;[\s\S]*?font-size: 5\.25px;/);
-  assert.match(globalStylesSource, /\.mapLabel--town \{[\s\S]*?color: #9cb7bb;[\s\S]*?font-size: 4\.25px;/);
-  assert.match(globalStylesSource, /\.mapLabel--street \{[\s\S]*?color: #d2a95d;[\s\S]*?font-size: 3\.75px;/);
+  assert.doesNotMatch(globalStylesSource, /\.mapLabel--town/);
   assert.doesNotMatch(globalStylesSource, /\.mapLabel--city::before/);
 });
 
@@ -317,7 +312,7 @@ test("country selection recenters the globe and opens an aggregated country prof
   assert.match(experienceSource, /geoContains\(countryHitAreas\[countryIndex\]/);
   assert.doesNotMatch(experienceSource, /geometry=\{country\.hitGeometry\}/);
   assert.match(experienceSource, /onCountrySelect=\{focusCountry\}/);
-  assert.match(experienceSource, /selectedCountryKey=\{countryTarget\?\.key \?\? null\}/);
+  assert.match(experienceSource, /selectedCountryKey=\{focusedCountryKey\}/);
   assert.match(experienceSource, /COUNTRY PROFILE · LIVE NETWORK/);
   assert.match(experienceSource, /className="citySignal countrySignal glassPanel"/);
   assert.match(experienceSource, /Awaiting Atlas signals/);

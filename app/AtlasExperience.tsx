@@ -52,7 +52,7 @@ import {
 
 const layers = ["Attention", "AI", "Technology", "Travel"] as const;
 type Layer = (typeof layers)[number];
-type DetailLevel = 1 | 2 | 3 | 4;
+type DetailLevel = 1 | 2;
 
 const COUNTRY_FOCUS_DISTANCE = 10.2;
 
@@ -71,8 +71,6 @@ type RegionView = (typeof regionViews)[number];
 const detailLabels: Record<DetailLevel, { title: string; note: string }> = {
   1: { title: "COUNTRY", note: "National agent energy" },
   2: { title: "CITY", note: "City activity & labels" },
-  3: { title: "TOWN", note: "Local activity areas" },
-  4: { title: "STREETS", note: "Individual live agents" },
 };
 
 const layerColors: Record<Layer, string> = {
@@ -117,9 +115,15 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
   );
 }
 
-type LabelKind = "country" | "region" | "city" | "town" | "street";
+type LabelKind = "country" | "region" | "city";
 type GeoCenter = { lat: number; lng: number };
 type CountrySelection = GeoCenter & { name: string; key: string; distance: number };
+type CityAreaSelection = GeoCenter & {
+  name: string;
+  countryKey: string;
+  countryName: string;
+  cityId?: string;
+};
 type AtlasSearchResult =
   | { id: string; kind: "country"; title: string; subtitle: string; country: CountrySelection }
   | { id: string; kind: "city"; title: string; subtitle: string; city: City }
@@ -129,6 +133,8 @@ type GeographicLabel = {
   id: string;
   name: string;
   rank: number;
+  lat: number;
+  lng: number;
   position: THREE.Vector3;
 };
 
@@ -136,6 +142,8 @@ const globalCountryLabels: GeographicLabel[] = atlasLabelData.countries.map((lab
   id: label.id,
   name: label.name,
   rank: label.rank,
+  lat: label.lat,
+  lng: label.lng,
   position: latLngToVector3(label.lat, label.lng, 3.105),
 }));
 
@@ -168,20 +176,15 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const STREET_ENTRY_DISTANCE = 4.25;
-const STREET_ENTRY_RESET_DISTANCE = 4.48;
-const STREET_EXIT_GLOBE_DISTANCE = 4.55;
 const COUNTRY_DETAIL_DISTANCE = 6.9;
-const CITY_DETAIL_DISTANCE = 5.8;
-const CITY_ONLY_MIN_DISTANCE = 4.9;
+const CITY_MAX_DISTANCE = 3.75;
+const CITY_SELECTION_DISTANCE = 4.55;
 const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SCROLLS_PER_LEVEL = 10;
 const RENDERER_RELEASE_DELAY_MS = 600;
-const CITY_PROGRESS = 30;
-const TOWN_PROGRESS = 60;
-const STREET_ENTRY_PROGRESS = 85;
-const STREET_MAP_ENTRY_ZOOM = 12.8;
+const CITY_PROGRESS = 35;
 const STREET_MAP_INITIAL_ZOOM = 13.6;
+const STREET_MAP_MIN_ZOOM = 11.5;
 const STREET_MAP_MAX_ZOOM = 18;
 const completeDeepDetailCountries = new Set(["united states"]);
 
@@ -189,13 +192,9 @@ function hasCompleteDeepDetail(countryKey: string) {
   return completeDeepDetailCountries.has(countryKey);
 }
 
-function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean) {
-  const thresholds = streetZoomAvailable
-    ? [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_DETAIL_DISTANCE, STREET_ENTRY_DISTANCE]
-    : [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_ONLY_MIN_DISTANCE];
-  const progressStops = streetZoomAvailable
-    ? [0, CITY_PROGRESS, TOWN_PROGRESS, STREET_ENTRY_PROGRESS]
-    : [0, CITY_PROGRESS, 100];
+function zoomProgressForDistance(distance: number) {
+  const thresholds = [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_MAX_DISTANCE];
+  const progressStops = [0, CITY_PROGRESS, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
 
   for (let index = 0; index < thresholds.length - 1; index += 1) {
@@ -207,26 +206,18 @@ function zoomProgressForDistance(distance: number, streetZoomAvailable: boolean)
     }
   }
 
-  return progressStops.at(-1) ?? (streetZoomAvailable ? STREET_ENTRY_PROGRESS : 100);
+  return progressStops.at(-1) ?? 100;
 }
 
-function streetProgressForMapZoom(zoom: number) {
-  const normalized = THREE.MathUtils.inverseLerp(
-    STREET_MAP_ENTRY_ZOOM,
-    STREET_MAP_MAX_ZOOM,
-    THREE.MathUtils.clamp(zoom, STREET_MAP_ENTRY_ZOOM, STREET_MAP_MAX_ZOOM),
-  );
-  return THREE.MathUtils.lerp(STREET_ENTRY_PROGRESS, 100, normalized);
-}
-
-function nearestCityToLocation(cities: City[], location: GeoCenter) {
-  return cities.reduce((nearest, city) => {
-    const latitudeScale = Math.cos(THREE.MathUtils.degToRad((location.lat + city.lat) / 2));
-    const latitudeDelta = city.lat - location.lat;
-    const longitudeDelta = normalizeLongitude(city.lng - location.lng) * latitudeScale;
-    const distance = latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
-    return distance < nearest.distance ? { city, distance } : nearest;
-  }, { city: cities[0], distance: Number.POSITIVE_INFINITY }).city;
+function cityAreaSelectionFromCity(city: City): CityAreaSelection {
+  return {
+    name: city.name,
+    lat: city.lat,
+    lng: city.lng,
+    countryKey: countryEnergyKey(city.country),
+    countryName: city.country,
+    cityId: city.id,
+  };
 }
 
 function GlobeLabel({
@@ -234,11 +225,13 @@ function GlobeLabel({
   kind,
   position,
   color,
+  onSelect,
 }: {
   label: string;
   kind: LabelKind;
   position: THREE.Vector3;
   color?: string;
+  onSelect?: () => void;
 }) {
   const anchor = useRef<THREE.Group>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -249,11 +242,7 @@ function GlobeLabel({
     ? 1.875
     : kind === "city"
       ? 1.55
-      : kind === "town"
-        ? 1.15
-        : kind === "region"
-          ? 1.5
-          : 0.9;
+      : 1.5;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -268,7 +257,23 @@ function GlobeLabel({
   return (
     <group ref={anchor} position={position}>
       <Html transform sprite center distanceFactor={distanceFactor} zIndexRange={[8, 0]}>
-        <div ref={content} className={`mapLabel mapLabel--${kind}`} style={color ? { color } : undefined}>
+        <div
+          ref={content}
+          className={`mapLabel mapLabel--${kind} ${onSelect ? "mapLabel--interactive" : ""}`}
+          style={color ? { color } : undefined}
+          role={onSelect ? "button" : undefined}
+          tabIndex={onSelect ? 0 : undefined}
+          onClick={(event) => {
+            if (!onSelect) return;
+            event.stopPropagation();
+            onSelect();
+          }}
+          onKeyDown={(event) => {
+            if (!onSelect || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            onSelect();
+          }}
+        >
           {label}
         </div>
       </Html>
@@ -315,18 +320,13 @@ function StreetMap({
   center,
   city,
   onAgentSelect,
-  onExit,
-  onZoomChange,
 }: {
   center: GeoCenter;
   city: City;
   onAgentSelect: (agent: Agent) => void;
-  onExit: (center: GeoCenter) => void;
-  onZoomChange: (progress: number) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<import("maplibre-gl").Map | null>(null);
-  const exitRequested = useRef(false);
   const agentsById = useRef(new Map<string, Agent>());
   const agentData = useRef(streetAgentCollection(city.agents));
   const selectAgent = useRef(onAgentSelect);
@@ -334,14 +334,6 @@ function StreetMap({
   const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null);
 
   const activeAgents = city.agents.filter((agent) => agent.status !== "offline").length;
-
-  const exitStreetView = useCallback(() => {
-    if (exitRequested.current) return;
-    exitRequested.current = true;
-    const mapCenter = mapInstance.current?.getCenter();
-    onZoomChange(STREET_ENTRY_PROGRESS - 1);
-    onExit(mapCenter ? { lat: mapCenter.lat, lng: mapCenter.lng } : center);
-  }, [center, onExit, onZoomChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -355,7 +347,7 @@ function StreetMap({
         style: "https://tiles.openfreemap.org/styles/dark",
         center: [center.lng, center.lat],
         zoom: STREET_MAP_INITIAL_ZOOM,
-        minZoom: STREET_MAP_ENTRY_ZOOM - 0.7,
+        minZoom: STREET_MAP_MIN_ZOOM,
         maxZoom: STREET_MAP_MAX_ZOOM,
         bearing: 0,
         pitch: 34,
@@ -528,14 +520,7 @@ function StreetMap({
           if (agent) selectAgent.current(agent);
         });
 
-        onZoomChange(streetProgressForMapZoom(map.getZoom()));
         setLoaded(true);
-      });
-      map.on("zoom", () => {
-        if (!map) return;
-        const zoom = map.getZoom();
-        onZoomChange(streetProgressForMapZoom(zoom));
-        if (zoom <= STREET_MAP_ENTRY_ZOOM) exitStreetView();
       });
     });
 
@@ -544,7 +529,7 @@ function StreetMap({
       mapInstance.current = null;
       map?.remove();
     };
-  }, [center.lat, center.lng, exitStreetView, onZoomChange]);
+  }, [center.lat, center.lng]);
 
   useEffect(() => {
     agentsById.current = new Map(city.agents.map((agent) => [agent.id, agent]));
@@ -585,9 +570,6 @@ function StreetMap({
           <em>Click for agent profile</em>
         </div>
       )}
-      <button className="streetMapReturn glassPanel" onClick={exitStreetView}>
-        <Globe2 size={13} /> Return to globe
-      </button>
       <div className="streetMapHint">Hover or click an agent · Drag to move · Scroll to zoom · north locked</div>
     </div>
   );
@@ -1022,14 +1004,20 @@ function AdministrativeTerritories({
   features,
   detailLevel,
   cities,
+  countryKey,
+  countryName,
   onSelect,
   onFocus,
+  onAreaSelect,
 }: {
   features: AtlasBoundaryFeature[];
   detailLevel: DetailLevel;
   cities: City[];
+  countryKey: string;
+  countryName: string;
   onSelect: (city: City) => void;
   onFocus: (center: GeoCenter) => void;
+  onAreaSelect: (area: CityAreaSelection) => void;
 }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
@@ -1099,7 +1087,7 @@ function AdministrativeTerritories({
           {hoveredCenter && (
             <GlobeLabel
               label={boundaryFeatureName(hoveredFeature)}
-              kind={detailLevel === 2 ? "region" : "town"}
+              kind="region"
               position={hoveredCenter}
               color="#ffd36f"
             />
@@ -1124,178 +1112,22 @@ function AdministrativeTerritories({
           const [lng, lat] = geoCentroid(features[index]);
           onFocus({ lat, lng });
           const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
-          if (city) onSelect(city);
+          if (city) {
+            onSelect(city);
+          } else {
+            onAreaSelect({
+              name: boundaryFeatureName(features[index]),
+              lat,
+              lng,
+              countryKey,
+              countryName,
+            });
+          }
         }}
       >
         <sphereGeometry args={[ADMIN_HOVER_RADIUS + 0.015, 96, 64]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
-    </group>
-  );
-}
-
-function StreetMesh({
-  cities,
-  layer,
-  materialRef,
-}: {
-  cities: City[];
-  layer: Layer;
-  materialRef: React.RefObject<THREE.LineBasicMaterial | null>;
-}) {
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-    const addSegment = (startLat: number, startLng: number, endLat: number, endLng: number) => {
-      const start = latLngToVector3(startLat, startLng, 3.085);
-      const end = latLngToVector3(endLat, endLng, 3.085);
-      positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-    };
-
-    cities.forEach((city) => {
-      const longitudeScale = 1 / Math.max(0.28, Math.cos((city.lat * Math.PI) / 180));
-      const halfSpan = 0.72;
-      for (let index = -4; index <= 4; index += 1) {
-        const offset = index * 0.16;
-        addSegment(
-          city.lat - halfSpan,
-          city.lng + offset * longitudeScale,
-          city.lat + halfSpan,
-          city.lng + offset * longitudeScale,
-        );
-        addSegment(
-          city.lat + offset,
-          city.lng - halfSpan * longitudeScale,
-          city.lat + offset,
-          city.lng + halfSpan * longitudeScale,
-        );
-      }
-      addSegment(
-        city.lat - halfSpan * 0.75,
-        city.lng - halfSpan * longitudeScale,
-        city.lat + halfSpan * 0.75,
-        city.lng + halfSpan * longitudeScale,
-      );
-
-      city.streets.forEach((street) => {
-        const centerLat = city.lat + street.offsetLatitude;
-        const centerLng = city.lng + street.offsetLongitude;
-        const bearing = THREE.MathUtils.degToRad(street.bearingDegrees);
-        const halfLength = street.lengthDegrees / 2;
-        const latitudeDelta = Math.cos(bearing) * halfLength;
-        const longitudeDelta = (
-          Math.sin(bearing) * halfLength
-        ) / Math.max(0.28, Math.cos((centerLat * Math.PI) / 180));
-        addSegment(
-          centerLat - latitudeDelta,
-          centerLng - longitudeDelta,
-          centerLat + latitudeDelta,
-          centerLng + longitudeDelta,
-        );
-      });
-    });
-
-    const result = new THREE.BufferGeometry();
-    result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    return result;
-  }, [cities]);
-
-  return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial
-        ref={materialRef}
-        color={layerColors[layer]}
-        transparent
-        opacity={0}
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-      />
-    </lineSegments>
-  );
-}
-
-function AgentLight({
-  agent,
-  showLabel,
-  onSelect,
-}: {
-  agent: Agent;
-  showLabel: boolean;
-  onSelect: (agent: Agent) => void;
-}) {
-  const anchor = useRef<THREE.Group>(null);
-  const pulse = useRef<THREE.Mesh>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const worldPosition = useMemo(() => new THREE.Vector3(), []);
-  const surfaceNormal = useMemo(() => new THREE.Vector3(), []);
-  const towardCamera = useMemo(() => new THREE.Vector3(), []);
-  const position = useMemo(
-    () => latLngToVector3(agent.lat, agent.lng, 3.075),
-    [agent.lat, agent.lng],
-  );
-  const orientation = useMemo(
-    () => new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 0, 1),
-      position.clone().normalize(),
-    ),
-    [position],
-  );
-  const color = agentStatusColors[agent.status];
-  const height = 0.045 + (agent.energy / 100) * 0.075;
-
-  useFrame(({ clock, camera }) => {
-    if (!pulse.current) return;
-    const active = agent.status === "working" || agent.status === "online";
-    const wave = active ? 1 + Math.sin(clock.elapsedTime * 2.8 + agent.energy) * 0.18 : 0.82;
-    pulse.current.scale.setScalar(wave);
-    if (anchor.current && content.current) {
-      anchor.current.getWorldPosition(worldPosition);
-      surfaceNormal.copy(worldPosition).normalize();
-      towardCamera.copy(camera.position).sub(worldPosition).normalize();
-      content.current.style.opacity = surfaceNormal.dot(towardCamera) > 0.055 ? "1" : "0";
-    }
-  });
-
-  return (
-    <group ref={anchor} position={position} quaternion={orientation}>
-      <mesh position={[0, 0, height / 2]}>
-        <boxGeometry args={[0.032, 0.032, height]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={agent.status === "offline" ? 0.08 : 0.95}
-          transparent
-          opacity={agent.status === "offline" ? 0.4 : 0.96}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh ref={pulse} position={[0, 0, 0.006]}>
-        <ringGeometry args={[0.035, 0.052, 24]} />
-        <meshBasicMaterial color={color} transparent opacity={agent.status === "offline" ? 0.12 : 0.58} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-      <mesh
-        position={[0, 0, height / 2]}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(agent);
-        }}
-        onPointerOver={() => {
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = "grab";
-        }}
-      >
-        <boxGeometry args={[0.075, 0.075, Math.max(0.09, height)]} />
-        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
-      </mesh>
-      {showLabel && (
-        <Html transform sprite center position={[0, 0, height + 0.045]} distanceFactor={2.1} zIndexRange={[9, 1]}>
-          <div ref={content} className={`agentMapLabel agentMapLabel--${agent.status}`}>
-            <i />
-            <span><b>{agent.name}</b><small>{agent.status} · {agent.activity}</small></span>
-          </div>
-        </Html>
-      )}
     </group>
   );
 }
@@ -1409,11 +1241,9 @@ function Earth({
   liveCounts = {},
   onSelect,
   onCountrySelect,
-  onAgentSelect,
+  onCityAreaSelect,
   onDetailChange,
   onZoomChange,
-  onStreetEnter,
-  streetZoomAvailable,
 }: {
   cities: City[];
   selectedCity: City;
@@ -1425,11 +1255,9 @@ function Earth({
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onCountrySelect: (country: CountrySelection) => void;
-  onAgentSelect: (city: City, agent: Agent) => void;
+  onCityAreaSelect: (area: CityAreaSelection) => void;
   onDetailChange: (level: DetailLevel) => void;
   onZoomChange: (progress: number) => void;
-  onStreetEnter: (center: GeoCenter) => void;
-  streetZoomAvailable: boolean;
 }) {
   const globe = useRef<THREE.Group>(null);
   const drag = useRef({ active: false, x: 0, y: 0 });
@@ -1440,33 +1268,27 @@ function Earth({
   const yawRotation = useRef(new THREE.Quaternion());
   const pitchAxis = useRef(new THREE.Vector3(1, 0, 0));
   const yawAxis = useRef(new THREE.Vector3(0, 1, 0));
-  const streetEntryLocked = useRef(false);
   const focusDistanceTarget = useRef<number | null>(null);
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const currentZoomProgress = useRef(-1);
-  const streetMaterial = useRef<THREE.LineBasicMaterial>(null);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
   const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
+  const focusedCountryName = countryLabelByKey.get(focusedCountryKey)?.name ?? selectedCity.country;
   const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
-  const boundaryLevel = labelDetail >= 3 ? "ADM2" : "ADM1";
-  const prefetchFocusedGeography = selectedCountryKey !== null || (labelDetail >= 2 && labelDetail <= 3);
+  const prefetchFocusedGeography = selectedCountryKey !== null || labelDetail >= 2;
   const { data: placesPayload } = useAtlasPlaces(focusedIso3, prefetchFocusedGeography);
-  const { data: boundaryPayload } = useAtlasBoundaries(focusedIso3, boundaryLevel, prefetchFocusedGeography);
+  const { data: boundaryPayload } = useAtlasBoundaries(focusedIso3, "ADM1", prefetchFocusedGeography);
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
     const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
     counts[key] = (counts[key] ?? 0) + seededLiveAgents + (liveCounts[city.name] ?? 0);
     return counts;
   }, {}), [cities, liveCounts]);
-  const globeAgentPreview = useMemo(() => selectedCity.agents
-    .filter((agent) => agent.status !== "offline")
-    .sort((left, right) => right.energy - left.energy)
-    .slice(0, 36), [selectedCity.agents]);
   const detailedPlaceLabels = useMemo(() => {
-    if (labelDetail < 2 || labelDetail > 3) return [];
-    const maximumRank = labelDetail === 2 ? 3 : 5;
-    const limit = labelDetail === 2 ? 72 : 180;
+    if (labelDetail !== 2) return [];
+    const maximumRank = 4;
+    const limit = 140;
     const source: AtlasPlace[] = placesPayload?.places ?? [];
     if (source.length) {
       return source
@@ -1476,7 +1298,9 @@ function Earth({
           id: `geonames-${place.id}`,
           name: place.name,
           rank: place.rank,
-          position: latLngToVector3(place.lat, place.lng, labelDetail === 2 ? 3.12 : 3.13),
+          lat: place.lat,
+          lng: place.lng,
+          position: latLngToVector3(place.lat, place.lng, 3.12),
         }));
     }
     return atlasLabelData.cities
@@ -1486,7 +1310,9 @@ function Earth({
         id: place.id,
         name: place.name,
         rank: place.rank,
-        position: latLngToVector3(place.lat, place.lng, labelDetail === 2 ? 3.12 : 3.13),
+        lat: place.lat,
+        lng: place.lng,
+        position: latLngToVector3(place.lat, place.lng, 3.12),
       }));
   }, [focusedCountryKey, labelDetail, placesPayload?.places]);
 
@@ -1520,7 +1346,6 @@ function Earth({
 
     velocity.current = { x: 0, y: 0 };
     focusDistanceTarget.current = focusDistance;
-    if (focusDistance !== null) streetEntryLocked.current = true;
     if (!initialized.current) {
       orientation.current = targetOrientation;
       applyOrientation();
@@ -1548,38 +1373,21 @@ function Earth({
       }
     }
     const distance = camera.position.length();
-    if (distance > STREET_ENTRY_RESET_DISTANCE) {
-      streetEntryLocked.current = false;
-    } else if (streetZoomAvailable && distance <= STREET_ENTRY_DISTANCE && !streetEntryLocked.current) {
-      streetEntryLocked.current = true;
-      onStreetEnter({
-        lat: THREE.MathUtils.radToDeg(orientation.current.pitch),
-        lng: normalizeLongitude(-90 - THREE.MathUtils.radToDeg(orientation.current.yaw)),
-      });
-    }
     const nextDetail: DetailLevel = distance > COUNTRY_DETAIL_DISTANCE
       ? 1
-      : !streetZoomAvailable
-        ? 2
-        : distance > CITY_DETAIL_DISTANCE
-          ? 2
-          : distance > STREET_ENTRY_DISTANCE
-            ? 3
-            : 4;
+      : 2;
     if (nextDetail !== currentDetail.current) {
       currentDetail.current = nextDetail;
       setLabelDetail(nextDetail);
       onDetailChange(nextDetail);
     }
 
-    const nextZoomProgress = zoomProgressForDistance(distance, streetZoomAvailable);
+    const nextZoomProgress = zoomProgressForDistance(distance);
     if (Math.abs(nextZoomProgress - currentZoomProgress.current) >= 0.5) {
       currentZoomProgress.current = nextZoomProgress;
       onZoomChange(nextZoomProgress);
     }
 
-    const streetOpacity = 1 - THREE.MathUtils.smoothstep(distance, 3.88, 4.6);
-    if (streetMaterial.current) streetMaterial.current.opacity = streetOpacity * 0.72;
     if (focus.current) {
       orientation.current.pitch = THREE.MathUtils.damp(orientation.current.pitch, focus.current.pitch, 9, delta);
       orientation.current.yaw = THREE.MathUtils.damp(orientation.current.yaw, focus.current.yaw, 9, delta);
@@ -1657,18 +1465,20 @@ function Earth({
       </mesh>
       <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} detailLevel={labelDetail} onSelect={onCountrySelect} />
       <EnergyParticles cities={cities} layer={layer} />
-      <StreetMesh cities={cities} layer={layer} materialRef={streetMaterial} />
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      {labelDetail >= 2 && labelDetail <= 3 && boundaryPayload?.available && (
+      {labelDetail === 2 && boundaryPayload?.available && (
         <AdministrativeTerritories
           features={boundaryPayload.features}
           detailLevel={labelDetail}
           cities={cities}
+          countryKey={focusedCountryKey}
+          countryName={focusedCountryName}
           onSelect={onSelect}
           onFocus={focusOnGeography}
+          onAreaSelect={onCityAreaSelect}
         />
       )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
@@ -1685,41 +1495,26 @@ function Earth({
           label={city.name}
           kind="city"
           position={city.position}
+          onSelect={() => {
+            focusOnGeography(city);
+            const seededCity = cities.find((candidate) => (
+              normalizeLabelName(candidate.name) === normalizeLabelName(city.name)
+              && countryEnergyKey(candidate.country) === focusedCountryKey
+            ));
+            if (seededCity) {
+              onSelect(seededCity);
+            } else {
+              onCityAreaSelect({
+                name: city.name,
+                lat: city.lat,
+                lng: city.lng,
+                countryKey: focusedCountryKey,
+                countryName: focusedCountryName,
+              });
+            }
+          }}
         />
       ))}
-      {labelDetail === 3 && detailedPlaceLabels.map((city) => (
-        <GlobeLabel
-          key={city.id}
-          label={city.name}
-          kind="town"
-          position={city.position}
-        />
-      ))}
-      {labelDetail === 4 && globeAgentPreview.map((agent) => (
-        <AgentLight
-          key={agent.id}
-          agent={agent}
-          showLabel
-          onSelect={(selectedAgent) => onAgentSelect(selectedCity, selectedAgent)}
-        />
-      ))}
-      {labelDetail === 4 && (
-        <>
-          {selectedCity.streets.map((street) => (
-            <GlobeLabel
-              key={street.id}
-              label={street.name}
-              kind="street"
-              position={latLngToVector3(
-                selectedCity.lat + street.offsetLatitude,
-                selectedCity.lng + street.offsetLongitude,
-                3.145,
-              )}
-              color={selectedCity.color}
-            />
-          ))}
-        </>
-      )}
       {labelDetail === 1 && layer === "Attention" && cities.length >= 5 && <>
         <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
         <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />
@@ -1736,13 +1531,11 @@ function CanvasWorldFallback({
   focusLocation,
   focusDistance,
   liveCounts,
-  streetZoomAvailable,
   onSelect,
   onCountrySelect,
-  onAgentSelect,
+  onCityAreaSelect,
   onDetailChange,
   onZoomChange,
-  onStreetEnter,
 }: {
   cities: City[];
   selectedCity: City;
@@ -1750,13 +1543,11 @@ function CanvasWorldFallback({
   focusLocation: GeoCenter;
   focusDistance: number | null;
   liveCounts: Record<string, number>;
-  streetZoomAvailable: boolean;
   onSelect: (city: City) => void;
   onCountrySelect: (country: CountrySelection) => void;
-  onAgentSelect: (city: City, agent: Agent) => void;
+  onCityAreaSelect: (area: CityAreaSelection) => void;
   onDetailChange: (level: DetailLevel) => void;
   onZoomChange: (progress: number) => void;
-  onStreetEnter: (center: GeoCenter) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const fallbackCountries = useMemo(() => atlasGeoData.countries.map((country) => {
@@ -1788,15 +1579,14 @@ function CanvasWorldFallback({
   const focusedCityCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryIso = iso3ForCountryKey(focusedCityCountryKey);
   const [fallbackDetail, setFallbackDetail] = useState<DetailLevel>(1);
-  const fallbackBoundaryLevel = fallbackDetail >= 3 ? "ADM2" : "ADM1";
   const { data: fallbackBoundaryPayload } = useAtlasBoundaries(
     focusedCountryIso,
-    fallbackBoundaryLevel,
-    selectedCountryKey !== null || (fallbackDetail >= 2 && fallbackDetail <= 3),
+    "ADM1",
+    selectedCountryKey !== null || fallbackDetail === 2,
   );
   const { data: fallbackPlacesPayload } = useAtlasPlaces(
     focusedCountryIso,
-    selectedCountryKey !== null || (fallbackDetail >= 2 && fallbackDetail <= 3),
+    selectedCountryKey !== null || fallbackDetail === 2,
   );
   const fallbackBoundaryFeatures = useMemo(
     () => fallbackBoundaryPayload?.available ? fallbackBoundaryPayload.features : [],
@@ -1813,8 +1603,8 @@ function CanvasWorldFallback({
     if (!element || !context) return;
 
     const initialProgress = focusDistance === null
-      ? Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE, streetZoomAvailable))
-      : Math.round(zoomProgressForDistance(focusDistance, streetZoomAvailable));
+      ? Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE))
+      : Math.round(zoomProgressForDistance(focusDistance));
     const view = {
       lat: focusLocation.lat,
       lng: focusLocation.lng,
@@ -1832,12 +1622,6 @@ function CanvasWorldFallback({
     let wheelGestureTimer: number | undefined;
 
     const detailForProgress = (progress: number): DetailLevel => {
-      if (streetZoomAvailable) {
-        if (progress >= STREET_ENTRY_PROGRESS) return 4;
-        if (progress >= TOWN_PROGRESS) return 3;
-        if (progress >= CITY_PROGRESS) return 2;
-        return 1;
-      }
       if (progress >= CITY_PROGRESS) return 2;
       return 1;
     };
@@ -1860,7 +1644,7 @@ function CanvasWorldFallback({
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
 
-      const maximumScale = streetZoomAvailable ? 28 : 18;
+      const maximumScale = 28;
       const scaleMultiplier = 0.72 * Math.pow(maximumScale, view.progress / 100);
       const globeRadius = Math.min(width, height) * 0.34 * scaleMultiplier;
       projection = geoOrthographic()
@@ -1911,7 +1695,7 @@ function CanvasWorldFallback({
         context.stroke();
       }
 
-      if (detail >= 2 && detail <= 3) {
+      if (detail === 2) {
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
           context.beginPath();
@@ -1943,55 +1727,17 @@ function CanvasWorldFallback({
         }
       }
 
-      if (detail === 2 || detail === 3) {
-        const maximumRank = detail === 2 ? 3 : 5;
+      if (detail === 2) {
+        const maximumRank = 4;
         const visibleCities = (fallbackPlacesPayload?.places ?? [])
           .filter((city) => city.rank <= maximumRank && isVisible(city.lng, city.lat))
           .sort((left, right) => right.population - left.population)
-          .slice(0, detail === 2 ? 72 : 180);
-        context.font = detail === 2
-          ? "600 7px ui-monospace, SFMono-Regular, Menlo, monospace"
-          : "520 6px ui-monospace, SFMono-Regular, Menlo, monospace";
-        context.fillStyle = detail === 2 ? "#7fdde7" : "#9cb7bb";
+          .slice(0, 140);
+        context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
+        context.fillStyle = "#7fdde7";
         for (const city of visibleCities) {
           const point = projection([city.lng, city.lat]);
           if (point) context.fillText(city.name.toUpperCase(), point[0], point[1]);
-        }
-      }
-
-      if (detail === 4) {
-        context.lineCap = "round";
-        for (const street of selectedCity.streets) {
-          const bearing = THREE.MathUtils.degToRad(street.bearingDegrees);
-          const halfLength = street.lengthDegrees / 2;
-          const centerLat = selectedCity.lat + street.offsetLatitude;
-          const centerLng = selectedCity.lng + street.offsetLongitude;
-          const longitudeScale = Math.max(0.25, Math.cos(THREE.MathUtils.degToRad(centerLat)));
-          const latitudeDelta = Math.cos(bearing) * halfLength;
-          const longitudeDelta = (Math.sin(bearing) * halfLength) / longitudeScale;
-          const start = projection([centerLng - longitudeDelta, centerLat - latitudeDelta]);
-          const end = projection([centerLng + longitudeDelta, centerLat + latitudeDelta]);
-          if (!start || !end) continue;
-          context.beginPath();
-          context.moveTo(start[0], start[1]);
-          context.lineTo(end[0], end[1]);
-          context.strokeStyle = street.roadClass === "primary" ? "rgba(217, 183, 107, 0.86)" : "rgba(91, 168, 178, 0.72)";
-          context.lineWidth = street.roadClass === "primary" ? 2.2 : 1.2;
-          context.stroke();
-          context.font = "600 5px ui-monospace, SFMono-Regular, Menlo, monospace";
-          context.fillStyle = "#d2a95d";
-          context.fillText(street.name.toUpperCase(), (start[0] + end[0]) / 2, (start[1] + end[1]) / 2 - 7);
-        }
-
-        for (const agent of selectedCity.agents) {
-          const point = projection([agent.lng, agent.lat]);
-          if (!point) continue;
-          context.beginPath();
-          context.arc(point[0], point[1], agent.status === "working" ? 4 : 2.8, 0, Math.PI * 2);
-          context.fillStyle = agentStatusColors[agent.status];
-          context.globalAlpha = agent.status === "offline" ? 0.34 : 0.92;
-          context.fill();
-          context.globalAlpha = 1;
         }
       }
 
@@ -2076,7 +1822,17 @@ function CanvasWorldFallback({
           view.lat = THREE.MathUtils.clamp(lat, -82, 82);
           requestDraw();
           const city = fallbackCityByName.get(normalizeLabelName(boundaryFeatureName(boundary.feature)));
-          if (city) onSelect(city);
+          if (city) {
+            onSelect(city);
+          } else {
+            onCityAreaSelect({
+              name: boundaryFeatureName(boundary.feature),
+              lat,
+              lng,
+              countryKey: focusedCityCountryKey,
+              countryName: countryLabelByKey.get(focusedCityCountryKey)?.name ?? selectedCity.country,
+            });
+          }
           return;
         }
       }
@@ -2102,18 +1858,13 @@ function CanvasWorldFallback({
       if (wheelGestureLocked) return;
       wheelGestureLocked = true;
       const previousDetail = detailForProgress(view.progress);
-      const progressStep = (STREET_ENTRY_PROGRESS - TOWN_PROGRESS) / ZOOM_SCROLLS_PER_LEVEL;
+      const progressStep = (100 - CITY_PROGRESS) / (ZOOM_SCROLLS_PER_LEVEL * 2);
       view.progress = THREE.MathUtils.clamp(
         view.progress - Math.sign(event.deltaY) * progressStep,
         0,
-        streetZoomAvailable ? STREET_ENTRY_PROGRESS : 100,
+        100,
       );
       const nextDetail = detailForProgress(view.progress);
-      if (streetZoomAvailable && previousDetail < 4 && nextDetail === 4) {
-        view.lat = selectedCity.lat;
-        view.lng = selectedCity.lng;
-        onStreetEnter({ lat: selectedCity.lat, lng: selectedCity.lng });
-      }
       onZoomChange(view.progress);
       if (nextDetail !== previousDetail) {
         setFallbackDetail(nextDetail);
@@ -2121,23 +1872,12 @@ function CanvasWorldFallback({
       }
       requestDraw();
     };
-    const onDoubleClick = (event: MouseEvent) => {
-      if (detailForProgress(view.progress) !== 4) return;
-      const point = pointerPosition(event as unknown as PointerEvent);
-      const agent = selectedCity.agents.find((candidate) => {
-        const projected = projection([candidate.lng, candidate.lat]);
-        return projected && Math.hypot(projected[0] - point.x, projected[1] - point.y) <= 10;
-      });
-      if (agent) onAgentSelect(selectedCity, agent);
-    };
-
     const observer = new ResizeObserver(requestDraw);
     observer.observe(element);
     element.addEventListener("pointerdown", onPointerDown);
     element.addEventListener("pointermove", onPointerMove);
     element.addEventListener("pointerup", onPointerUp);
     element.addEventListener("wheel", onWheel, { passive: false });
-    element.addEventListener("dblclick", onDoubleClick);
     onZoomChange(view.progress);
     const initialDetail = detailForProgress(view.progress);
     setFallbackDetail(initialDetail);
@@ -2152,7 +1892,6 @@ function CanvasWorldFallback({
       element.removeEventListener("pointermove", onPointerMove);
       element.removeEventListener("pointerup", onPointerUp);
       element.removeEventListener("wheel", onWheel);
-      element.removeEventListener("dblclick", onDoubleClick);
     };
   }, [
     cities,
@@ -2164,15 +1903,14 @@ function CanvasWorldFallback({
     focusDistance,
     focusLocation.lat,
     focusLocation.lng,
-    onAgentSelect,
+    focusedCityCountryKey,
+    onCityAreaSelect,
     onCountrySelect,
     onDetailChange,
     onSelect,
-    onStreetEnter,
     onZoomChange,
     selectedCity,
     selectedCountryKey,
-    streetZoomAvailable,
   ]);
 
   return (
@@ -2205,49 +1943,56 @@ class GlobeRendererBoundary extends Component<
 function EarthScene({
   cities,
   selectedCity,
+  cityAreaTarget,
   countryTarget,
   viewTarget,
   viewRevision,
+  streetViewRequested,
   layer,
   liveCounts = {},
   onSelect,
   onCountrySelect,
+  onCityAreaSelect,
+  onStreetViewChange,
   onAgentSelect,
   onDetailChange,
   onZoomChange,
 }: {
   cities: City[];
   selectedCity: City;
+  cityAreaTarget: CityAreaSelection | null;
   countryTarget: CountrySelection | null;
   viewTarget: RegionView | null;
   viewRevision: number;
+  streetViewRequested: boolean;
   layer: Layer;
   liveCounts: Record<string, number>;
   onSelect: (city: City) => void;
   onCountrySelect: (country: CountrySelection) => void;
+  onCityAreaSelect: (area: CityAreaSelection) => void;
+  onStreetViewChange: (active: boolean) => void;
   onAgentSelect: (city: City, agent: Agent) => void;
   onDetailChange: (level: DetailLevel) => void;
   onZoomChange: (progress: number) => void;
 }) {
-  const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter; viewRevision: number } | null>(null);
-  const [globeState, setGlobeState] = useState<{ cityId: string; center: GeoCenter; distance: number; viewRevision: number } | null>(null);
+  const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
   const [streetRendererActive, setStreetRendererActive] = useState(false);
   const [sceneDetail, setSceneDetail] = useState<DetailLevel>(1);
   const [rendererAvailability, setRendererAvailability] = useState<"checking" | "available" | "unavailable">("checking");
-  const streetCenter = !viewTarget && !countryTarget && streetState?.cityId === selectedCity.id && streetState.viewRevision === viewRevision
+  const streetCenter = streetState?.cityId === selectedCity.id
     ? streetState.center
     : null;
-  const globeOverride = !viewTarget && !countryTarget && globeState?.cityId === selectedCity.id && globeState.viewRevision === viewRevision
-    ? globeState.center
-    : null;
-  const focusLocation = viewTarget ?? countryTarget ?? globeOverride ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+  const focusLocation = viewTarget ?? cityAreaTarget ?? countryTarget ?? { lat: selectedCity.lat, lng: selectedCity.lng };
   const globeFocusDistance = viewTarget?.distance
+    ?? (cityAreaTarget ? CITY_SELECTION_DISTANCE : null)
     ?? countryTarget?.distance
-    ?? (globeOverride ? globeState?.distance ?? null : null);
-  const focusedCountryKey = countryTarget?.key ?? countryEnergyKey(selectedCity.country);
-  const streetZoomAvailable = hasCompleteDeepDetail(focusedCountryKey) && cities.some((city) => (
-    countryEnergyKey(city.country) === focusedCountryKey && city.streets.length > 0
-  ));
+    ?? null;
+  const focusedCountryKey = cityAreaTarget?.countryKey ?? countryTarget?.key ?? countryEnergyKey(selectedCity.country);
+  const streetViewAvailable = Boolean(
+    cityAreaTarget?.cityId === selectedCity.id
+    && hasCompleteDeepDetail(cityAreaTarget.countryKey)
+    && selectedCity.streets.length > 0
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -2257,22 +2002,51 @@ function EarthScene({
     return () => window.clearTimeout(timeout);
   }, [streetCenter]);
 
-  const enterStreetView = useCallback((center: GeoCenter) => {
-    const streetCity = viewTarget || countryTarget
-      ? selectedCity
-      : nearestCityToLocation(cities, center);
-    setRendererAvailability("checking");
-    onSelect(streetCity);
-    setStreetState({ cityId: streetCity.id, center, viewRevision: viewRevision + 1 });
-  }, [cities, countryTarget, onSelect, selectedCity, viewRevision, viewTarget]);
+  useEffect(() => {
+    let releaseTimeout: number | undefined;
+    const syncTimeout = window.setTimeout(() => {
+      if (streetViewRequested && !streetViewAvailable) {
+        onStreetViewChange(false);
+        return;
+      }
 
-  const exitStreetView = useCallback((center: GeoCenter) => {
-    setGlobeState({ cityId: selectedCity.id, center, distance: STREET_EXIT_GLOBE_DISTANCE, viewRevision });
-    setSceneDetail(3);
-    onDetailChange(3);
-    setStreetRendererActive(false);
-    window.setTimeout(() => setStreetState(null), RENDERER_RELEASE_DELAY_MS);
-  }, [onDetailChange, selectedCity.id, viewRevision]);
+      if (streetViewRequested && streetViewAvailable) {
+        if (streetState?.cityId === selectedCity.id) return;
+        setRendererAvailability("checking");
+        setSceneDetail(2);
+        onDetailChange(2);
+        onZoomChange(100);
+        setStreetState({
+          cityId: selectedCity.id,
+          center: { lat: selectedCity.lat, lng: selectedCity.lng },
+        });
+        return;
+      }
+
+      if (!streetState) return;
+      setRendererAvailability("checking");
+      setStreetRendererActive(false);
+      setSceneDetail(2);
+      onDetailChange(2);
+      onZoomChange(zoomProgressForDistance(CITY_SELECTION_DISTANCE));
+      releaseTimeout = window.setTimeout(() => setStreetState(null), RENDERER_RELEASE_DELAY_MS);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(syncTimeout);
+      if (releaseTimeout !== undefined) window.clearTimeout(releaseTimeout);
+    };
+  }, [
+    onDetailChange,
+    onStreetViewChange,
+    onZoomChange,
+    selectedCity.id,
+    selectedCity.lat,
+    selectedCity.lng,
+    streetState,
+    streetViewAvailable,
+    streetViewRequested,
+  ]);
 
   const handleSceneDetailChange = useCallback((level: DetailLevel) => {
     setSceneDetail(level);
@@ -2281,15 +2055,17 @@ function EarthScene({
 
   const selectActivityCity = useCallback((city: City) => {
     setStreetState(null);
-    setGlobeState(null);
+    setStreetRendererActive(false);
+    onStreetViewChange(false);
     onSelect(city);
-  }, [onSelect]);
+  }, [onSelect, onStreetViewChange]);
 
   const selectActivityCountry = useCallback((country: CountrySelection) => {
     setStreetState(null);
-    setGlobeState(null);
+    setStreetRendererActive(false);
+    onStreetViewChange(false);
     onCountrySelect(country);
-  }, [onCountrySelect]);
+  }, [onCountrySelect, onStreetViewChange]);
 
   const showGlobeRenderer = !streetCenter && !streetRendererActive;
   const showStreetRenderer = Boolean(streetCenter && streetRendererActive);
@@ -2326,17 +2102,15 @@ function EarthScene({
     <CanvasWorldFallback
       cities={cities}
       selectedCity={selectedCity}
-      selectedCountryKey={countryTarget?.key ?? null}
+      selectedCountryKey={focusedCountryKey}
       focusLocation={focusLocation}
       focusDistance={globeFocusDistance}
       liveCounts={liveCounts}
-      streetZoomAvailable={streetZoomAvailable}
       onSelect={selectActivityCity}
       onCountrySelect={selectActivityCountry}
-      onAgentSelect={onAgentSelect}
+      onCityAreaSelect={onCityAreaSelect}
       onDetailChange={handleSceneDetailChange}
       onZoomChange={onZoomChange}
-      onStreetEnter={enterStreetView}
     />
   );
 
@@ -2367,7 +2141,7 @@ function EarthScene({
                 <Earth
                   cities={cities}
                   selectedCity={selectedCity}
-                  selectedCountryKey={countryTarget?.key ?? null}
+                  selectedCountryKey={focusedCountryKey}
                   focusLocation={focusLocation}
                   focusDistance={globeFocusDistance}
                   focusRevision={viewRevision}
@@ -2375,11 +2149,9 @@ function EarthScene({
                   liveCounts={liveCounts}
                   onSelect={selectActivityCity}
                   onCountrySelect={selectActivityCountry}
-                  onAgentSelect={onAgentSelect}
+                  onCityAreaSelect={onCityAreaSelect}
                   onDetailChange={handleSceneDetailChange}
                   onZoomChange={onZoomChange}
-                  onStreetEnter={enterStreetView}
-                  streetZoomAvailable={streetZoomAvailable}
                 />
               </Suspense>
               <OrbitControls
@@ -2389,8 +2161,8 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={sceneDetail >= 2 ? 0.28 : 0.35}
-                minDistance={streetZoomAvailable ? STREET_ENTRY_DISTANCE - 0.1 : CITY_ONLY_MIN_DISTANCE}
+                zoomSpeed={sceneDetail >= 2 ? 0.2 : 0.35}
+                minDistance={CITY_MAX_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
               <fog attach="fog" args={["#020508", 11, 42]} />
@@ -2406,8 +2178,6 @@ function EarthScene({
           center={streetCenter}
           city={selectedCity}
           onAgentSelect={(agent) => onAgentSelect(selectedCity, agent)}
-          onExit={exitStreetView}
-          onZoomChange={onZoomChange}
         />
       )}
       {handingOffRenderer && (
@@ -2605,6 +2375,105 @@ function CountryProfileCard({
   );
 }
 
+function CityProfileCard({
+  selection,
+  city,
+  liveCounts,
+  onTopicSelect,
+  onAgentSelect,
+  onCollapse,
+}: {
+  selection: CityAreaSelection;
+  city: City | null;
+  liveCounts: Record<string, number>;
+  onTopicSelect: (topic: string) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
+  onCollapse: () => void;
+}) {
+  const connectedAgents = city ? liveCounts[city.name] ?? 0 : 0;
+  const liveAgents = city
+    ? city.agents.filter((agent) => agent.status !== "offline").length + connectedAgents
+    : 0;
+  const observedAgents = city ? city.agents.length + connectedAgents : 0;
+  const workingAgents = city ? city.agents.filter((agent) => agent.status === "working").length : 0;
+  const density = agentDensityLevel(liveAgents);
+  const densityBarWidth = agentDensityBarWidth(density);
+  const topics = city
+    ? city.hotTopics.length
+      ? city.hotTopics
+      : city.topics.map((topic) => ({ topic, events: 0, energy: 0 }))
+    : [];
+  const roster = city?.agents.slice(0, 12) ?? [];
+  const hiddenAgentCount = city ? Math.max(0, city.agents.length - roster.length) : 0;
+
+  return (
+    <aside className="citySignal countrySignal glassPanel" aria-live="polite" aria-label={`${selection.name} city profile`}>
+      <div className="signalHeader countrySignalHeader">
+        <div>
+          <span className="eyebrow">CITY PROFILE · {selection.countryName.toUpperCase()}</span>
+          <h1>{selection.name}</h1>
+        </div>
+        <div className="signalHeaderActions">
+          <LocateFixed size={18} />
+          <button type="button" className="panelCollapseButton" onClick={onCollapse} aria-label="Collapse City Profile" aria-expanded="true" title="Collapse City Profile">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+      <p className="countryCoordinateLine">
+        Centered at {Math.abs(selection.lat).toFixed(2)}°{selection.lat >= 0 ? "N" : "S"} · {Math.abs(selection.lng).toFixed(2)}°{selection.lng >= 0 ? "E" : "W"}
+      </p>
+      <div className="activityTotal countryActivityTotal">
+        <span style={{ background: density.color, boxShadow: `0 0 11px ${density.color}` }} />
+        <strong>{liveAgents.toLocaleString()}</strong>
+        <small>live agents</small>
+        <em>{workingAgents} working</em>
+      </div>
+      <div className="energyMeter" aria-label={`${selection.name} energy level ${density.level}, ${liveAgents} live agents`}>
+        <div><span>ENERGY LEVEL</span><b style={{ color: density.color }}>LEVEL {density.level} · {density.label}</b></div>
+        <div className="energyMeterTrack" aria-hidden="true"><i style={{ width: `${densityBarWidth}%`, background: density.color, boxShadow: `0 0 12px ${density.color}` }} /></div>
+        <small>Calculated directly from the number of agents currently live in this city</small>
+      </div>
+      <div className="countrySummaryGrid" aria-label={`${selection.name} network summary`}>
+        <span><b>{observedAgents.toLocaleString()}</b><small>Observed</small></span>
+        <span><b>{liveAgents.toLocaleString()}</b><small>Live</small></span>
+        <span><b>{workingAgents.toLocaleString()}</b><small>Working</small></span>
+      </div>
+      {city ? (
+        <>
+          <div className="countrySectionLabel">HOT TOPICS · 24H</div>
+          <div className="topicList">
+            {topics.map((topic, index) => (
+              <button key={topic.topic} onClick={() => onTopicSelect(topic.topic)}>
+                <span>0{index + 1}</span>{topic.topic}<small>{topic.events || "LIVE"}</small><ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+          <div className="countrySectionLabel">LIVE AGENT NETWORK</div>
+          <div className="agentRoster" aria-label={`${selection.name} agents`}>
+            {roster.map((agent) => (
+              <button key={agent.id} onClick={() => onAgentSelect(city, agent)} aria-label={`Open ${agent.name} agent signal`}>
+                <i style={{ background: agentStatusColors[agent.status], boxShadow: `0 0 8px ${agentStatusColors[agent.status]}` }} />
+                <span><b>{agent.name}</b><small>{agent.activity} · {agent.topic}</small></span>
+                <em>{agent.status}</em>
+              </button>
+            ))}
+            {hiddenAgentCount > 0 && (
+              <div className="agentRosterMore"><Bot size={11} />+{hiddenAgentCount} more agents available in Street View</div>
+            )}
+          </div>
+          <button className="viewSignals agentSearchLink" onClick={() => onTopicSelect(selection.name)}>View all city signals <ArrowUpRight size={12} /></button>
+        </>
+      ) : (
+        <div className="countryNoSignal">
+          <Radio size={18} />
+          <span><b>Awaiting Atlas signals</b><small>No connected agents are reporting from this city yet.</small></span>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 function PresenceStudio({
   cities,
   draft,
@@ -2741,12 +2610,14 @@ function PresenceStudio({
 function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; liveAgentHistory: AtlasDailyLiveAgent[] }) {
   const presence = useAtlasPresence();
   const [selectedCityId, setSelectedCityId] = useState(cities[0].id);
+  const [selectedCityArea, setSelectedCityArea] = useState<CityAreaSelection | null>(() => cityAreaSelectionFromCity(cities[0]));
   const [selectedCountry, setSelectedCountry] = useState<CountrySelection | null>(null);
+  const [streetViewRequested, setStreetViewRequested] = useState(false);
   const [regionViewId, setRegionViewId] = useState<RegionViewId | null>(null);
   const [regionViewRevision, setRegionViewRevision] = useState(0);
   const [layer, setLayer] = useState<Layer>("Attention");
   const [detailLevel, setDetailLevel] = useState<DetailLevel>(1);
-  const [zoomProgress, setZoomProgress] = useState(() => Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE, true)));
+  const [zoomProgress, setZoomProgress] = useState(() => Math.round(zoomProgressForDistance(GLOBE_MAX_DISTANCE)));
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchSelectionIndex, setSearchSelectionIndex] = useState(0);
@@ -2760,22 +2631,16 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const joined = presence.connected;
   const selectedCity = cities.find((city) => city.id === selectedCityId) ?? cities[0];
   const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
-  const activeFocusLocation = activeRegionView ?? selectedCountry ?? selectedCity;
-  const focusedCountryKey = selectedCountry?.key ?? countryEnergyKey(selectedCity.country);
-  const streetZoomAvailable = hasCompleteDeepDetail(focusedCountryKey) && cities.some((city) => (
-    countryEnergyKey(city.country) === focusedCountryKey && city.streets.length > 0
-  ));
-  const zoomStops = streetZoomAvailable
-    ? [
-        { level: 1 as DetailLevel, label: "Country", position: 0 },
-        { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
-        { level: 3 as DetailLevel, label: "Town", position: TOWN_PROGRESS },
-        { level: 4 as DetailLevel, label: "Streets", position: STREET_ENTRY_PROGRESS },
-      ]
-    : [
-        { level: 1 as DetailLevel, label: "Country", position: 0 },
-        { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
-      ];
+  const activeFocusLocation = activeRegionView ?? selectedCityArea ?? selectedCountry ?? selectedCity;
+  const streetViewAvailable = Boolean(
+    selectedCityArea?.cityId === selectedCity.id
+    && hasCompleteDeepDetail(selectedCityArea.countryKey)
+    && selectedCity.streets.length > 0
+  );
+  const zoomStops = [
+    { level: 1 as DetailLevel, label: "Country", position: 0 },
+    { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
+  ];
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
     [joined, presence.configured, presence.presenceFeed],
@@ -2797,18 +2662,6 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     + liveAiAgents.filter((agent) => !["Idle", "Offline", "Sleeping"].includes(agent.activity)).length;
   const onlineAgentCount = seededAgents.filter((agent) => agent.status === "online").length
     + liveAiAgents.filter((agent) => agent.status !== "Offline").length;
-  const selectedWorkingAgents = selectedCity.agents.filter((agent) => agent.status === "working").length;
-  const selectedActiveAgents = selectedCity.agents.filter((agent) => agent.status !== "offline").length;
-  const selectedConnectedAgents = liveCounts[selectedCity.name] ?? 0;
-  const selectedLiveAgents = selectedActiveAgents + selectedConnectedAgents;
-  const selectedObservedAgents = selectedCity.agents.length + selectedConnectedAgents;
-  const selectedRosterAgents = selectedCity.agents.slice(0, 12);
-  const hiddenRosterAgentCount = Math.max(0, selectedCity.agents.length - selectedRosterAgents.length);
-  const selectedDensity = agentDensityLevel(selectedLiveAgents);
-  const selectedDensityBarWidth = agentDensityBarWidth(selectedDensity);
-  const selectedHotTopics = selectedCity.hotTopics.length
-    ? selectedCity.hotTopics
-    : selectedCity.topics.map((topic) => ({ topic, events: 0, energy: 0 }));
   const pulseTrend = liveAgentHistory.map((day, index) => ({
     ...day,
     count: day.count + (index === liveAgentHistory.length - 1 ? connectedLiveAiAgents.length : 0),
@@ -2931,6 +2784,18 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     setRegionViewId(null);
     setSelectedCountry(null);
     setSelectedCityId(city.id);
+    setSelectedCityArea(cityAreaSelectionFromCity(city));
+    setStreetViewRequested(false);
+    setProfile(null);
+  }, []);
+
+  const focusCityArea = useCallback((area: CityAreaSelection) => {
+    setRegionViewRevision((revision) => revision + 1);
+    setRegionViewId(null);
+    setSelectedCountry(null);
+    setSelectedCityArea(area);
+    setStreetViewRequested(false);
+    setNetworkCollapsed(false);
     setProfile(null);
   }, []);
 
@@ -2938,6 +2803,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(null);
     setSelectedCountry(country);
+    setSelectedCityArea(null);
+    setStreetViewRequested(false);
     const countryAnchor = cities.find((city) => countryEnergyKey(city.country) === country.key);
     if (countryAnchor) setSelectedCityId(countryAnchor.id);
     setProfile(null);
@@ -2947,6 +2814,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     setRegionViewRevision((revision) => revision + 1);
     setRegionViewId(nextViewId);
     setSelectedCountry(null);
+    setSelectedCityArea(null);
+    setStreetViewRequested(false);
     const nextView = regionViews.find((view) => view.id === nextViewId);
     if (!nextView) return;
     const anchorCity = cities.find((city) => city.id === nextView.anchorCityId);
@@ -2983,7 +2852,24 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     <main className="atlasShell">
       <div className="spaceGlow" />
       <section className="globeStage" aria-label="Interactive living Earth. Drag to rotate; scroll or pinch to zoom.">
-        <EarthScene cities={cities} selectedCity={selectedCity} countryTarget={selectedCountry} viewTarget={activeRegionView} viewRevision={regionViewRevision} layer={layer} liveCounts={liveCounts} onSelect={focusCity} onCountrySelect={focusCountry} onAgentSelect={chooseAgent} onDetailChange={setDetailLevel} onZoomChange={handleZoomChange} />
+        <EarthScene
+          cities={cities}
+          selectedCity={selectedCity}
+          cityAreaTarget={selectedCityArea}
+          countryTarget={selectedCountry}
+          viewTarget={activeRegionView}
+          viewRevision={regionViewRevision}
+          streetViewRequested={streetViewRequested}
+          layer={layer}
+          liveCounts={liveCounts}
+          onSelect={focusCity}
+          onCountrySelect={focusCountry}
+          onCityAreaSelect={focusCityArea}
+          onStreetViewChange={setStreetViewRequested}
+          onAgentSelect={chooseAgent}
+          onDetailChange={setDetailLevel}
+          onZoomChange={handleZoomChange}
+        />
       </section>
 
       <header className="topBar">
@@ -3095,59 +2981,21 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
           }}
         />
       ) : (
-      <aside className="citySignal glassPanel" aria-live="polite">
-        <div className="signalHeader">
-          <div>
-            <span className="eyebrow">LIVE AGENT NETWORK · {selectedCity.country.toUpperCase()}</span>
-            <h1>{selectedCity.name}</h1>
-          </div>
-          <div className="signalHeaderActions">
-            <LocateFixed size={18} />
-            <button type="button" className="panelCollapseButton" onClick={() => setNetworkCollapsed(true)} aria-label="Collapse Live Agent Network" aria-expanded="true" title="Collapse Live Agent Network">
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-        <div className="activityTotal">
-          <span style={{ background: selectedDensity.color, boxShadow: `0 0 11px ${selectedDensity.color}` }} />
-          <strong>{selectedLiveAgents.toLocaleString()}</strong>
-          <small>live agents</small>
-          <em>{selectedWorkingAgents} working</em>
-        </div>
-        <div className="energyMeter" aria-label={`${selectedCity.name} energy level ${selectedDensity.level}, ${selectedLiveAgents} live agents`}>
-          <div><span>ENERGY LEVEL</span><b style={{ color: selectedDensity.color }}>LEVEL {selectedDensity.level} · {selectedDensity.label}</b></div>
-          <div className="energyMeterTrack" aria-hidden="true"><i style={{ width: `${selectedDensityBarWidth}%`, background: selectedDensity.color, boxShadow: `0 0 12px ${selectedDensity.color}` }} /></div>
-          <small>Calculated directly from the number of agents currently live in this city</small>
-        </div>
-        <p className="categoryLine">{selectedLiveAgents} live · {selectedObservedAgents} observed · right now</p>
-        <div className="topicList">
-          {selectedHotTopics.map((topic, index) => (
-            <button key={topic.topic} onClick={() => openSearch(topic.topic)}>
-              <span>0{index + 1}</span>{topic.topic}<small>{topic.events || "LIVE"}</small><ChevronRight size={13} />
-            </button>
-          ))}
-        </div>
-        <div className="agentRoster" aria-label={`${selectedCity.name} agents`}>
-          {selectedRosterAgents.map((agent) => (
-            <button key={agent.id} onClick={() => chooseAgent(selectedCity, agent)} aria-label={`Open ${agent.name} agent signal`}>
-              <i style={{ background: agentStatusColors[agent.status], boxShadow: `0 0 8px ${agentStatusColors[agent.status]}` }} />
-              <span><b>{agent.name}</b><small>{agent.activity} · {agent.topic}</small></span>
-              <em>{agent.status}</em>
-            </button>
-          ))}
-          {hiddenRosterAgentCount > 0 && (
-            <div className="agentRosterMore"><Bot size={11} />+{hiddenRosterAgentCount} more agents visible in street view</div>
-          )}
-        </div>
-        <button className="viewSignals agentSearchLink" onClick={() => openSearch(selectedCity.name)}>View all city signals <ArrowUpRight size={12} /></button>
-      </aside>
+        <CityProfileCard
+          selection={selectedCityArea ?? cityAreaSelectionFromCity(selectedCity)}
+          city={!selectedCityArea || selectedCityArea.cityId === selectedCity.id ? selectedCity : null}
+          liveCounts={liveCounts}
+          onCollapse={() => setNetworkCollapsed(true)}
+          onTopicSelect={openSearch}
+          onAgentSelect={chooseAgent}
+        />
       )}
 
       <div className="zoomIndicator glassPanel" aria-live="polite">
         <div className="zoomIndicatorHeader">
           <span>ZOOM · {zoomProgress}%</span>
           <b>{detailLabels[detailLevel].title}</b>
-          <small>MAX {streetZoomAvailable ? "STREETS" : "CITY"}</small>
+          <small>MAX CITY</small>
         </div>
         <div
           className="zoomScale"
@@ -3180,16 +3028,26 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             ))}
           </div>
         </div>
-        {detailLevel >= 2 && detailLevel <= 3 && (
+        {streetViewAvailable && (
+          <button
+            type="button"
+            className="zoomViewToggle"
+            onClick={() => setStreetViewRequested((active) => !active)}
+          >
+            {streetViewRequested ? <Globe2 size={13} /> : <LocateFixed size={13} />}
+            {streetViewRequested ? "Show Globe" : "Show Street View"}
+          </button>
+        )}
+        {detailLevel === 2 && !streetViewRequested && (
           <div className="geographyCredit">
             PLACES <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GEONAMES</a>
             <span /> BORDERS <a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a>
-            · {detailLevel === 2 ? "ADM1" : "ADM2"}
+            · ADM1
           </div>
         )}
       </div>
 
-      <div className="dragHint"><Move size={13} /><span>Drag to rotate · Scroll or pinch to zoom</span></div>
+      {!streetViewRequested && <div className="dragHint"><Move size={13} /><span>Drag to rotate · Scroll or pinch to zoom</span></div>}
 
       <div className="bottomDock">
         <div className="leftDockControls">
