@@ -432,20 +432,20 @@ button {
 .mapLabel--city {
   padding: 1px 3px;
   color: #7fdde7;
-  font-size: 5.25px;
+  font-size: 3.25px;
   font-weight: 580;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.075em;
   text-shadow: 0 1px 3px #020507, 0 0 7px #020507, 0 0 11px rgba(127, 221, 231, 0.42);
   text-transform: uppercase;
 }
 
 .mapLabel--region {
-  padding: 3px 5px;
+  padding: 2px 4px;
   border: 1px solid currentColor;
   border-radius: 2px;
   background: rgba(3, 10, 14, 0.78);
   box-shadow: 0 0 12px rgba(2, 7, 10, 0.75);
-  font-size: 7px;
+  font-size: 4.25px;
   font-weight: 560;
   letter-spacing: 0.11em;
   text-transform: uppercase;

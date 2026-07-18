@@ -133,6 +133,7 @@ type GeographicLabel = {
   id: string;
   name: string;
   rank: number;
+  population: number;
   lat: number;
   lng: number;
   position: THREE.Vector3;
@@ -142,10 +143,36 @@ const globalCountryLabels: GeographicLabel[] = atlasLabelData.countries.map((lab
   id: label.id,
   name: label.name,
   rank: label.rank,
+  population: 0,
   lat: label.lat,
   lng: label.lng,
   position: latLngToVector3(label.lat, label.lng, 3.105),
 }));
+
+function declutterGeographicLabels(
+  labels: GeographicLabel[],
+  minimumSeparationDegrees: number,
+  limit: number,
+) {
+  const minimumSeparation = THREE.MathUtils.degToRad(minimumSeparationDegrees);
+  const selected: GeographicLabel[] = [];
+  const ranked = [...labels].sort((left, right) => (
+    left.rank - right.rank
+    || right.population - left.population
+    || left.name.localeCompare(right.name)
+  ));
+
+  for (const candidate of ranked) {
+    const overlaps = selected.some((existing) => (
+      geoDistance([candidate.lng, candidate.lat], [existing.lng, existing.lat]) < minimumSeparation
+    ));
+    if (overlaps) continue;
+    selected.push(candidate);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
+}
 
 const countryLabelByKey = new Map(atlasLabelData.countries.map((label) => [
   countryEnergyKey(label.name),
@@ -226,12 +253,14 @@ function GlobeLabel({
   position,
   color,
   onSelect,
+  onHoverChange,
 }: {
   label: string;
   kind: LabelKind;
   position: THREE.Vector3;
   color?: string;
   onSelect?: () => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const anchor = useRef<THREE.Group>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -241,8 +270,8 @@ function GlobeLabel({
   const distanceFactor = kind === "country"
     ? 1.875
     : kind === "city"
-      ? 1.55
-      : 1.5;
+      ? 0.9
+      : 0.95;
 
   useFrame(({ camera }) => {
     if (!anchor.current || !content.current) return;
@@ -263,6 +292,8 @@ function GlobeLabel({
           style={color ? { color } : undefined}
           role={onSelect ? "button" : undefined}
           tabIndex={onSelect ? 0 : undefined}
+          onPointerEnter={() => onHoverChange?.(true)}
+          onPointerLeave={() => onHoverChange?.(false)}
           onClick={(event) => {
             if (!onSelect) return;
             event.stopPropagation();
@@ -1006,20 +1037,21 @@ function AdministrativeTerritories({
   cities,
   countryKey,
   countryName,
+  hoveredIndex,
   onSelect,
-  onFocus,
   onAreaSelect,
+  onHoverChange,
 }: {
   features: AtlasBoundaryFeature[];
   detailLevel: DetailLevel;
   cities: City[];
   countryKey: string;
   countryName: string;
+  hoveredIndex: number | null;
   onSelect: (city: City) => void;
-  onFocus: (center: GeoCenter) => void;
   onAreaSelect: (area: CityAreaSelection) => void;
+  onHoverChange: (index: number | null) => void;
 }) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
   const baseGeometry = useMemo(() => features.length ? buildBoundaryGeometry(features, ADMIN_BASE_RADIUS) : null, [features]);
   const hoveredFeature = hoveredIndex === null ? null : features[hoveredIndex] ?? null;
@@ -1097,28 +1129,32 @@ function AdministrativeTerritories({
       <mesh
         onPointerMove={(event) => {
           const nextIndex = findFeatureAtPoint(event.point, event.eventObject);
-          setHoveredIndex(nextIndex);
+          onHoverChange(nextIndex);
           if (event.buttons === 0) document.body.style.cursor = nextIndex === null ? "grab" : "pointer";
         }}
         onPointerOut={() => {
-          setHoveredIndex(null);
+          onHoverChange(null);
           document.body.style.cursor = "grab";
         }}
         onClick={(event) => {
           if (event.delta > 5) return;
-          const index = hoveredIndex ?? findFeatureAtPoint(event.point, event.eventObject);
-          if (index === null) return;
+          const index = findFeatureAtPoint(event.point, event.eventObject);
+          if (index === null) {
+            onHoverChange(null);
+            return;
+          }
           event.stopPropagation();
-          const [lng, lat] = geoCentroid(features[index]);
-          onFocus({ lat, lng });
+          const selectedCenter = vectorToGeoCenter(event.eventObject.worldToLocal(event.point.clone()));
+          onHoverChange(null);
+          document.body.style.cursor = "grab";
           const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
           if (city) {
             onSelect(city);
           } else {
             onAreaSelect({
               name: boundaryFeatureName(features[index]),
-              lat,
-              lng,
+              lat: selectedCenter.lat,
+              lng: selectedCenter.lng,
               countryKey,
               countryName,
             });
@@ -1272,7 +1308,10 @@ function Earth({
   const initialized = useRef(false);
   const currentDetail = useRef<DetailLevel>(1);
   const currentZoomProgress = useRef(-1);
+  const currentCityLabelBand = useRef(0);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
+  const [cityLabelBand, setCityLabelBand] = useState(0);
+  const [administrativeHover, setAdministrativeHover] = useState<{ countryKey: string; index: number } | null>(null);
   const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryName = countryLabelByKey.get(focusedCountryKey)?.name ?? selectedCity.country;
   const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
@@ -1287,34 +1326,48 @@ function Earth({
   }, {}), [cities, liveCounts]);
   const detailedPlaceLabels = useMemo(() => {
     if (labelDetail !== 2) return [];
-    const maximumRank = 4;
-    const limit = 140;
+    const labelConfig = cityLabelBand === 0
+      ? { maximumRank: 2, minimumSeparation: 5.5, limit: 26 }
+      : cityLabelBand === 1
+        ? { maximumRank: 3, minimumSeparation: 3.6, limit: 48 }
+        : { maximumRank: 5, minimumSeparation: 2.25, limit: 76 };
     const source: AtlasPlace[] = placesPayload?.places ?? [];
     if (source.length) {
-      return source
-        .filter((place) => place.rank <= maximumRank)
-        .slice(0, limit)
+      return declutterGeographicLabels(
+        source
+          .filter((place) => place.rank <= labelConfig.maximumRank)
+          .map((place): GeographicLabel => ({
+            id: `geonames-${place.id}`,
+            name: place.name,
+            rank: place.rank,
+            population: place.population,
+            lat: place.lat,
+            lng: place.lng,
+            position: latLngToVector3(place.lat, place.lng, 3.12),
+          })),
+        labelConfig.minimumSeparation,
+        labelConfig.limit,
+      );
+    }
+    return declutterGeographicLabels(
+      atlasLabelData.cities
+        .filter((place) => (
+          countryEnergyKey(place.country) === focusedCountryKey
+          && place.rank <= labelConfig.maximumRank
+        ))
         .map((place): GeographicLabel => ({
-          id: `geonames-${place.id}`,
+          id: place.id,
           name: place.name,
           rank: place.rank,
+          population: 0,
           lat: place.lat,
           lng: place.lng,
           position: latLngToVector3(place.lat, place.lng, 3.12),
-        }));
-    }
-    return atlasLabelData.cities
-      .filter((place) => countryEnergyKey(place.country) === focusedCountryKey && place.rank <= maximumRank)
-      .slice(0, limit)
-      .map((place): GeographicLabel => ({
-        id: place.id,
-        name: place.name,
-        rank: place.rank,
-        lat: place.lat,
-        lng: place.lng,
-        position: latLngToVector3(place.lat, place.lng, 3.12),
-      }));
-  }, [focusedCountryKey, labelDetail, placesPayload?.places]);
+        })),
+      labelConfig.minimumSeparation,
+      labelConfig.limit,
+    );
+  }, [cityLabelBand, focusedCountryKey, labelDetail, placesPayload?.places]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1322,17 +1375,6 @@ function Earth({
     yawRotation.current.setFromAxisAngle(yawAxis.current, orientation.current.yaw);
     globe.current.quaternion.copy(pitchRotation.current).multiply(yawRotation.current);
   };
-
-  const focusOnGeography = useCallback((location: GeoCenter) => {
-    velocity.current = { x: 0, y: 0 };
-    focus.current = {
-      pitch: THREE.MathUtils.degToRad(location.lat),
-      yaw: nearestEquivalentAngle(
-        -Math.PI / 2 - THREE.MathUtils.degToRad(location.lng),
-        orientation.current.yaw,
-      ),
-    };
-  }, []);
 
   useLayoutEffect(() => {
     if (!globe.current) return;
@@ -1380,6 +1422,12 @@ function Earth({
       currentDetail.current = nextDetail;
       setLabelDetail(nextDetail);
       onDetailChange(nextDetail);
+    }
+
+    const nextCityLabelBand = distance > 5.4 ? 0 : distance > 4.45 ? 1 : 2;
+    if (nextCityLabelBand !== currentCityLabelBand.current) {
+      currentCityLabelBand.current = nextCityLabelBand;
+      setCityLabelBand(nextCityLabelBand);
     }
 
     const nextZoomProgress = zoomProgressForDistance(distance);
@@ -1476,9 +1524,16 @@ function Earth({
           cities={cities}
           countryKey={focusedCountryKey}
           countryName={focusedCountryName}
+          hoveredIndex={administrativeHover?.countryKey === focusedCountryKey ? administrativeHover.index : null}
           onSelect={onSelect}
-          onFocus={focusOnGeography}
           onAreaSelect={onCityAreaSelect}
+          onHoverChange={(index) => {
+            setAdministrativeHover((current) => {
+              if (index === null) return current === null ? current : null;
+              if (current?.countryKey === focusedCountryKey && current.index === index) return current;
+              return { countryKey: focusedCountryKey, index };
+            });
+          }}
         />
       )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
@@ -1489,32 +1544,44 @@ function Earth({
           position={country.position}
         />
       ))}
-      {labelDetail === 2 && detailedPlaceLabels.map((city) => (
-        <GlobeLabel
-          key={city.id}
-          label={city.name}
-          kind="city"
-          position={city.position}
-          onSelect={() => {
-            focusOnGeography(city);
-            const seededCity = cities.find((candidate) => (
-              normalizeLabelName(candidate.name) === normalizeLabelName(city.name)
-              && countryEnergyKey(candidate.country) === focusedCountryKey
-            ));
-            if (seededCity) {
-              onSelect(seededCity);
-            } else {
-              onCityAreaSelect({
-                name: city.name,
-                lat: city.lat,
-                lng: city.lng,
-                countryKey: focusedCountryKey,
-                countryName: focusedCountryName,
-              });
-            }
-          }}
-        />
-      ))}
+      {labelDetail === 2 && detailedPlaceLabels.map((city) => {
+        const boundaryIndex = boundaryPayload?.features.findIndex((feature) => (
+          geoContains(feature, [city.lng, city.lat])
+        )) ?? -1;
+        return (
+          <GlobeLabel
+            key={city.id}
+            label={city.name}
+            kind="city"
+            position={city.position}
+            onHoverChange={(hovered) => {
+              setAdministrativeHover(
+                hovered && boundaryIndex >= 0
+                  ? { countryKey: focusedCountryKey, index: boundaryIndex }
+                  : null,
+              );
+            }}
+            onSelect={() => {
+              setAdministrativeHover(null);
+              const seededCity = cities.find((candidate) => (
+                normalizeLabelName(candidate.name) === normalizeLabelName(city.name)
+                && countryEnergyKey(candidate.country) === focusedCountryKey
+              ));
+              if (seededCity) {
+                onSelect(seededCity);
+              } else {
+                onCityAreaSelect({
+                  name: city.name,
+                  lat: city.lat,
+                  lng: city.lng,
+                  countryKey: focusedCountryKey,
+                  countryName: focusedCountryName,
+                });
+              }
+            }}
+          />
+        );
+      })}
       {labelDetail === 1 && layer === "Attention" && cities.length >= 5 && <>
         <AttentionFlow from={cities[3]} to={cities[0]} color="#ff8f62" delay={0.1} />
         <AttentionFlow from={cities[4]} to={cities[0]} color="#a68cff" delay={0.48} />
@@ -1776,7 +1843,11 @@ function CanvasWorldFallback({
       const location = projection.invert?.([x, y]);
       if (!location) return null;
       const index = fallbackBoundaryFeatures.findIndex((feature) => geoContains(feature, location));
-      return index < 0 ? null : { index, feature: fallbackBoundaryFeatures[index] };
+      return index < 0 ? null : {
+        index,
+        feature: fallbackBoundaryFeatures[index],
+        center: { lat: location[1], lng: normalizeLongitude(location[0]) },
+      };
     };
     const onPointerDown = (event: PointerEvent) => {
       const point = pointerPosition(event);
@@ -1817,9 +1888,9 @@ function CanvasWorldFallback({
       if (detailForProgress(view.progress) >= 2) {
         const boundary = hitBoundary(point.x, point.y);
         if (boundary) {
-          const [lng, lat] = geoCentroid(boundary.feature);
-          view.lng = normalizeLongitude(lng);
-          view.lat = THREE.MathUtils.clamp(lat, -82, 82);
+          view.lng = boundary.center.lng;
+          view.lat = THREE.MathUtils.clamp(boundary.center.lat, -82, 82);
+          view.hoveredBoundaryIndex = null;
           requestDraw();
           const city = fallbackCityByName.get(normalizeLabelName(boundaryFeatureName(boundary.feature)));
           if (city) {
@@ -1827,8 +1898,8 @@ function CanvasWorldFallback({
           } else {
             onCityAreaSelect({
               name: boundaryFeatureName(boundary.feature),
-              lat,
-              lng,
+              lat: boundary.center.lat,
+              lng: boundary.center.lng,
               countryKey: focusedCityCountryKey,
               countryName: countryLabelByKey.get(focusedCityCountryKey)?.name ?? selectedCity.country,
             });
