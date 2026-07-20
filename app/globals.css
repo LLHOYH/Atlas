@@ -411,8 +411,8 @@ button {
   transition: opacity 120ms ease, color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
-.mapLabel--interactive:hover,
-.mapLabel--interactive:focus-visible {
+.mapLabel--interactive.mapLabel--linked:hover,
+.mapLabel--interactive.mapLabel--linked:focus-visible {
   outline: none;
   background: rgba(240, 198, 111, 0.12);
   color: #ffe2a0;

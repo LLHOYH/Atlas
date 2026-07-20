@@ -289,7 +289,7 @@ function GlobeLabel({
       <Html transform sprite center distanceFactor={distanceFactor} zIndexRange={[8, 0]}>
         <div
           ref={content}
-          className={`mapLabel mapLabel--${kind} ${onSelect ? "mapLabel--interactive" : ""}`}
+          className={`mapLabel mapLabel--${kind} ${onSelect ? "mapLabel--interactive" : ""} ${onHoverChange ? "mapLabel--linked" : ""}`}
           style={color ? { color } : undefined}
           role={onSelect ? "button" : undefined}
           tabIndex={onSelect ? 0 : undefined}
@@ -1361,7 +1361,11 @@ function Earth({
   const currentCityLabelBand = useRef(0);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
   const [cityLabelBand, setCityLabelBand] = useState(0);
-  const [administrativeHover, setAdministrativeHover] = useState<{ countryKey: string; featureId: string } | null>(null);
+  const [administrativeHover, setAdministrativeHover] = useState<{
+    countryKey: string;
+    featureId: string;
+    source: "surface" | "label";
+  } | null>(null);
   const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryName = countryLabelByKey.get(focusedCountryKey)?.name ?? selectedCity.country;
   const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
@@ -1627,10 +1631,18 @@ function Earth({
           onAreaSelect={onCityAreaSelect}
           onHoverChange={(index) => {
             setAdministrativeHover((current) => {
+              const currentLabelStillExists = current?.source === "label"
+                && current.countryKey === focusedCountryKey
+                && activeBoundaryFeatures.some((feature) => boundaryFeatureId(feature) === current.featureId);
+              if (currentLabelStillExists) return current;
               if (index === null) return current === null ? current : null;
               const featureId = boundaryFeatureId(activeBoundaryFeatures[index]);
-              if (current?.countryKey === focusedCountryKey && current.featureId === featureId) return current;
-              return { countryKey: focusedCountryKey, featureId };
+              if (
+                current?.countryKey === focusedCountryKey
+                && current.featureId === featureId
+                && current.source === "surface"
+              ) return current;
+              return { countryKey: focusedCountryKey, featureId, source: "surface" };
             });
           }}
         />
@@ -1661,13 +1673,17 @@ function Earth({
             kind="city"
             position={city.position}
             color={boundaryHovered ? "#ffd36f" : undefined}
-            onHoverChange={(hovered) => {
-              setAdministrativeHover(
-                hovered && boundaryIndex >= 0
-                  ? { countryKey: focusedCountryKey, featureId: boundaryFeatureId(activeBoundaryFeatures[boundaryIndex]) }
-                  : null,
-              );
-            }}
+            onHoverChange={boundaryFeature ? (hovered) => {
+              const featureId = boundaryFeatureId(boundaryFeature);
+              setAdministrativeHover((current) => {
+                if (hovered) return { countryKey: focusedCountryKey, featureId, source: "label" };
+                return current?.source === "label"
+                  && current.countryKey === focusedCountryKey
+                  && current.featureId === featureId
+                  ? null
+                  : current;
+              });
+            } : undefined}
             onSelect={() => {
               setAdministrativeHover(null);
               const seededCity = cities.find((candidate) => (

@@ -246,6 +246,12 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /feature\.properties\?\.atlasPlaceId === city\.id/);
   assert.match(experienceSource, /position: latLngToVector3\(center\.lat, center\.lng, 3\.12\)/);
   assert.match(experienceSource, /color=\{boundaryHovered \? "#ffd36f" : undefined\}/);
+  assert.match(experienceSource, /source: "surface" \| "label"/);
+  assert.match(experienceSource, /const currentLabelStillExists = current\?\.source === "label"/);
+  assert.match(experienceSource, /source: "surface"/);
+  assert.match(experienceSource, /source: "label"/);
+  assert.match(experienceSource, /onHoverChange=\{boundaryFeature \?/);
+  assert.match(globalStylesSource, /\.mapLabel--interactive\.mapLabel--linked:hover/);
   assert.match(experienceSource, /onHoverChange\(null\)/);
   assert.doesNotMatch(experienceSource, /hoveredIndex \?\? findFeatureAtPoint/);
   assert.match(experienceSource, /focus\.current = targetOrientation/);
