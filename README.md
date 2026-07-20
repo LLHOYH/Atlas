@@ -6,9 +6,11 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 5 — Global Administrative Geography & Dense Local Detail · In progress**
+**Phase 5 — Global Administrative Geography & Dense Local Detail · Complete**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, account-linked device setup, and individual agents at deeper zoom levels. Phase 5 replaces sparse prototype geography with dense worldwide populated places and published administrative boundaries while retaining the live-agent street transition.
+**Next: Phase 6 — Global Presence Rendering**
+
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, account-linked device setup, and individual agents at deeper zoom levels. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. The original goal of displaying every participating agent and user across the world now moves to Phase 6, where presence will be aggregated and rendered at privacy-safe geographic precision.
 
 [`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 

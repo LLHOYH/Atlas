@@ -55,6 +55,9 @@ const seedSource = await readFile(
   new URL("../supabase/seed.sql", import.meta.url),
   "utf8",
 );
+const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
+const phaseFiveSource = await readFile(new URL("../docs/phase-5.md", import.meta.url), "utf8");
+const phaseSixSource = await readFile(new URL("../docs/phase-6.md", import.meta.url), "utf8");
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -196,6 +199,14 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.match(experienceSource, /dpr=\{\[1, 1\.35\]\}/);
   assert.match(experienceSource, /antialias: false/);
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
+});
+
+test("phase 5 closes on global geography and defers worldwide presence to phase 6", () => {
+  assert.match(readmeSource, /Phase 5 — Global Administrative Geography & Dense Local Detail · Complete/);
+  assert.match(readmeSource, /Next: Phase 6 — Global Presence Rendering/);
+  assert.match(phaseFiveSource, /does not claim complete worldwide agent or human location coverage/);
+  assert.match(phaseSixSource, /show participating humans and AI agents across the living world/);
+  assert.match(phaseSixSource, /Location is user-approved and approximate by default/);
 });
 
 test("zoom progress exposes only country and a deep city range", () => {
