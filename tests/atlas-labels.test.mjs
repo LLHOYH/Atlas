@@ -245,7 +245,10 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
   assert.match(experienceSource, /const selectedCenter = boundaryFeatureCenter\(features\[index\]\)/);
   assert.match(experienceSource, /feature\.properties\?\.atlasPlaceId === city\.id/);
-  assert.match(experienceSource, /position: latLngToVector3\(center\.lat, center\.lng, 3\.12\)/);
+  assert.match(experienceSource, /const CITY_LABEL_RADIUS = ADMIN_BASE_RADIUS \+ 0\.006/);
+  assert.match(experienceSource, /position: latLngToVector3\(center\.lat, center\.lng, CITY_LABEL_RADIUS\)/);
+  assert.match(experienceSource, /detailLevel >= 2 \? \(/);
+  assert.match(experienceSource, /<meshBasicMaterial color="#07303a"/);
   assert.match(experienceSource, /color=\{boundaryHovered \? "#ffd36f" : undefined\}/);
   assert.match(experienceSource, /source: "surface" \| "label"/);
   assert.match(experienceSource, /const currentLabelStillExists = current\?\.source === "label"/);

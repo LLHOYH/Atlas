@@ -613,6 +613,7 @@ const COUNTRY_TOP_RADIUS = 3.026;
 const COUNTRY_HOVER_RADIUS = 3.22;
 const ADMIN_BASE_RADIUS = 3.052;
 const ADMIN_HOVER_RADIUS = 3.135;
+const CITY_LABEL_RADIUS = ADMIN_BASE_RADIUS + 0.006;
 
 function unpackCountryRing(flatRing: number[]) {
   const ring: CountryPoint[] = [];
@@ -1019,14 +1020,18 @@ function CountrySurfaces({
             geometry={country.geometry}
             frustumCulled={false}
           >
-            <meshStandardMaterial
-              color={density.color}
-              emissive={density.color}
-              emissiveIntensity={0.18 + density.level * 0.11}
-              roughness={0.56}
-              metalness={0.16}
-              side={THREE.DoubleSide}
-            />
+            {detailLevel >= 2 ? (
+              <meshBasicMaterial color="#07303a" side={THREE.DoubleSide} />
+            ) : (
+              <meshStandardMaterial
+                color={density.color}
+                emissive={density.color}
+                emissiveIntensity={0.18 + density.level * 0.11}
+                roughness={0.56}
+                metalness={0.16}
+                side={THREE.DoubleSide}
+              />
+            )}
           </mesh>
           <lineSegments
             ref={(node) => {
@@ -1353,7 +1358,7 @@ function Earth({
             population: place.population,
             lat: place.lat,
             lng: place.lng,
-            position: latLngToVector3(place.lat, place.lng, 3.12),
+            position: latLngToVector3(place.lat, place.lng, CITY_LABEL_RADIUS),
           })),
         labelConfig.minimumSeparation,
         labelConfig.limit,
@@ -1372,7 +1377,7 @@ function Earth({
           population: 0,
           lat: place.lat,
           lng: place.lng,
-          position: latLngToVector3(place.lat, place.lng, 3.12),
+          position: latLngToVector3(place.lat, place.lng, CITY_LABEL_RADIUS),
         })),
       labelConfig.minimumSeparation,
       labelConfig.limit,
@@ -1408,7 +1413,7 @@ function Earth({
         ...place,
         lat: center.lat,
         lng: center.lng,
-        position: latLngToVector3(center.lat, center.lng, 3.12),
+        position: latLngToVector3(center.lat, center.lng, CITY_LABEL_RADIUS),
       };
     });
   }, [activeBoundaryFeatures, detailedPlaceLabels]);
