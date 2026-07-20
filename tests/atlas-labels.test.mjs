@@ -253,7 +253,11 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /<meshBasicMaterial color="#07303a"/);
   assert.match(experienceSource, /color=\{boundaryHovered \? "#ffd36f" : undefined\}/);
   assert.match(experienceSource, /source: "surface" \| "label"/);
-  assert.match(experienceSource, /const currentLabelStillExists = current\?\.source === "label"/);
+  assert.match(experienceSource, /const administrativeLabelHover = useRef/);
+  assert.match(experienceSource, /administrativeLabelHover\.current = null;[\s\S]*?setAdministrativeHover\(null\);/);
+  assert.match(experienceSource, /activeBoundaryIndexById\.get\(administrativeHover\.featureId\) \?\? null/);
+  assert.match(experienceSource, /nextFeatureId === null \|\| nextFeatureId === labelHover\.featureId/);
+  assert.doesNotMatch(experienceSource, /const currentLabelStillExists/);
   assert.match(experienceSource, /source: "surface"/);
   assert.match(experienceSource, /source: "label"/);
   assert.match(experienceSource, /onHoverChange=\{boundaryFeature \?/);
@@ -262,7 +266,7 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.doesNotMatch(experienceSource, /hoveredIndex \?\? findFeatureAtPoint/);
   assert.match(experienceSource, /focus\.current = targetOrientation/);
   assert.match(experienceSource, /center: boundaryFeatureCenter\(fallbackBoundaryFeatures\[index\]\)/);
-  assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.135/);
+  assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.078/);
   assert.match(experienceSource, /emissive="#ffd36f"/);
   assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);
   assert.match(geographyRouteSource, /www\.geoboundaries\.org\/api\/current\/gbOpen/);
