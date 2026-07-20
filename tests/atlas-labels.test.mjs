@@ -219,9 +219,10 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);
-  assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 16/);
-  assert.match(experienceSource, /const COUNTRY_ZOOM_SPEED = 0\.14/);
-  assert.match(experienceSource, /const CITY_ZOOM_SPEED = 0\.075/);
+  assert.match(experienceSource, /const ZOOM_SPEED_MULTIPLIER = 1\.5/);
+  assert.match(experienceSource, /const ZOOM_SCROLLS_PER_LEVEL = 16 \/ ZOOM_SPEED_MULTIPLIER/);
+  assert.match(experienceSource, /const COUNTRY_ZOOM_SPEED = 0\.14 \* ZOOM_SPEED_MULTIPLIER/);
+  assert.match(experienceSource, /const CITY_ZOOM_SPEED = 0\.075 \* ZOOM_SPEED_MULTIPLIER/);
   assert.match(experienceSource, /const CITY_PROGRESS = 45/);
   assert.match(experienceSource, /cityBandForProgress\(nextZoomProgress\)/);
   assert.match(experienceSource, /\(100 - CITY_PROGRESS\) \/ \(ZOOM_SCROLLS_PER_LEVEL \* 2\)/);
