@@ -894,6 +894,48 @@ function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number)
   return { geometry, outline };
 }
 
+function buildBoundaryOutlineGeometry(features: AtlasBoundaryFeature[], radius: number) {
+  const outlinePositions: number[] = [];
+  for (const feature of features) {
+    for (const rings of boundaryPolygons(feature)) {
+      for (const ring of rings) {
+        for (let index = 0; index < ring.length; index += 1) {
+          const start = sphericalDirection(ring[index]);
+          const end = sphericalDirection(ring[(index + 1) % ring.length]);
+          const divisions = Math.max(1, Math.ceil(start.angleTo(end) / 0.045));
+          for (let division = 0; division < divisions; division += 1) {
+            const from = start.clone().lerp(end, division / divisions).normalize().multiplyScalar(radius);
+            const to = start.clone().lerp(end, (division + 1) / divisions).normalize().multiplyScalar(radius);
+            outlinePositions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+          }
+        }
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function LocalAreaContext({ features }: { features: AtlasBoundaryFeature[] }) {
+  const geometry = useMemo(
+    () => features.length ? buildBoundaryOutlineGeometry(features, ADMIN_BASE_RADIUS - 0.006) : null,
+    [features],
+  );
+  if (!geometry) return null;
+  return (
+    <group>
+      <lineSegments geometry={geometry} frustumCulled={false} raycast={() => undefined}>
+        <lineBasicMaterial color="#75bdc7" transparent opacity={0.42} depthWrite={false} />
+      </lineSegments>
+      <lineSegments geometry={geometry} scale={1.0007} frustumCulled={false} raycast={() => undefined}>
+        <lineBasicMaterial color="#246a76" transparent opacity={0.28} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </lineSegments>
+    </group>
+  );
+}
+
 function CountrySurfaces({
   liveAgentsByCountry = {},
   selectedCountryKey,
@@ -1068,6 +1110,7 @@ function AdministrativeTerritories({
   onHoverChange: (index: number | null) => void;
 }) {
   const cityByName = useMemo(() => new Map(cities.map((city) => [normalizeLabelName(city.name), city])), [cities]);
+  const municipalLayer = features.some((feature) => feature.properties?.shapeType === "CITY");
   const baseGeometry = useMemo(() => features.length ? buildBoundaryGeometry(features, ADMIN_BASE_RADIUS) : null, [features]);
   const hoveredFeature = hoveredIndex === null ? null : features[hoveredIndex] ?? null;
   const hoveredGeometry = useMemo(
@@ -1095,7 +1138,7 @@ function AdministrativeTerritories({
           roughness={0.62}
           metalness={0.12}
           transparent
-          opacity={detailLevel === 2 ? 0.13 : 0.075}
+          opacity={municipalLayer ? 0.28 : detailLevel === 2 ? 0.13 : 0.075}
           depthWrite={false}
           side={THREE.DoubleSide}
         />
@@ -1104,10 +1147,15 @@ function AdministrativeTerritories({
         <lineBasicMaterial
           color={detailLevel === 2 ? "#82dbe2" : "#659ca5"}
           transparent
-          opacity={detailLevel === 2 ? 0.62 : 0.46}
+          opacity={municipalLayer ? 0.94 : detailLevel === 2 ? 0.62 : 0.46}
           depthWrite={false}
         />
       </lineSegments>
+      {municipalLayer && (
+        <lineSegments geometry={baseGeometry.outline} scale={1.0007} frustumCulled={false} raycast={() => undefined}>
+          <lineBasicMaterial color="#58c6d4" transparent opacity={0.34} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </lineSegments>
+      )}
       {hoveredFeature && hoveredGeometry && (
         <group>
           <mesh geometry={hoveredGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
@@ -1392,6 +1440,10 @@ function Earth({
     () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
     [activeBoundaryPayload],
   );
+  const contextBoundaryFeatures = useMemo(
+    () => focusedIso3 === "USA" ? cityBoundaryPayload?.contextFeatures ?? [] : [],
+    [cityBoundaryPayload?.contextFeatures, focusedIso3],
+  );
   const displayPlaceLabels = useMemo(() => {
     const featureByPlaceId = new Map(activeBoundaryFeatures.flatMap((feature) => {
       const id = feature.properties?.atlasPlaceId;
@@ -1558,6 +1610,9 @@ function Earth({
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
+      {labelDetail === 2 && contextBoundaryFeatures.length > 0 && (
+        <LocalAreaContext features={contextBoundaryFeatures} />
+      )}
       {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
         <AdministrativeTerritories
           features={activeBoundaryFeatures}
@@ -1725,6 +1780,10 @@ function CanvasWorldFallback({
     },
     [fallbackBoundaryPayload, fallbackCityBoundaryPayload, focusedCountryIso],
   );
+  const fallbackContextFeatures = useMemo(
+    () => focusedCountryIso === "USA" ? fallbackCityBoundaryPayload?.contextFeatures ?? [] : [],
+    [fallbackCityBoundaryPayload?.contextFeatures, focusedCountryIso],
+  );
   const fallbackDisplayPlaces = useMemo(() => {
     const featureByPlaceId = new Map(fallbackBoundaryFeatures.flatMap((feature) => {
       const id = feature.properties?.atlasPlaceId;
@@ -1840,6 +1899,13 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2) {
+        for (const feature of fallbackContextFeatures) {
+          context.beginPath();
+          path(feature);
+          context.strokeStyle = "rgba(117, 189, 199, 0.44)";
+          context.lineWidth = 0.72;
+          context.stroke();
+        }
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
           context.beginPath();
@@ -2049,6 +2115,7 @@ function CanvasWorldFallback({
     fallbackBoundaryFeatures,
     fallbackCountries,
     fallbackCityByName,
+    fallbackContextFeatures,
     fallbackDisplayPlaces,
     focusDistance,
     focusLocation.lat,

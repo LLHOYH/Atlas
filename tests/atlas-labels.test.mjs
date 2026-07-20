@@ -237,6 +237,9 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /useAtlasCityBoundaries\(/);
   assert.match(experienceSource, /focusedIso3 !== "USA"/);
   assert.match(experienceSource, /const activeBoundaryPayload = focusedIso3 === "USA" \? cityBoundaryPayload : boundaryPayload/);
+  assert.match(experienceSource, /function LocalAreaContext\(/);
+  assert.match(experienceSource, /<LocalAreaContext features=\{contextBoundaryFeatures\}/);
+  assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
   assert.match(experienceSource, /const selectedCenter = boundaryFeatureCenter\(features\[index\]\)/);
@@ -260,6 +263,9 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(cityBoundaryRouteSource, /U\.S\. Census Bureau TIGERweb/);
   assert.match(cityBoundaryRouteSource, /Incorporated Places/);
   assert.match(cityBoundaryRouteSource, /Census Designated Places/);
+  assert.match(cityBoundaryRouteSource, /TIGERWEB_COUNTY_SERVICE/);
+  assert.match(cityBoundaryRouteSource, /shapeType: "CITY_CONTEXT"/);
+  assert.match(cityBoundaryRouteSource, /contextFeatures/);
   assert.match(cityBoundaryRouteSource, /esriGeometryMultipoint/);
   assert.match(cityBoundaryRouteSource, /function planarRingCentroid/);
   assert.match(cityBoundaryRouteSource, /atlasPlaceId: place\.id/);

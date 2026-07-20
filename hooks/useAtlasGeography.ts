@@ -63,6 +63,7 @@ export type AtlasBoundaryPayload = {
   };
   type: "FeatureCollection";
   features: AtlasBoundaryFeature[];
+  contextFeatures?: AtlasBoundaryFeature[];
 };
 
 const placeCache = new Map<string, AtlasPlacesPayload>();
