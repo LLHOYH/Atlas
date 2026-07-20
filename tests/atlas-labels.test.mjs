@@ -252,7 +252,8 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
-  assert.match(experienceSource, /const selectedCenter = boundaryFeatureCenter\(features\[index\]\)/);
+  assert.match(experienceSource, /const clickedCenter = vectorToGeoCenter\(event\.eventObject\.worldToLocal\(event\.point\.clone\(\)\)\)/);
+  assert.match(experienceSource, /const selectedCenter = boundaryFeatureCenter\(features\[index\], clickedCenter\)/);
   assert.match(experienceSource, /feature\.properties\?\.atlasPlaceId === city\.id/);
   assert.match(experienceSource, /const CITY_LABEL_RADIUS = ADMIN_BASE_RADIUS \+ 0\.006/);
   assert.match(experienceSource, /position: latLngToVector3\(center\.lat, center\.lng, CITY_LABEL_RADIUS\)/);
@@ -275,6 +276,10 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /center: boundaryFeatureCenter\(fallbackBoundaryFeatures\[index\]\)/);
   assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.078/);
   assert.match(experienceSource, /emissive="#ffd36f"/);
+  assert.match(experienceSource, /function normalizeBoundaryOrientation\(/);
+  assert.match(experienceSource, /geoArea\(feature\) <= Math\.PI \* 2/);
+  assert.match(experienceSource, /activeBoundaryPayload\.features\.map\(normalizeBoundaryOrientation\)/);
+  assert.match(experienceSource, /fallbackActiveBoundaryPayload\.features\.map\(normalizeBoundaryOrientation\)/);
   assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);
   assert.match(geographyRouteSource, /www\.geoboundaries\.org\/api\/current\/gbOpen/);
   assert.match(geographyRouteSource, /simplifiedGeometryGeoJSON/);
@@ -282,6 +287,7 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(geographyRouteSource, /No open administrative boundary is published/);
   assert.match(geographyRouteSource, /const LOCAL_BOUNDARY_LEVELS = \["ADM3", "ADM2", "ADM1"\]/);
   assert.match(geographyRouteSource, /requestedLevel: level/);
+  assert.match(geographyRouteSource, /\.map\(normalizeBoundaryOrientation\)/);
   assert.match(geographyHookSource, /atlas-geography\/places/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/city-boundaries/);

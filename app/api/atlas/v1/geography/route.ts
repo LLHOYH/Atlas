@@ -1,3 +1,4 @@
+import { geoArea } from "d3-geo";
 import { NextResponse } from "next/server";
 
 const GEOGRAPHY_LEVELS = new Set(["ADM1", "ADM2", "ADM3", "ADM4", "ADM5", "LOCAL"]);
@@ -14,10 +15,27 @@ type GeoBoundariesMetadata = {
 };
 
 type BoundaryCollection = GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+type BoundaryFeature = BoundaryCollection["features"][number];
 
 const cacheHeaders = {
   "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000",
 };
+
+function normalizeBoundaryOrientation(feature: BoundaryFeature): BoundaryFeature {
+  if (geoArea(feature) <= Math.PI * 2) return feature;
+  const geometry = feature.geometry.type === "Polygon"
+    ? {
+      ...feature.geometry,
+      coordinates: feature.geometry.coordinates.map((ring) => [...ring].reverse()),
+    }
+    : {
+      ...feature.geometry,
+      coordinates: feature.geometry.coordinates.map((polygon) => (
+        polygon.map((ring) => [...ring].reverse())
+      )),
+    };
+  return { ...feature, geometry } as BoundaryFeature;
+}
 
 function unavailable(iso: string, level: string, reason: string) {
   return NextResponse.json({
@@ -69,7 +87,9 @@ export async function GET(request: Request) {
 
     const collection = await geometryResponse.json() as BoundaryCollection;
     const features = Array.isArray(collection.features)
-      ? collection.features.filter((feature) => feature?.geometry?.type === "Polygon" || feature?.geometry?.type === "MultiPolygon")
+      ? collection.features
+        .filter((feature) => feature?.geometry?.type === "Polygon" || feature?.geometry?.type === "MultiPolygon")
+        .map(normalizeBoundaryOrientation)
       : [];
 
     return NextResponse.json({

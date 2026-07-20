@@ -5,7 +5,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { geoBounds, geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
+import { geoArea, geoBounds, geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import atlasGeoData from "./atlas-geo-data.json";
 import atlasLabelData from "./atlas-label-data.json";
 import {
@@ -787,6 +787,22 @@ function boundaryFeatureId(feature: AtlasBoundaryFeature) {
   return String(feature.properties?.shapeID ?? feature.properties?.atlasPlaceId ?? boundaryFeatureName(feature));
 }
 
+function normalizeBoundaryOrientation(feature: AtlasBoundaryFeature): AtlasBoundaryFeature {
+  if (geoArea(feature) <= Math.PI * 2) return feature;
+  const geometry = feature.geometry.type === "Polygon"
+    ? {
+      ...feature.geometry,
+      coordinates: feature.geometry.coordinates.map((ring) => [...ring].reverse()),
+    }
+    : {
+      ...feature.geometry,
+      coordinates: feature.geometry.coordinates.map((polygon) => (
+        polygon.map((ring) => [...ring].reverse())
+      )),
+    };
+  return { ...feature, geometry } as AtlasBoundaryFeature;
+}
+
 function boundaryKindFor(level: string | undefined, features: AtlasBoundaryFeature[]): BoundaryKind {
   if (features.some((feature) => feature.properties?.shapeType === "CITY")) return "city";
   if (level === "ADM1") return "region";
@@ -801,14 +817,19 @@ function boundaryKindLabel(kind: BoundaryKind | undefined) {
   return "CITY";
 }
 
-function boundaryFeatureCenter(feature: AtlasBoundaryFeature) {
+function boundaryFeatureCenter(feature: AtlasBoundaryFeature, fallback?: GeoCenter) {
   const atlasLat = feature.properties?.atlasLat;
   const atlasLng = feature.properties?.atlasLng;
   if (typeof atlasLat === "number" && typeof atlasLng === "number") {
-    return { lat: atlasLat, lng: normalizeLongitude(atlasLng) };
+    const center = { lat: atlasLat, lng: normalizeLongitude(atlasLng) };
+    if (geoContains(feature, [center.lng, center.lat])) return center;
   }
   const [lng, lat] = geoCentroid(feature);
-  return { lat, lng: normalizeLongitude(lng) };
+  const center = { lat, lng: normalizeLongitude(lng) };
+  if (Number.isFinite(lat) && Number.isFinite(lng) && geoContains(feature, [center.lng, center.lat])) {
+    return center;
+  }
+  return fallback ?? center;
 }
 
 function boundaryBoundsContain(
@@ -1202,7 +1223,8 @@ function AdministrativeTerritories({
             return;
           }
           event.stopPropagation();
-          const selectedCenter = boundaryFeatureCenter(features[index]);
+          const clickedCenter = vectorToGeoCenter(event.eventObject.worldToLocal(event.point.clone()));
+          const selectedCenter = boundaryFeatureCenter(features[index], clickedCenter);
           onHoverChange(null);
           document.body.style.cursor = "grab";
           const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
@@ -1474,7 +1496,9 @@ function Earth({
             ? districtBoundaryPayload
             : regionBoundaryPayload;
   const activeBoundaryFeatures = useMemo(
-    () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
+    () => activeBoundaryPayload?.available
+      ? activeBoundaryPayload.features.map(normalizeBoundaryOrientation)
+      : [],
     [activeBoundaryPayload],
   );
   const activeBoundaryBounds = useMemo(
@@ -1928,7 +1952,9 @@ function CanvasWorldFallback({
             ? fallbackDistrictBoundaryPayload
             : fallbackRegionBoundaryPayload;
   const fallbackBoundaryFeatures = useMemo(
-    () => fallbackActiveBoundaryPayload?.available ? fallbackActiveBoundaryPayload.features : [],
+    () => fallbackActiveBoundaryPayload?.available
+      ? fallbackActiveBoundaryPayload.features.map(normalizeBoundaryOrientation)
+      : [],
     [fallbackActiveBoundaryPayload],
   );
   const fallbackBoundaryBounds = useMemo(
