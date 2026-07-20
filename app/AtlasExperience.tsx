@@ -46,6 +46,7 @@ import { AtlasAuthOptions } from "./AtlasAuthOptions";
 import {
   useAtlasBoundaries,
   useAtlasCityBoundaries,
+  useAtlasLocalAreaContext,
   useAtlasPlaces,
   type AtlasBoundaryFeature,
   type AtlasPlace,
@@ -1435,14 +1436,15 @@ function Earth({
     cityBoundaryPlaces,
     labelDetail === 2,
   );
+  const { data: localAreaPayload } = useAtlasLocalAreaContext(focusedIso3, labelDetail === 2);
   const activeBoundaryPayload = focusedIso3 === "USA" ? cityBoundaryPayload : boundaryPayload;
   const activeBoundaryFeatures = useMemo(
     () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
     [activeBoundaryPayload],
   );
   const contextBoundaryFeatures = useMemo(
-    () => focusedIso3 === "USA" ? cityBoundaryPayload?.contextFeatures ?? [] : [],
-    [cityBoundaryPayload?.contextFeatures, focusedIso3],
+    () => focusedIso3 === "USA" && localAreaPayload?.available ? localAreaPayload.features : [],
+    [focusedIso3, localAreaPayload],
   );
   const displayPlaceLabels = useMemo(() => {
     const featureByPlaceId = new Map(activeBoundaryFeatures.flatMap((feature) => {
@@ -1773,6 +1775,10 @@ function CanvasWorldFallback({
     fallbackDetailedPlaces,
     fallbackDetail === 2,
   );
+  const { data: fallbackLocalAreaPayload } = useAtlasLocalAreaContext(
+    focusedCountryIso,
+    fallbackDetail === 2,
+  );
   const fallbackBoundaryFeatures = useMemo(
     () => {
       const payload = focusedCountryIso === "USA" ? fallbackCityBoundaryPayload : fallbackBoundaryPayload;
@@ -1781,8 +1787,10 @@ function CanvasWorldFallback({
     [fallbackBoundaryPayload, fallbackCityBoundaryPayload, focusedCountryIso],
   );
   const fallbackContextFeatures = useMemo(
-    () => focusedCountryIso === "USA" ? fallbackCityBoundaryPayload?.contextFeatures ?? [] : [],
-    [fallbackCityBoundaryPayload?.contextFeatures, focusedCountryIso],
+    () => focusedCountryIso === "USA" && fallbackLocalAreaPayload?.available
+      ? fallbackLocalAreaPayload.features
+      : [],
+    [fallbackLocalAreaPayload, focusedCountryIso],
   );
   const fallbackDisplayPlaces = useMemo(() => {
     const featureByPlaceId = new Map(fallbackBoundaryFeatures.flatMap((feature) => {

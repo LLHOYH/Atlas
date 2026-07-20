@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 
 const TIGERWEB_SERVICE = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer";
 const TIGERWEB_LAYERS = [4, 5] as const;
-const TIGERWEB_COUNTY_SERVICE = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer";
-const TIGERWEB_COUNTY_LAYER = 7;
 const MAX_PLACES = 100;
 
 type RequestedPlace = {
@@ -155,10 +153,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [layerResults, countyResults] = await Promise.all([
-      Promise.all(TIGERWEB_LAYERS.map((layer) => queryLayer(TIGERWEB_SERVICE, layer, places, "0.002"))),
-      queryLayer(TIGERWEB_COUNTY_SERVICE, TIGERWEB_COUNTY_LAYER, places, "0.01"),
-    ]);
+    const layerResults = await Promise.all(
+      TIGERWEB_LAYERS.map((layer) => queryLayer(TIGERWEB_SERVICE, layer, places, "0.002")),
+    );
     const seenGeoids = new Set<string>();
     const features = layerResults
       .flat()
@@ -186,44 +183,16 @@ export async function POST(request: Request) {
           },
         }];
       });
-    const seenCountyGeoids = new Set<string>();
-    const contextFeatures = countyResults
-      .map(reverseRingOrientation)
-      .flatMap((feature) => {
-        const candidates = places
-          .filter((candidate) => geoContains(feature, [candidate.lng, candidate.lat]))
-          .sort((left, right) => (
-            (left.rank ?? 6) - (right.rank ?? 6)
-            || (right.population ?? 0) - (left.population ?? 0)
-          ));
-        const place = candidates[0];
-        const geoid = String(feature.properties?.GEOID ?? "");
-        if (!place || !geoid || seenCountyGeoids.has(geoid)) return [];
-        seenCountyGeoids.add(geoid);
-        return [{
-          ...feature,
-          properties: {
-            ...feature.properties,
-            shapeName: `${place.name} local area`,
-            shapeID: `county-${geoid}`,
-            shapeGroup: "USA",
-            shapeType: "CITY_CONTEXT",
-            atlasPlaceId: place.id,
-          },
-        }];
-      });
-
     return NextResponse.json({
       available: features.length > 0,
       iso3,
       source: {
         name: "U.S. Census Bureau TIGERweb",
         serviceUrl: TIGERWEB_SERVICE,
-        layers: ["Incorporated Places", "Census Designated Places", "County context"],
+        layers: ["Incorporated Places", "Census Designated Places"],
       },
       type: "FeatureCollection",
       features,
-      contextFeatures,
     }, { headers: cacheHeaders });
   } catch {
     return NextResponse.json({ error: "Atlas could not reach the municipal-boundary source." }, { status: 502 });

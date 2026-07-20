@@ -25,6 +25,13 @@ const placeGeneratorSource = await readFile(
   new URL("../scripts/generate-atlas-places.mjs", import.meta.url),
   "utf8",
 );
+const usaLocalAreaGeneratorSource = await readFile(
+  new URL("../scripts/generate-usa-local-areas.mjs", import.meta.url),
+  "utf8",
+);
+const usaLocalAreas = JSON.parse(
+  await readFile(new URL("../public/atlas-geography/boundaries/USA-local-areas.json", import.meta.url), "utf8"),
+);
 const placesManifest = JSON.parse(
   await readFile(new URL("../public/atlas-geography/places/manifest.json", import.meta.url), "utf8"),
 );
@@ -263,9 +270,11 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(cityBoundaryRouteSource, /U\.S\. Census Bureau TIGERweb/);
   assert.match(cityBoundaryRouteSource, /Incorporated Places/);
   assert.match(cityBoundaryRouteSource, /Census Designated Places/);
-  assert.match(cityBoundaryRouteSource, /TIGERWEB_COUNTY_SERVICE/);
-  assert.match(cityBoundaryRouteSource, /shapeType: "CITY_CONTEXT"/);
-  assert.match(cityBoundaryRouteSource, /contextFeatures/);
+  assert.match(geographyHookSource, /USA-local-areas\.json/);
+  assert.match(usaLocalAreaGeneratorSource, /TIGERweb\/State_County\/MapServer/);
+  assert.match(usaLocalAreaGeneratorSource, /where: "1=1"/);
+  assert.equal(usaLocalAreas.features.length, 3235);
+  assert.ok(usaLocalAreas.features.every((feature) => feature.properties.shapeType === "LOCAL_AREA"));
   assert.match(cityBoundaryRouteSource, /esriGeometryMultipoint/);
   assert.match(cityBoundaryRouteSource, /function planarRingCentroid/);
   assert.match(cityBoundaryRouteSource, /atlasPlaceId: place\.id/);

@@ -63,12 +63,12 @@ export type AtlasBoundaryPayload = {
   };
   type: "FeatureCollection";
   features: AtlasBoundaryFeature[];
-  contextFeatures?: AtlasBoundaryFeature[];
 };
 
 const placeCache = new Map<string, AtlasPlacesPayload>();
 const boundaryCache = new Map<string, AtlasBoundaryPayload>();
 const cityBoundaryCache = new Map<string, AtlasBoundaryPayload>();
+const localAreaCache = new Map<string, AtlasBoundaryPayload>();
 
 function useCachedJson<T>(url: string | null, cache: Map<string, T>) {
   const [result, setResult] = useState<{ url: string; data: T | null } | null>(() => {
@@ -110,6 +110,11 @@ export function useAtlasPlaces(iso3: string | null, enabled: boolean) {
 export function useAtlasBoundaries(iso3: string | null, level: "ADM1" | "ADM2", enabled: boolean) {
   const url = enabled && iso3 ? `/api/atlas/v1/geography?iso=${iso3}&level=${level}` : null;
   return useCachedJson(url, boundaryCache);
+}
+
+export function useAtlasLocalAreaContext(iso3: string | null, enabled: boolean) {
+  const url = enabled && iso3 === "USA" ? "/atlas-geography/boundaries/USA-local-areas.json" : null;
+  return useCachedJson(url, localAreaCache);
 }
 
 type CityBoundaryPlace = Pick<AtlasPlace, "id" | "name" | "lat" | "lng" | "population" | "rank">;

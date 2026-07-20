@@ -18,7 +18,8 @@
     "db:seed": "node scripts/seed-atlas.mjs",
     "geo:generate": "node scripts/generate-atlas-geo.mjs",
     "geo:labels": "node scripts/generate-atlas-labels.mjs",
-    "geo:places": "node scripts/generate-atlas-places.mjs"
+    "geo:places": "node scripts/generate-atlas-places.mjs",
+    "geo:usa-local-areas": "node scripts/generate-usa-local-areas.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
