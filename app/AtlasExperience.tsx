@@ -44,7 +44,6 @@ import type {
 } from "../lib/atlas/world";
 import { AtlasAuthOptions } from "./AtlasAuthOptions";
 import {
-  useAtlasBoundaries,
   useAtlasCityBoundaries,
   useAtlasPlaces,
   type AtlasBoundaryFeature,
@@ -894,48 +893,6 @@ function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number)
   return { geometry, outline };
 }
 
-function buildBoundaryOutlineGeometry(features: AtlasBoundaryFeature[], radius: number) {
-  const outlinePositions: number[] = [];
-  for (const feature of features) {
-    for (const rings of boundaryPolygons(feature)) {
-      for (const ring of rings) {
-        for (let index = 0; index < ring.length; index += 1) {
-          const start = sphericalDirection(ring[index]);
-          const end = sphericalDirection(ring[(index + 1) % ring.length]);
-          const divisions = Math.max(1, Math.ceil(start.angleTo(end) / 0.045));
-          for (let division = 0; division < divisions; division += 1) {
-            const from = start.clone().lerp(end, division / divisions).normalize().multiplyScalar(radius);
-            const to = start.clone().lerp(end, (division + 1) / divisions).normalize().multiplyScalar(radius);
-            outlinePositions.push(from.x, from.y, from.z, to.x, to.y, to.z);
-          }
-        }
-      }
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function AdministrativeContext({ features }: { features: AtlasBoundaryFeature[] }) {
-  const geometry = useMemo(
-    () => features.length ? buildBoundaryOutlineGeometry(features, ADMIN_BASE_RADIUS - 0.006) : null,
-    [features],
-  );
-  if (!geometry) return null;
-  return (
-    <group>
-      <lineSegments geometry={geometry} frustumCulled={false} raycast={() => undefined}>
-        <lineBasicMaterial color="#75bdc7" transparent opacity={0.24} depthWrite={false} />
-      </lineSegments>
-      <lineSegments geometry={geometry} scale={1.0007} frustumCulled={false} raycast={() => undefined}>
-        <lineBasicMaterial color="#246a76" transparent opacity={0.14} depthWrite={false} blending={THREE.AdditiveBlending} />
-      </lineSegments>
-    </group>
-  );
-}
-
 function CountrySurfaces({
   liveAgentsByCountry = {},
   selectedCountryKey,
@@ -1371,11 +1328,6 @@ function Earth({
   const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
   const prefetchFocusedGeography = selectedCountryKey !== null || labelDetail >= 2;
   const { data: placesPayload } = useAtlasPlaces(focusedIso3, prefetchFocusedGeography);
-  const { data: boundaryPayload } = useAtlasBoundaries(
-    focusedIso3,
-    "ADM1",
-    prefetchFocusedGeography,
-  );
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
     const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
@@ -1439,14 +1391,9 @@ function Earth({
     cityBoundaryPlaces,
     labelDetail === 2,
   );
-  const activeBoundaryPayload = focusedIso3 === "USA" ? cityBoundaryPayload : boundaryPayload;
   const activeBoundaryFeatures = useMemo(
-    () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
-    [activeBoundaryPayload],
-  );
-  const contextBoundaryFeatures = useMemo(
-    () => focusedIso3 === "USA" && boundaryPayload?.available ? boundaryPayload.features : [],
-    [boundaryPayload, focusedIso3],
+    () => cityBoundaryPayload?.available ? cityBoundaryPayload.features : [],
+    [cityBoundaryPayload],
   );
   const displayPlaceLabels = useMemo(() => {
     const featureByPlaceId = new Map(activeBoundaryFeatures.flatMap((feature) => {
@@ -1614,9 +1561,6 @@ function Earth({
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      {labelDetail === 2 && contextBoundaryFeatures.length > 0 && (
-        <AdministrativeContext features={contextBoundaryFeatures} />
-      )}
       {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
         <AdministrativeTerritories
           features={activeBoundaryFeatures}
@@ -1769,11 +1713,6 @@ function CanvasWorldFallback({
   const focusedCityCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryIso = iso3ForCountryKey(focusedCityCountryKey);
   const [fallbackDetail, setFallbackDetail] = useState<DetailLevel>(1);
-  const { data: fallbackBoundaryPayload } = useAtlasBoundaries(
-    focusedCountryIso,
-    "ADM1",
-    selectedCountryKey !== null || fallbackDetail === 2,
-  );
   const { data: fallbackPlacesPayload } = useAtlasPlaces(
     focusedCountryIso,
     selectedCountryKey !== null || fallbackDetail === 2,
@@ -1790,17 +1729,8 @@ function CanvasWorldFallback({
     fallbackDetail === 2,
   );
   const fallbackBoundaryFeatures = useMemo(
-    () => {
-      const payload = focusedCountryIso === "USA" ? fallbackCityBoundaryPayload : fallbackBoundaryPayload;
-      return payload?.available ? payload.features : [];
-    },
-    [fallbackBoundaryPayload, fallbackCityBoundaryPayload, focusedCountryIso],
-  );
-  const fallbackContextFeatures = useMemo(
-    () => focusedCountryIso === "USA" && fallbackBoundaryPayload?.available
-      ? fallbackBoundaryPayload.features
-      : [],
-    [fallbackBoundaryPayload, focusedCountryIso],
+    () => fallbackCityBoundaryPayload?.available ? fallbackCityBoundaryPayload.features : [],
+    [fallbackCityBoundaryPayload],
   );
   const fallbackDisplayPlaces = useMemo(() => {
     const featureByPlaceId = new Map(fallbackBoundaryFeatures.flatMap((feature) => {
@@ -1917,13 +1847,6 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2) {
-        for (const feature of fallbackContextFeatures) {
-          context.beginPath();
-          path(feature);
-          context.strokeStyle = "rgba(117, 189, 199, 0.44)";
-          context.lineWidth = 0.72;
-          context.stroke();
-        }
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
           context.beginPath();
@@ -2133,7 +2056,6 @@ function CanvasWorldFallback({
     fallbackBoundaryFeatures,
     fallbackCountries,
     fallbackCityByName,
-    fallbackContextFeatures,
     fallbackDisplayPlaces,
     focusDistance,
     focusLocation.lat,

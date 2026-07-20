@@ -235,10 +235,11 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /function AdministrativeTerritories\(/);
   assert.match(experienceSource, /<AdministrativeTerritories/);
   assert.match(experienceSource, /useAtlasCityBoundaries\(/);
-  assert.match(experienceSource, /const activeBoundaryPayload = focusedIso3 === "USA" \? cityBoundaryPayload : boundaryPayload/);
-  assert.match(experienceSource, /function AdministrativeContext\(/);
-  assert.match(experienceSource, /<AdministrativeContext features=\{contextBoundaryFeatures\}/);
-  assert.match(experienceSource, /focusedIso3 === "USA" && boundaryPayload\?\.available/);
+  assert.match(experienceSource, /cityBoundaryPayload\?\.available \? cityBoundaryPayload\.features : \[\]/);
+  assert.doesNotMatch(experienceSource, /function AdministrativeContext\(/);
+  assert.doesNotMatch(experienceSource, /<AdministrativeContext/);
+  assert.doesNotMatch(experienceSource, /useAtlasBoundaries\(/);
+  assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
   assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
