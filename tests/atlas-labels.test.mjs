@@ -213,7 +213,7 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
+  assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 2 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);
@@ -235,10 +235,12 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /function AdministrativeTerritories\(/);
   assert.match(experienceSource, /<AdministrativeTerritories/);
   assert.match(experienceSource, /useAtlasCityBoundaries\(/);
-  assert.match(experienceSource, /cityBoundaryPayload\?\.available \? cityBoundaryPayload\.features : \[\]/);
+  assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"ADM1"/);
+  assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"ADM2"/);
+  assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"LOCAL"/);
+  assert.match(experienceSource, /cityBoundaryPayload\?\.available[\s\S]*?localBoundaryPayload\?\.available/);
   assert.doesNotMatch(experienceSource, /function AdministrativeContext\(/);
   assert.doesNotMatch(experienceSource, /<AdministrativeContext/);
-  assert.doesNotMatch(experienceSource, /useAtlasBoundaries\(/);
   assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
   assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
@@ -267,6 +269,8 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(geographyRouteSource, /simplifiedGeometryGeoJSON/);
   assert.match(geographyRouteSource, /boundaryLicense/);
   assert.match(geographyRouteSource, /No open administrative boundary is published/);
+  assert.match(geographyRouteSource, /const LOCAL_BOUNDARY_LEVELS = \["ADM3", "ADM2", "ADM1"\]/);
+  assert.match(geographyRouteSource, /requestedLevel: level/);
   assert.match(geographyHookSource, /atlas-geography\/places/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/city-boundaries/);
@@ -284,7 +288,9 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /hitBoundary\(point\.x, point\.y\)/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
   assert.match(experienceSource, /onCityAreaSelect\(\{/);
-  assert.match(experienceSource, /CITY PROFILE · \{selection\.countryName\.toUpperCase\(\)\}/);
+  assert.match(experienceSource, /\{profileKind\} PROFILE · \{selection\.countryName\.toUpperCase\(\)\}/);
+  assert.match(experienceSource, /function boundaryKindLabel\(/);
+  assert.match(experienceSource, /GLOBAL BORDERS/);
   assert.match(experienceSource, /mapLabel--interactive/);
   assert.match(experienceSource, /function declutterGeographicLabels\(/);
   assert.match(experienceSource, /minimumSeparation: 5\.5/);

@@ -51,6 +51,7 @@ export type AtlasBoundaryPayload = {
   available: boolean;
   iso: string;
   level: string;
+  requestedLevel?: string;
   reason?: string;
   source?: {
     name: string;
@@ -106,7 +107,9 @@ export function useAtlasPlaces(iso3: string | null, enabled: boolean) {
   return useCachedJson(url, placeCache);
 }
 
-export function useAtlasBoundaries(iso3: string | null, level: "ADM1" | "ADM2", enabled: boolean) {
+export type AtlasBoundaryLevel = "ADM1" | "ADM2" | "ADM3" | "ADM4" | "ADM5" | "LOCAL";
+
+export function useAtlasBoundaries(iso3: string | null, level: AtlasBoundaryLevel, enabled: boolean) {
   const url = enabled && iso3 ? `/api/atlas/v1/geography?iso=${iso3}&level=${level}` : null;
   return useCachedJson(url, boundaryCache);
 }
