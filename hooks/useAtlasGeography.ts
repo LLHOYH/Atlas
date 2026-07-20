@@ -33,6 +33,12 @@ export type AtlasBoundaryProperties = {
   shapeID?: string;
   shapeGroup?: string;
   shapeType?: string;
+  atlasPlaceId?: string;
+  atlasName?: string;
+  atlasLat?: number;
+  atlasLng?: number;
+  atlasPopulation?: number;
+  atlasRank?: number;
   [key: string]: unknown;
 };
 
@@ -61,6 +67,7 @@ export type AtlasBoundaryPayload = {
 
 const placeCache = new Map<string, AtlasPlacesPayload>();
 const boundaryCache = new Map<string, AtlasBoundaryPayload>();
+const cityBoundaryCache = new Map<string, AtlasBoundaryPayload>();
 
 function useCachedJson<T>(url: string | null, cache: Map<string, T>) {
   const [result, setResult] = useState<{ url: string; data: T | null } | null>(() => {
@@ -102,4 +109,49 @@ export function useAtlasPlaces(iso3: string | null, enabled: boolean) {
 export function useAtlasBoundaries(iso3: string | null, level: "ADM1" | "ADM2", enabled: boolean) {
   const url = enabled && iso3 ? `/api/atlas/v1/geography?iso=${iso3}&level=${level}` : null;
   return useCachedJson(url, boundaryCache);
+}
+
+type CityBoundaryPlace = Pick<AtlasPlace, "id" | "name" | "lat" | "lng" | "population" | "rank">;
+
+export function useAtlasCityBoundaries(
+  iso3: string | null,
+  places: CityBoundaryPlace[],
+  enabled: boolean,
+) {
+  const cacheKey = enabled && iso3 === "USA" && places.length
+    ? `${iso3}:${places.map((place) => place.id).join(",")}`
+    : null;
+  const [result, setResult] = useState<{ key: string; data: AtlasBoundaryPayload | null } | null>(() => {
+    const cached = cacheKey ? cityBoundaryCache.get(cacheKey) : null;
+    return cacheKey && cached ? { key: cacheKey, data: cached } : null;
+  });
+
+  useEffect(() => {
+    if (!cacheKey || cityBoundaryCache.has(cacheKey)) return;
+    const controller = new AbortController();
+    fetch("/api/atlas/v1/city-boundaries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ iso3, places }),
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`City-boundary request failed (${response.status})`);
+        return response.json() as Promise<AtlasBoundaryPayload>;
+      })
+      .then((payload) => {
+        cityBoundaryCache.set(cacheKey, payload);
+        setResult({ key: cacheKey, data: payload });
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setResult({ key: cacheKey, data: null });
+        }
+      });
+    return () => controller.abort();
+  }, [cacheKey, iso3, places]);
+
+  const cached = cacheKey ? cityBoundaryCache.get(cacheKey) : null;
+  const data = cached ?? (cacheKey && result?.key === cacheKey ? result.data : null);
+  return { data, loading: Boolean(cacheKey && !cached && result?.key !== cacheKey) };
 }

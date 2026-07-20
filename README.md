@@ -17,9 +17,9 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 ## What is included
 
 - A fixed-camera, momentum-driven pixel globe
-- Zoom-driven country, state/region, city, and street detail levels
+- Zoom-driven country and city detail, with an explicit street-view transition where supported
 - Worldwide country labels plus 234,000+ progressively loaded cities, towns, villages, and administrative seats
-- Published ADM1/ADM2 administrative borders at city and town zoom, with point-only fallback where no legitimate border exists
+- Official U.S. municipal/place polygons plus published administrative borders elsewhere, with point-only fallback where no legitimate city border exists
 - Whole-country silhouette hover elevation with complete interior hit detection
 - Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
@@ -92,4 +92,4 @@ npm run geo:places
 
 The baseline world pulse and ambient profiles are realistic seeded database records. Authenticated presence broadcasts are layered into that world live.
 
-Country geometry and macro labels are generated from Natural Earth data. Dense populated-place labels come from [GeoNames](https://www.geonames.org/) under CC BY 4.0. Progressive ADM1 and ADM2 polygons are proxied from the [geoBoundaries](https://www.geoboundaries.org/) `gbOpen` API and retain the source-specific licence metadata returned by that service. Atlas never synthesizes a city polygon: when a published boundary is unavailable, the place remains a point label. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.
+Country geometry and macro labels are generated from Natural Earth data. Dense populated-place labels come from [GeoNames](https://www.geonames.org/) under CC BY 4.0. U.S. city shapes come from the U.S. Census Bureau's [TIGERweb incorporated-place and census-place layers](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer); their labels, hover hit areas, and camera targets are derived from the same polygon. Administrative fallback polygons elsewhere are proxied from the [geoBoundaries](https://www.geoboundaries.org/) `gbOpen` API and retain the source-specific licence metadata returned by that service. Atlas never synthesizes a city polygon: when a published boundary is unavailable, the place remains a point label. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.

@@ -45,6 +45,7 @@ import type {
 import { AtlasAuthOptions } from "./AtlasAuthOptions";
 import {
   useAtlasBoundaries,
+  useAtlasCityBoundaries,
   useAtlasPlaces,
   type AtlasBoundaryFeature,
   type AtlasPlace,
@@ -767,7 +768,21 @@ function buildCountryGeometry(country: (typeof atlasGeoData.countries)[number]) 
 }
 
 function boundaryFeatureName(feature: AtlasBoundaryFeature) {
-  return String(feature.properties?.shapeName ?? feature.properties?.name ?? "Administrative area");
+  return String(feature.properties?.atlasName ?? feature.properties?.shapeName ?? feature.properties?.name ?? "Administrative area");
+}
+
+function boundaryFeatureId(feature: AtlasBoundaryFeature) {
+  return String(feature.properties?.shapeID ?? feature.properties?.atlasPlaceId ?? boundaryFeatureName(feature));
+}
+
+function boundaryFeatureCenter(feature: AtlasBoundaryFeature) {
+  const atlasLat = feature.properties?.atlasLat;
+  const atlasLng = feature.properties?.atlasLng;
+  if (typeof atlasLat === "number" && typeof atlasLng === "number") {
+    return { lat: atlasLat, lng: normalizeLongitude(atlasLng) };
+  }
+  const [lng, lat] = geoCentroid(feature);
+  return { lat, lng: normalizeLongitude(lng) };
 }
 
 function prepareBoundaryRing(coordinates: GeoJSON.Position[]) {
@@ -1059,11 +1074,6 @@ function AdministrativeTerritories({
     () => hoveredFeature ? buildBoundaryGeometry([hoveredFeature], ADMIN_HOVER_RADIUS) : null,
     [hoveredFeature],
   );
-  const hoveredCenter = useMemo(() => {
-    if (!hoveredFeature) return null;
-    const [lng, lat] = geoCentroid(hoveredFeature);
-    return latLngToVector3(lat, lng, ADMIN_HOVER_RADIUS + 0.025);
-  }, [hoveredFeature]);
 
   if (!features.length || !baseGeometry) return null;
 
@@ -1116,14 +1126,6 @@ function AdministrativeTerritories({
           <lineSegments geometry={hoveredGeometry.outline} frustumCulled={false} raycast={() => undefined}>
             <lineBasicMaterial color="#ffe4a3" transparent opacity={0.98} depthWrite={false} />
           </lineSegments>
-          {hoveredCenter && (
-            <GlobeLabel
-              label={boundaryFeatureName(hoveredFeature)}
-              kind="region"
-              position={hoveredCenter}
-              color="#ffd36f"
-            />
-          )}
         </group>
       )}
       <mesh
@@ -1144,7 +1146,7 @@ function AdministrativeTerritories({
             return;
           }
           event.stopPropagation();
-          const selectedCenter = vectorToGeoCenter(event.eventObject.worldToLocal(event.point.clone()));
+          const selectedCenter = boundaryFeatureCenter(features[index]);
           onHoverChange(null);
           document.body.style.cursor = "grab";
           const city = cityByName.get(normalizeLabelName(boundaryFeatureName(features[index])));
@@ -1311,13 +1313,17 @@ function Earth({
   const currentCityLabelBand = useRef(0);
   const [labelDetail, setLabelDetail] = useState<DetailLevel>(1);
   const [cityLabelBand, setCityLabelBand] = useState(0);
-  const [administrativeHover, setAdministrativeHover] = useState<{ countryKey: string; index: number } | null>(null);
+  const [administrativeHover, setAdministrativeHover] = useState<{ countryKey: string; featureId: string } | null>(null);
   const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryName = countryLabelByKey.get(focusedCountryKey)?.name ?? selectedCity.country;
   const focusedIso3 = iso3ForCountryKey(focusedCountryKey);
   const prefetchFocusedGeography = selectedCountryKey !== null || labelDetail >= 2;
   const { data: placesPayload } = useAtlasPlaces(focusedIso3, prefetchFocusedGeography);
-  const { data: boundaryPayload } = useAtlasBoundaries(focusedIso3, "ADM1", prefetchFocusedGeography);
+  const { data: boundaryPayload } = useAtlasBoundaries(
+    focusedIso3,
+    "ADM1",
+    prefetchFocusedGeography && focusedIso3 !== "USA",
+  );
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
     const seededLiveAgents = city.agents.filter((agent) => agent.status !== "offline").length;
@@ -1368,6 +1374,41 @@ function Earth({
       labelConfig.limit,
     );
   }, [cityLabelBand, focusedCountryKey, labelDetail, placesPayload?.places]);
+  const cityBoundaryPlaces = useMemo(() => detailedPlaceLabels.map((place) => ({
+    id: place.id,
+    name: place.name,
+    lat: place.lat,
+    lng: place.lng,
+    population: place.population,
+    rank: place.rank,
+  })), [detailedPlaceLabels]);
+  const { data: cityBoundaryPayload } = useAtlasCityBoundaries(
+    focusedIso3,
+    cityBoundaryPlaces,
+    labelDetail === 2,
+  );
+  const activeBoundaryPayload = focusedIso3 === "USA" ? cityBoundaryPayload : boundaryPayload;
+  const activeBoundaryFeatures = useMemo(
+    () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
+    [activeBoundaryPayload],
+  );
+  const displayPlaceLabels = useMemo(() => {
+    const featureByPlaceId = new Map(activeBoundaryFeatures.flatMap((feature) => {
+      const id = feature.properties?.atlasPlaceId;
+      return typeof id === "string" ? [[id, feature] as const] : [];
+    }));
+    return detailedPlaceLabels.map((place) => {
+      const feature = featureByPlaceId.get(place.id);
+      if (!feature) return place;
+      const center = boundaryFeatureCenter(feature);
+      return {
+        ...place,
+        lat: center.lat,
+        lng: center.lng,
+        position: latLngToVector3(center.lat, center.lng, 3.12),
+      };
+    });
+  }, [activeBoundaryFeatures, detailedPlaceLabels]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1517,21 +1558,24 @@ function Earth({
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      {labelDetail === 2 && boundaryPayload?.available && (
+      {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
         <AdministrativeTerritories
-          features={boundaryPayload.features}
+          features={activeBoundaryFeatures}
           detailLevel={labelDetail}
           cities={cities}
           countryKey={focusedCountryKey}
           countryName={focusedCountryName}
-          hoveredIndex={administrativeHover?.countryKey === focusedCountryKey ? administrativeHover.index : null}
+          hoveredIndex={administrativeHover?.countryKey === focusedCountryKey
+            ? activeBoundaryFeatures.findIndex((feature) => boundaryFeatureId(feature) === administrativeHover.featureId)
+            : null}
           onSelect={onSelect}
           onAreaSelect={onCityAreaSelect}
           onHoverChange={(index) => {
             setAdministrativeHover((current) => {
               if (index === null) return current === null ? current : null;
-              if (current?.countryKey === focusedCountryKey && current.index === index) return current;
-              return { countryKey: focusedCountryKey, index };
+              const featureId = boundaryFeatureId(activeBoundaryFeatures[index]);
+              if (current?.countryKey === focusedCountryKey && current.featureId === featureId) return current;
+              return { countryKey: focusedCountryKey, featureId };
             });
           }}
         />
@@ -1544,20 +1588,28 @@ function Earth({
           position={country.position}
         />
       ))}
-      {labelDetail === 2 && detailedPlaceLabels.map((city) => {
-        const boundaryIndex = boundaryPayload?.features.findIndex((feature) => (
-          geoContains(feature, [city.lng, city.lat])
-        )) ?? -1;
+      {labelDetail === 2 && displayPlaceLabels.map((city) => {
+        const directBoundaryIndex = activeBoundaryFeatures.findIndex((feature) => (
+          feature.properties?.atlasPlaceId === city.id
+        ));
+        const boundaryIndex = directBoundaryIndex >= 0
+          ? directBoundaryIndex
+          : activeBoundaryFeatures.findIndex((feature) => geoContains(feature, [city.lng, city.lat]));
+        const boundaryFeature = boundaryIndex >= 0 ? activeBoundaryFeatures[boundaryIndex] : null;
+        const boundaryHovered = administrativeHover?.countryKey === focusedCountryKey
+          && boundaryFeature !== null
+          && administrativeHover.featureId === boundaryFeatureId(boundaryFeature);
         return (
           <GlobeLabel
             key={city.id}
             label={city.name}
             kind="city"
             position={city.position}
+            color={boundaryHovered ? "#ffd36f" : undefined}
             onHoverChange={(hovered) => {
               setAdministrativeHover(
                 hovered && boundaryIndex >= 0
-                  ? { countryKey: focusedCountryKey, index: boundaryIndex }
+                  ? { countryKey: focusedCountryKey, featureId: boundaryFeatureId(activeBoundaryFeatures[boundaryIndex]) }
                   : null,
               );
             }}
@@ -1649,16 +1701,41 @@ function CanvasWorldFallback({
   const { data: fallbackBoundaryPayload } = useAtlasBoundaries(
     focusedCountryIso,
     "ADM1",
-    selectedCountryKey !== null || fallbackDetail === 2,
+    (selectedCountryKey !== null || fallbackDetail === 2) && focusedCountryIso !== "USA",
   );
   const { data: fallbackPlacesPayload } = useAtlasPlaces(
     focusedCountryIso,
     selectedCountryKey !== null || fallbackDetail === 2,
   );
-  const fallbackBoundaryFeatures = useMemo(
-    () => fallbackBoundaryPayload?.available ? fallbackBoundaryPayload.features : [],
-    [fallbackBoundaryPayload],
+  const fallbackDetailedPlaces = useMemo(() => (
+    [...(fallbackPlacesPayload?.places ?? [])]
+      .filter((place) => place.rank <= 4)
+      .sort((left, right) => left.rank - right.rank || right.population - left.population)
+      .slice(0, 100)
+  ), [fallbackPlacesPayload?.places]);
+  const { data: fallbackCityBoundaryPayload } = useAtlasCityBoundaries(
+    focusedCountryIso,
+    fallbackDetailedPlaces,
+    fallbackDetail === 2,
   );
+  const fallbackBoundaryFeatures = useMemo(
+    () => {
+      const payload = focusedCountryIso === "USA" ? fallbackCityBoundaryPayload : fallbackBoundaryPayload;
+      return payload?.available ? payload.features : [];
+    },
+    [fallbackBoundaryPayload, fallbackCityBoundaryPayload, focusedCountryIso],
+  );
+  const fallbackDisplayPlaces = useMemo(() => {
+    const featureByPlaceId = new Map(fallbackBoundaryFeatures.flatMap((feature) => {
+      const id = feature.properties?.atlasPlaceId;
+      return typeof id === "string" ? [[id, feature] as const] : [];
+    }));
+    return fallbackDetailedPlaces.map((place) => {
+      const feature = featureByPlaceId.get(place.id);
+      if (!feature) return place;
+      return { ...place, ...boundaryFeatureCenter(feature) };
+    });
+  }, [fallbackBoundaryFeatures, fallbackDetailedPlaces]);
   const fallbackCityByName = useMemo(
     () => new Map(cities.map((city) => [normalizeLabelName(city.name), city])),
     [cities],
@@ -1795,16 +1872,18 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2) {
-        const maximumRank = 4;
-        const visibleCities = (fallbackPlacesPayload?.places ?? [])
-          .filter((city) => city.rank <= maximumRank && isVisible(city.lng, city.lat))
-          .sort((left, right) => right.population - left.population)
+        const visibleCities = fallbackDisplayPlaces
+          .filter((city) => isVisible(city.lng, city.lat))
           .slice(0, 140);
         context.font = "600 7px ui-monospace, SFMono-Regular, Menlo, monospace";
-        context.fillStyle = "#7fdde7";
         for (const city of visibleCities) {
           const point = projection([city.lng, city.lat]);
-          if (point) context.fillText(city.name.toUpperCase(), point[0], point[1]);
+          if (!point) continue;
+          const boundaryIndex = fallbackBoundaryFeatures.findIndex((feature) => (
+            feature.properties?.atlasPlaceId === city.id
+          ));
+          context.fillStyle = boundaryIndex === view.hoveredBoundaryIndex ? "#ffd36f" : "#7fdde7";
+          context.fillText(city.name.toUpperCase(), point[0], point[1]);
         }
       }
 
@@ -1846,7 +1925,7 @@ function CanvasWorldFallback({
       return index < 0 ? null : {
         index,
         feature: fallbackBoundaryFeatures[index],
-        center: { lat: location[1], lng: normalizeLongitude(location[0]) },
+        center: boundaryFeatureCenter(fallbackBoundaryFeatures[index]),
       };
     };
     const onPointerDown = (event: PointerEvent) => {
@@ -1970,7 +2049,7 @@ function CanvasWorldFallback({
     fallbackBoundaryFeatures,
     fallbackCountries,
     fallbackCityByName,
-    fallbackPlacesPayload?.places,
+    fallbackDisplayPlaces,
     focusDistance,
     focusLocation.lat,
     focusLocation.lng,
@@ -3112,8 +3191,11 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
         {detailLevel === 2 && !streetViewRequested && (
           <div className="geographyCredit">
             PLACES <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GEONAMES</a>
-            <span /> BORDERS <a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a>
-            · ADM1
+            <span /> BORDERS {selectedCityArea?.countryKey === "united states" ? (
+              <><a href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer" target="_blank" rel="noreferrer">US CENSUS TIGERWEB</a> · CITY</>
+            ) : (
+              <><a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a> · ADM1</>
+            )}
           </div>
         )}
       </div>

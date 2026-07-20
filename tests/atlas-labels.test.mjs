@@ -39,6 +39,10 @@ const geographyRouteSource = await readFile(
   new URL("../app/api/atlas/v1/geography/route.ts", import.meta.url),
   "utf8",
 );
+const cityBoundaryRouteSource = await readFile(
+  new URL("../app/api/atlas/v1/city-boundaries/route.ts", import.meta.url),
+  "utf8",
+);
 const worldHookSource = await readFile(
   new URL("../hooks/useAtlasWorld.ts", import.meta.url),
   "utf8",
@@ -209,7 +213,7 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && detailedPlaceLabels\.map/);
+  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);
@@ -227,17 +231,22 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(experienceSource, /hasCompleteDeepDetail\(selectedCityArea\.countryKey\)/);
 });
 
-test("city detail uses selectable published administrative boundaries and place labels", () => {
+test("city detail unifies municipal polygons, centered labels, hover, and selection", () => {
   assert.match(experienceSource, /function AdministrativeTerritories\(/);
   assert.match(experienceSource, /<AdministrativeTerritories/);
-  assert.match(experienceSource, /useAtlasBoundaries\(focusedIso3, "ADM1"/);
+  assert.match(experienceSource, /useAtlasCityBoundaries\(/);
+  assert.match(experienceSource, /focusedIso3 !== "USA"/);
+  assert.match(experienceSource, /const activeBoundaryPayload = focusedIso3 === "USA" \? cityBoundaryPayload : boundaryPayload/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
-  assert.match(experienceSource, /const selectedCenter = vectorToGeoCenter\(event\.eventObject\.worldToLocal\(event\.point\.clone\(\)\)\)/);
+  assert.match(experienceSource, /const selectedCenter = boundaryFeatureCenter\(features\[index\]\)/);
+  assert.match(experienceSource, /feature\.properties\?\.atlasPlaceId === city\.id/);
+  assert.match(experienceSource, /position: latLngToVector3\(center\.lat, center\.lng, 3\.12\)/);
+  assert.match(experienceSource, /color=\{boundaryHovered \? "#ffd36f" : undefined\}/);
   assert.match(experienceSource, /onHoverChange\(null\)/);
   assert.doesNotMatch(experienceSource, /hoveredIndex \?\? findFeatureAtPoint/);
   assert.match(experienceSource, /focus\.current = targetOrientation/);
-  assert.match(experienceSource, /center: \{ lat: location\[1\], lng: normalizeLongitude\(location\[0\]\) \}/);
+  assert.match(experienceSource, /center: boundaryFeatureCenter\(fallbackBoundaryFeatures\[index\]\)/);
   assert.match(experienceSource, /ADMIN_HOVER_RADIUS = 3\.135/);
   assert.match(experienceSource, /emissive="#ffd36f"/);
   assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);
@@ -247,6 +256,13 @@ test("city detail uses selectable published administrative boundaries and place 
   assert.match(geographyRouteSource, /No open administrative boundary is published/);
   assert.match(geographyHookSource, /atlas-geography\/places/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
+  assert.match(geographyHookSource, /\/api\/atlas\/v1\/city-boundaries/);
+  assert.match(cityBoundaryRouteSource, /U\.S\. Census Bureau TIGERweb/);
+  assert.match(cityBoundaryRouteSource, /Incorporated Places/);
+  assert.match(cityBoundaryRouteSource, /Census Designated Places/);
+  assert.match(cityBoundaryRouteSource, /esriGeometryMultipoint/);
+  assert.match(cityBoundaryRouteSource, /function planarRingCentroid/);
+  assert.match(cityBoundaryRouteSource, /atlasPlaceId: place\.id/);
   assert.match(experienceSource, /labelDetail === 1 && layer === "Attention"/);
   assert.match(experienceSource, /hitBoundary\(point\.x, point\.y\)/);
   assert.doesNotMatch(experienceSource, /function CityLight\(/);
