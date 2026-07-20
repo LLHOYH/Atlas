@@ -206,13 +206,15 @@ function normalizeLongitude(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
 }
 
-const COUNTRY_DETAIL_DISTANCE = 6.9;
-const CITY_MAX_DISTANCE = 3.75;
-const CITY_SELECTION_DISTANCE = 4.55;
+const COUNTRY_DETAIL_DISTANCE = 6.15;
+const CITY_MAX_DISTANCE = 3.28;
+const CITY_SELECTION_DISTANCE = 3.85;
 const GLOBE_MAX_DISTANCE = 11;
-const ZOOM_SCROLLS_PER_LEVEL = 10;
+const ZOOM_SCROLLS_PER_LEVEL = 16;
+const COUNTRY_ZOOM_SPEED = 0.14;
+const CITY_ZOOM_SPEED = 0.075;
 const RENDERER_RELEASE_DELAY_MS = 600;
-const CITY_PROGRESS = 35;
+const CITY_PROGRESS = 45;
 const STREET_MAP_INITIAL_ZOOM = 13.6;
 const STREET_MAP_MIN_ZOOM = 11.5;
 const STREET_MAP_MAX_ZOOM = 18;
@@ -1602,13 +1604,13 @@ function Earth({
       onDetailChange(nextDetail);
     }
 
-    const nextCityLabelBand = distance > 5.4 ? 0 : distance > 4.45 ? 1 : 2;
+    const nextZoomProgress = zoomProgressForDistance(distance);
+    const nextCityLabelBand = cityBandForProgress(nextZoomProgress);
     if (nextCityLabelBand !== currentCityLabelBand.current) {
       currentCityLabelBand.current = nextCityLabelBand;
       setCityLabelBand(nextCityLabelBand);
     }
 
-    const nextZoomProgress = zoomProgressForDistance(distance);
     if (Math.abs(nextZoomProgress - currentZoomProgress.current) >= 0.5) {
       currentZoomProgress.current = nextZoomProgress;
       onZoomChange(nextZoomProgress);
@@ -2234,7 +2236,9 @@ function CanvasWorldFallback({
       if (wheelGestureLocked) return;
       wheelGestureLocked = true;
       const previousDetail = detailForProgress(view.progress);
-      const progressStep = (100 - CITY_PROGRESS) / (ZOOM_SCROLLS_PER_LEVEL * 2);
+      const progressStep = previousDetail >= 2
+        ? (100 - CITY_PROGRESS) / (ZOOM_SCROLLS_PER_LEVEL * 2)
+        : CITY_PROGRESS / ZOOM_SCROLLS_PER_LEVEL;
       view.progress = THREE.MathUtils.clamp(
         view.progress - Math.sign(event.deltaY) * progressStep,
         0,
@@ -2541,7 +2545,7 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={sceneDetail >= 2 ? 0.2 : 0.35}
+                zoomSpeed={sceneDetail >= 2 ? CITY_ZOOM_SPEED : COUNTRY_ZOOM_SPEED}
                 minDistance={CITY_MAX_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
