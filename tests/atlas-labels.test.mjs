@@ -25,13 +25,6 @@ const placeGeneratorSource = await readFile(
   new URL("../scripts/generate-atlas-places.mjs", import.meta.url),
   "utf8",
 );
-const usaLocalAreaGeneratorSource = await readFile(
-  new URL("../scripts/generate-usa-local-areas.mjs", import.meta.url),
-  "utf8",
-);
-const usaLocalAreas = JSON.parse(
-  await readFile(new URL("../public/atlas-geography/boundaries/USA-local-areas.json", import.meta.url), "utf8"),
-);
 const placesManifest = JSON.parse(
   await readFile(new URL("../public/atlas-geography/places/manifest.json", import.meta.url), "utf8"),
 );
@@ -242,10 +235,10 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /function AdministrativeTerritories\(/);
   assert.match(experienceSource, /<AdministrativeTerritories/);
   assert.match(experienceSource, /useAtlasCityBoundaries\(/);
-  assert.match(experienceSource, /focusedIso3 !== "USA"/);
   assert.match(experienceSource, /const activeBoundaryPayload = focusedIso3 === "USA" \? cityBoundaryPayload : boundaryPayload/);
-  assert.match(experienceSource, /function LocalAreaContext\(/);
-  assert.match(experienceSource, /<LocalAreaContext features=\{contextBoundaryFeatures\}/);
+  assert.match(experienceSource, /function AdministrativeContext\(/);
+  assert.match(experienceSource, /<AdministrativeContext features=\{contextBoundaryFeatures\}/);
+  assert.match(experienceSource, /focusedIso3 === "USA" && boundaryPayload\?\.available/);
   assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
@@ -268,13 +261,12 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/geography/);
   assert.match(geographyHookSource, /\/api\/atlas\/v1\/city-boundaries/);
   assert.match(cityBoundaryRouteSource, /U\.S\. Census Bureau TIGERweb/);
+  assert.match(cityBoundaryRouteSource, /Consolidated Cities/);
   assert.match(cityBoundaryRouteSource, /Incorporated Places/);
   assert.match(cityBoundaryRouteSource, /Census Designated Places/);
-  assert.match(geographyHookSource, /USA-local-areas\.json/);
-  assert.match(usaLocalAreaGeneratorSource, /TIGERweb\/State_County\/MapServer/);
-  assert.match(usaLocalAreaGeneratorSource, /where: "1=1"/);
-  assert.equal(usaLocalAreas.features.length, 3235);
-  assert.ok(usaLocalAreas.features.every((feature) => feature.properties.shapeType === "LOCAL_AREA"));
+  assert.match(cityBoundaryRouteSource, /const TIGERWEB_LAYERS = \[3, 4, 5\]/);
+  assert.match(cityBoundaryRouteSource, /seenPlaceIds/);
+  assert.doesNotMatch(geographyHookSource, /USA-local-areas/);
   assert.match(cityBoundaryRouteSource, /esriGeometryMultipoint/);
   assert.match(cityBoundaryRouteSource, /function planarRingCentroid/);
   assert.match(cityBoundaryRouteSource, /atlasPlaceId: place\.id/);

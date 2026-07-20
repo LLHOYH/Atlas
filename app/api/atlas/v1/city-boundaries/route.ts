@@ -2,7 +2,7 @@ import { geoContains } from "d3-geo";
 import { NextResponse } from "next/server";
 
 const TIGERWEB_SERVICE = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer";
-const TIGERWEB_LAYERS = [4, 5] as const;
+const TIGERWEB_LAYERS = [3, 4, 5] as const;
 const MAX_PLACES = 100;
 
 type RequestedPlace = {
@@ -157,14 +157,16 @@ export async function POST(request: Request) {
       TIGERWEB_LAYERS.map((layer) => queryLayer(TIGERWEB_SERVICE, layer, places, "0.002")),
     );
     const seenGeoids = new Set<string>();
+    const seenPlaceIds = new Set<string>();
     const features = layerResults
       .flat()
       .map(reverseRingOrientation)
       .flatMap((feature) => {
         const place = places.find((candidate) => geoContains(feature, [candidate.lng, candidate.lat]));
         const geoid = String(feature.properties?.GEOID ?? "");
-        if (!place || !geoid || seenGeoids.has(geoid)) return [];
+        if (!place || !geoid || seenGeoids.has(geoid) || seenPlaceIds.has(place.id)) return [];
         seenGeoids.add(geoid);
+        seenPlaceIds.add(place.id);
         const center = labelCenter(feature, place);
         return [{
           ...feature,
@@ -189,7 +191,7 @@ export async function POST(request: Request) {
       source: {
         name: "U.S. Census Bureau TIGERweb",
         serviceUrl: TIGERWEB_SERVICE,
-        layers: ["Incorporated Places", "Census Designated Places"],
+        layers: ["Consolidated Cities", "Incorporated Places", "Census Designated Places"],
       },
       type: "FeatureCollection",
       features,

@@ -46,7 +46,6 @@ import { AtlasAuthOptions } from "./AtlasAuthOptions";
 import {
   useAtlasBoundaries,
   useAtlasCityBoundaries,
-  useAtlasLocalAreaContext,
   useAtlasPlaces,
   type AtlasBoundaryFeature,
   type AtlasPlace,
@@ -919,7 +918,7 @@ function buildBoundaryOutlineGeometry(features: AtlasBoundaryFeature[], radius: 
   return geometry;
 }
 
-function LocalAreaContext({ features }: { features: AtlasBoundaryFeature[] }) {
+function AdministrativeContext({ features }: { features: AtlasBoundaryFeature[] }) {
   const geometry = useMemo(
     () => features.length ? buildBoundaryOutlineGeometry(features, ADMIN_BASE_RADIUS - 0.006) : null,
     [features],
@@ -928,10 +927,10 @@ function LocalAreaContext({ features }: { features: AtlasBoundaryFeature[] }) {
   return (
     <group>
       <lineSegments geometry={geometry} frustumCulled={false} raycast={() => undefined}>
-        <lineBasicMaterial color="#75bdc7" transparent opacity={0.42} depthWrite={false} />
+        <lineBasicMaterial color="#75bdc7" transparent opacity={0.24} depthWrite={false} />
       </lineSegments>
       <lineSegments geometry={geometry} scale={1.0007} frustumCulled={false} raycast={() => undefined}>
-        <lineBasicMaterial color="#246a76" transparent opacity={0.28} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <lineBasicMaterial color="#246a76" transparent opacity={0.14} depthWrite={false} blending={THREE.AdditiveBlending} />
       </lineSegments>
     </group>
   );
@@ -1371,7 +1370,7 @@ function Earth({
   const { data: boundaryPayload } = useAtlasBoundaries(
     focusedIso3,
     "ADM1",
-    prefetchFocusedGeography && focusedIso3 !== "USA",
+    prefetchFocusedGeography,
   );
   const liveAgentsByCountry = useMemo(() => cities.reduce<Record<string, number>>((counts, city) => {
     const key = countryEnergyKey(city.country);
@@ -1436,15 +1435,14 @@ function Earth({
     cityBoundaryPlaces,
     labelDetail === 2,
   );
-  const { data: localAreaPayload } = useAtlasLocalAreaContext(focusedIso3, labelDetail === 2);
   const activeBoundaryPayload = focusedIso3 === "USA" ? cityBoundaryPayload : boundaryPayload;
   const activeBoundaryFeatures = useMemo(
     () => activeBoundaryPayload?.available ? activeBoundaryPayload.features : [],
     [activeBoundaryPayload],
   );
   const contextBoundaryFeatures = useMemo(
-    () => focusedIso3 === "USA" && localAreaPayload?.available ? localAreaPayload.features : [],
-    [focusedIso3, localAreaPayload],
+    () => focusedIso3 === "USA" && boundaryPayload?.available ? boundaryPayload.features : [],
+    [boundaryPayload, focusedIso3],
   );
   const displayPlaceLabels = useMemo(() => {
     const featureByPlaceId = new Map(activeBoundaryFeatures.flatMap((feature) => {
@@ -1613,7 +1611,7 @@ function Earth({
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
       {labelDetail === 2 && contextBoundaryFeatures.length > 0 && (
-        <LocalAreaContext features={contextBoundaryFeatures} />
+        <AdministrativeContext features={contextBoundaryFeatures} />
       )}
       {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
         <AdministrativeTerritories
@@ -1758,7 +1756,7 @@ function CanvasWorldFallback({
   const { data: fallbackBoundaryPayload } = useAtlasBoundaries(
     focusedCountryIso,
     "ADM1",
-    (selectedCountryKey !== null || fallbackDetail === 2) && focusedCountryIso !== "USA",
+    selectedCountryKey !== null || fallbackDetail === 2,
   );
   const { data: fallbackPlacesPayload } = useAtlasPlaces(
     focusedCountryIso,
@@ -1775,10 +1773,6 @@ function CanvasWorldFallback({
     fallbackDetailedPlaces,
     fallbackDetail === 2,
   );
-  const { data: fallbackLocalAreaPayload } = useAtlasLocalAreaContext(
-    focusedCountryIso,
-    fallbackDetail === 2,
-  );
   const fallbackBoundaryFeatures = useMemo(
     () => {
       const payload = focusedCountryIso === "USA" ? fallbackCityBoundaryPayload : fallbackBoundaryPayload;
@@ -1787,10 +1781,10 @@ function CanvasWorldFallback({
     [fallbackBoundaryPayload, fallbackCityBoundaryPayload, focusedCountryIso],
   );
   const fallbackContextFeatures = useMemo(
-    () => focusedCountryIso === "USA" && fallbackLocalAreaPayload?.available
-      ? fallbackLocalAreaPayload.features
+    () => focusedCountryIso === "USA" && fallbackBoundaryPayload?.available
+      ? fallbackBoundaryPayload.features
       : [],
-    [fallbackLocalAreaPayload, focusedCountryIso],
+    [fallbackBoundaryPayload, focusedCountryIso],
   );
   const fallbackDisplayPlaces = useMemo(() => {
     const featureByPlaceId = new Map(fallbackBoundaryFeatures.flatMap((feature) => {
@@ -3267,7 +3261,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
           <div className="geographyCredit">
             PLACES <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GEONAMES</a>
             <span /> BORDERS {selectedCityArea?.countryKey === "united states" ? (
-              <><a href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer" target="_blank" rel="noreferrer">US CENSUS TIGERWEB</a> · CITY</>
+              <><a href="https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer" target="_blank" rel="noreferrer">US CENSUS TIGERWEB</a> · CITY <span /> CONTEXT <a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a> · STATE</>
             ) : (
               <><a href="https://www.geoboundaries.org/" target="_blank" rel="noreferrer">GEOBOUNDARIES</a> · ADM1</>
             )}
