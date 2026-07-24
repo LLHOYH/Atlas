@@ -11,6 +11,7 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 - Empty city geography remains subdued while active country and city geography receives the appropriate energy color plus a moving surface flow.
 - City zoom renders every working, online, and idle agent as an individual status-colored marker; decorative macro particles are not used.
 - Progressive city labels remain visible from the moment the globe enters city level, while denser labels and legitimate city polygons load at deeper bands.
+- County or equivalent ADM2 borders remain as the complete geographic context beneath sparse municipal polygons, so entering the city layer never removes the surrounding borders.
 - Hovering an agent shows its name, runtime, state, and current activity; selecting it opens the existing agent profile.
 - Connected AI presence records use the same marker and energy pipeline as SDK telemetry when their city matches the Atlas catalog.
 - The WebGL and 2D compatibility renderers expose the same country energy, city energy, and individual-agent hierarchy.

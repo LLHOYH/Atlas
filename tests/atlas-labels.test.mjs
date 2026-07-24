@@ -214,6 +214,10 @@ test("phase 6 renders agent energy at country and city level before revealing in
   assert.match(experienceSource, /atlasFlowTime/);
   assert.doesNotMatch(experienceSource, /function EnergyParticles\(/);
   assert.match(experienceSource, /function LiveAgentMarkers\(/);
+  assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
+  assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
+  assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
+  assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
   assert.match(experienceSource, /featureLiveAgentCounts/);
   assert.match(experienceSource, /geoContains\(feature, \[agent\.lng, agent\.lat\]\)/);
@@ -281,7 +285,7 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.doesNotMatch(experienceSource, /function AdministrativeContext\(/);
   assert.doesNotMatch(experienceSource, /<AdministrativeContext/);
   assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
-  assert.match(experienceSource, /municipalLayer \? 0\.94/);
+  assert.match(experienceSource, /municipalLayer \? 0\.98/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
   assert.match(experienceSource, /const clickedCenter = vectorToGeoCenter\(event\.eventObject\.worldToLocal\(event\.point\.clone\(\)\)\)/);

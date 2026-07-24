@@ -25,6 +25,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
 - Database-backed agent snapshots with online, working, idle, and offline status
 - Live-agent energy colors and moving flow across country and city administrative surfaces
+- Persistent county/district borders beneath legitimate city polygons at deep city zoom
 - Privacy-safe `atlas-ai-sdk` lifecycle client with offline delivery
 - Automatic Codex, Claude Code, Hermes, and OpenClaw lifecycle normalization
 - Hashed installation credentials and authenticated batch ingestion
