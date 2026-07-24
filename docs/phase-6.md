@@ -8,8 +8,9 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 
 - Country surfaces aggregate every non-offline SDK agent plus connected Atlas AI presence into the existing energy bands.
 - Every active city-level administrative polygon calculates its own live-agent count from the privacy-safe coordinates contained by that polygon.
-- Empty city geography remains subdued while active geography receives the appropriate energy color and emissive intensity.
-- Deep city zoom renders every working, online, and idle agent as an individual status-colored marker.
+- Empty city geography remains subdued while active country and city geography receives the appropriate energy color plus a moving surface flow.
+- City zoom renders every working, online, and idle agent as an individual status-colored marker; decorative macro particles are not used.
+- Progressive city labels remain visible from the moment the globe enters city level, while denser labels and legitimate city polygons load at deeper bands.
 - Hovering an agent shows its name, runtime, state, and current activity; selecting it opens the existing agent profile.
 - Connected AI presence records use the same marker and energy pipeline as SDK telemetry when their city matches the Atlas catalog.
 - The WebGL and 2D compatibility renderers expose the same country energy, city energy, and individual-agent hierarchy.

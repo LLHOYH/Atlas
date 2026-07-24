@@ -210,12 +210,16 @@ test("phase 6 begins from phase 5 geography with a live agent rendering foundati
 });
 
 test("phase 6 renders agent energy at country and city level before revealing individuals", () => {
+  assert.match(experienceSource, /function EnergyFlowMaterial\(/);
+  assert.match(experienceSource, /atlasFlowTime/);
+  assert.doesNotMatch(experienceSource, /function EnergyParticles\(/);
   assert.match(experienceSource, /function LiveAgentMarkers\(/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
   assert.match(experienceSource, /featureLiveAgentCounts/);
   assert.match(experienceSource, /geoContains\(feature, \[agent\.lng, agent\.lat\]\)/);
   assert.match(experienceSource, /<LiveAgentMarkers entries=\{focusedLiveAgentEntries\}/);
-  assert.match(experienceSource, /cityLabelBand >= 2/);
+  assert.match(experienceSource, /labelDetail === 2 && \(\s*<LiveAgentMarkers/);
+  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /globeAgentTooltip/);
   assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
   assert.match(experienceSource, /fallbackBoundaryAgentCounts/);
@@ -242,7 +246,7 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 2 && displayPlaceLabels\.map/);
+  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);

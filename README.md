@@ -8,7 +8,7 @@ Atlas is an interactive product prototype for exploring global attention through
 
 **Phase 6 — Global Presence Rendering · In progress**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 now uses the live telemetry stream to color both country and city geography by agent energy, then reveals individual working, online, and idle agents at deep city zoom.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 now uses the live telemetry stream to animate energy across country and city surfaces, then reveals individual working, online, and idle agents throughout city zoom.
 
 [`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
@@ -24,7 +24,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
 - Database-backed agent snapshots with online, working, idle, and offline status
-- Live-agent energy colors on both country and city administrative surfaces
+- Live-agent energy colors and moving flow across country and city administrative surfaces
 - Privacy-safe `atlas-ai-sdk` lifecycle client with offline delivery
 - Automatic Codex, Claude Code, Hermes, and OpenClaw lifecycle normalization
 - Hashed installation credentials and authenticated batch ingestion

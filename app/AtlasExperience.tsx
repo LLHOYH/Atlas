@@ -958,6 +958,102 @@ function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number)
   return { geometry, outline };
 }
 
+function EnergyFlowMaterial({
+  color,
+  emissive,
+  emissiveIntensity,
+  flowColor,
+  flowStrength,
+  flowPhase,
+  opacity = 1,
+  transparent = false,
+  depthWrite = true,
+  roughness = 0.58,
+  metalness = 0.14,
+}: {
+  color: string;
+  emissive: string;
+  emissiveIntensity: number;
+  flowColor: string;
+  flowStrength: number;
+  flowPhase: number;
+  opacity?: number;
+  transparent?: boolean;
+  depthWrite?: boolean;
+  roughness?: number;
+  metalness?: number;
+}) {
+  const shader = useRef<THREE.WebGLProgramParametersWithUniforms | null>(null);
+  const flowTint = useMemo(() => new THREE.Color(flowColor), [flowColor]);
+  const configureShader = useCallback((compiled: THREE.WebGLProgramParametersWithUniforms) => {
+    compiled.uniforms.atlasFlowTime = { value: 0 };
+    compiled.uniforms.atlasFlowStrength = { value: flowStrength };
+    compiled.uniforms.atlasFlowPhase = { value: flowPhase };
+    compiled.uniforms.atlasFlowColor = { value: flowTint };
+    compiled.vertexShader = compiled.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vAtlasFlowPosition;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vAtlasFlowPosition = position;`,
+      );
+    compiled.fragmentShader = compiled.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float atlasFlowTime;
+        uniform float atlasFlowStrength;
+        uniform float atlasFlowPhase;
+        uniform vec3 atlasFlowColor;
+        varying vec3 vAtlasFlowPosition;`,
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        `float atlasFlowA = pow(max(0.0, 0.5 + 0.5 * sin(
+          dot(vAtlasFlowPosition, vec3(12.0, 8.0, 5.0))
+          - atlasFlowTime * 1.45
+          + atlasFlowPhase
+        )), 9.0);
+        float atlasFlowB = pow(max(0.0, 0.5 + 0.5 * sin(
+          dot(vAtlasFlowPosition, vec3(-6.0, 11.0, 9.0))
+          - atlasFlowTime * 0.92
+          + atlasFlowPhase * 1.7
+        )), 14.0);
+        outgoingLight += atlasFlowColor * (atlasFlowA * 0.72 + atlasFlowB * 0.36) * atlasFlowStrength;
+        #include <opaque_fragment>`,
+      );
+    shader.current = compiled;
+  }, [flowPhase, flowStrength, flowTint]);
+
+  useFrame(({ clock }) => {
+    if (!shader.current) return;
+    shader.current.uniforms.atlasFlowTime.value = clock.elapsedTime;
+    shader.current.uniforms.atlasFlowStrength.value = flowStrength;
+    shader.current.uniforms.atlasFlowPhase.value = flowPhase;
+    shader.current.uniforms.atlasFlowColor.value.copy(flowTint);
+  });
+
+  return (
+    <meshStandardMaterial
+      color={color}
+      emissive={emissive}
+      emissiveIntensity={emissiveIntensity}
+      roughness={roughness}
+      metalness={metalness}
+      transparent={transparent}
+      opacity={opacity}
+      depthWrite={depthWrite}
+      side={THREE.DoubleSide}
+      onBeforeCompile={configureShader}
+      customProgramCacheKey={() => "atlas-energy-flow-v1"}
+    />
+  );
+}
+
 function CountrySurfaces({
   liveAgentsByCountry = {},
   selectedCountryKey,
@@ -1087,13 +1183,15 @@ function CountrySurfaces({
             {detailLevel >= 2 ? (
               <meshBasicMaterial color="#07303a" side={THREE.DoubleSide} />
             ) : (
-              <meshStandardMaterial
+              <EnergyFlowMaterial
                 color={density.color}
                 emissive={density.color}
                 emissiveIntensity={0.18 + density.level * 0.11}
+                flowColor={density.level >= 4 ? "#ffd36f" : "#6fe9df"}
+                flowStrength={liveAgentCount > 0 ? 0.42 + density.level * 0.12 : 0}
+                flowPhase={index * 0.73}
                 roughness={0.56}
                 metalness={0.16}
-                side={THREE.DoubleSide}
               />
             )}
           </mesh>
@@ -1200,10 +1298,13 @@ function AdministrativeTerritories({
           frustumCulled={false}
           raycast={() => undefined}
         >
-          <meshStandardMaterial
+          <EnergyFlowMaterial
             color={hasLiveAgents ? density.color : "#082832"}
             emissive={hasLiveAgents ? density.color : "#061c24"}
             emissiveIntensity={hasLiveAgents ? 0.48 + density.level * 0.16 : 0.12}
+            flowColor={density.level >= 4 ? "#ffd36f" : "#6fe9df"}
+            flowStrength={hasLiveAgents ? 0.5 + density.level * 0.13 : 0}
+            flowPhase={density.level * 1.17}
             roughness={0.62}
             metalness={0.12}
             transparent
@@ -1211,7 +1312,6 @@ function AdministrativeTerritories({
               ? (municipalLayer ? 0.62 : 0.44) + density.level * 0.045
               : municipalLayer ? 0.24 : detailLevel === 2 ? 0.13 : 0.075}
             depthWrite={false}
-            side={THREE.DoubleSide}
           />
         </mesh>
       ))}
@@ -1289,65 +1389,6 @@ function AdministrativeTerritories({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
     </group>
-  );
-}
-
-function EnergyParticles({ cities, layer }: { cities: City[]; layer: Layer }) {
-  const points = useRef<THREE.Points>(null);
-  const geometry = useMemo(() => {
-    let seed = 1487;
-    const random = () => {
-      seed = (seed * 16807) % 2147483647;
-      return (seed - 1) / 2147483646;
-    };
-    const positions: number[] = [];
-    const colors: number[] = [];
-    cities.forEach((city) => {
-      const center = latLngToVector3(city.lat, city.lng, 3.06);
-      const normal = center.clone().normalize();
-      const tangent = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
-      const bitangent = normal.clone().cross(tangent).normalize();
-      const baseColor = new THREE.Color(city.color);
-      const particleCount = 12 + Math.round(Math.min((city.agentEnergy ?? 0) / 360, 1) * 38);
-      for (let i = 0; i < particleCount; i += 1) {
-        const spread = 0.02 + random() * 0.22;
-        const angle = random() * Math.PI * 2;
-        const lift = random() * 0.09;
-        const point = center
-          .clone()
-          .add(tangent.clone().multiplyScalar(Math.cos(angle) * spread))
-          .add(bitangent.clone().multiplyScalar(Math.sin(angle) * spread))
-          .add(normal.clone().multiplyScalar(lift));
-        positions.push(point.x, point.y, point.z);
-        colors.push(baseColor.r, baseColor.g, baseColor.b);
-      }
-    });
-    const result = new THREE.BufferGeometry();
-    result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    result.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    return result;
-  }, [cities]);
-
-  useFrame(({ clock }) => {
-    if (points.current) {
-      const material = points.current.material as THREE.PointsMaterial;
-      material.opacity = 0.42 + Math.sin(clock.elapsedTime * 1.3) * 0.1;
-    }
-  });
-
-  return (
-    <points ref={points} geometry={geometry}>
-      <pointsMaterial
-        color={layer === "Attention" ? "#ffffff" : layerColors[layer]}
-        size={0.025}
-        sizeAttenuation
-        vertexColors={layer === "Attention"}
-        transparent
-        opacity={0.5}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
   );
 }
 
@@ -1905,7 +1946,6 @@ function Earth({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} detailLevel={labelDetail} onSelect={onCountrySelect} />
-      {labelDetail === 1 && <EnergyParticles cities={cities} layer={layer} />}
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
@@ -1953,7 +1993,7 @@ function Earth({
           }}
         />
       )}
-      {labelDetail === 2 && cityLabelBand >= 2 && (
+      {labelDetail === 2 && (
         <LiveAgentMarkers entries={focusedLiveAgentEntries} onSelect={onAgentSelect} />
       )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
@@ -2000,16 +2040,18 @@ function Earth({
           />
         );
       })}
-      {labelDetail === 2 && cityLabelBand >= 2 && displayPlaceLabels.map((city) => {
-        const directBoundaryIndex = activeBoundaryFeatures.findIndex((feature) => (
-          feature.properties?.atlasPlaceId === city.id
-        ));
+      {labelDetail === 2 && displayPlaceLabels.map((city) => {
+        const directBoundaryIndex = activeBoundaryKind === "city"
+          ? activeBoundaryFeatures.findIndex((feature) => feature.properties?.atlasPlaceId === city.id)
+          : -1;
         const boundaryIndex = directBoundaryIndex >= 0
           ? directBoundaryIndex
-          : activeBoundaryFeatures.findIndex((feature, featureIndex) => (
-            boundaryBoundsContain(activeBoundaryBounds[featureIndex], city.lng, city.lat)
-            && geoContains(feature, [city.lng, city.lat])
-          ));
+          : activeBoundaryKind === "city"
+            ? activeBoundaryFeatures.findIndex((feature, featureIndex) => (
+              boundaryBoundsContain(activeBoundaryBounds[featureIndex], city.lng, city.lat)
+              && geoContains(feature, [city.lng, city.lat])
+            ))
+            : -1;
         const boundaryFeature = boundaryIndex >= 0 ? activeBoundaryFeatures[boundaryIndex] : null;
         const boundaryHovered = administrativeHover?.countryKey === focusedCountryKey
           && administrativeHover.contextKey === administrativeContextKey
@@ -2354,23 +2396,27 @@ function CanvasWorldFallback({
             context.fillStyle = index === view.hoveredBoundaryIndex ? "#ffd36f" : "#8abdc5";
             context.fillText(boundaryFeatureName(feature).toUpperCase(), point[0], point[1]);
           });
-        } else {
-          const visibleCities = fallbackDisplayPlaces
-            .filter((city) => isVisible(city.lng, city.lat))
-            .slice(0, 140);
-          for (const city of visibleCities) {
-            const point = projection([city.lng, city.lat]);
-            if (!point) continue;
-            const boundaryIndex = fallbackBoundaryFeatures.findIndex((feature) => (
-              feature.properties?.atlasPlaceId === city.id
-            ));
-            context.fillStyle = boundaryIndex === view.hoveredBoundaryIndex ? "#ffd36f" : "#7fdde7";
-            context.fillText(city.name.toUpperCase(), point[0], point[1]);
-          }
+        }
+        const cityLimit = cityBandForProgress(view.progress) === 0
+          ? 30
+          : cityBandForProgress(view.progress) === 1
+            ? 65
+            : 140;
+        const visibleCities = fallbackDisplayPlaces
+          .filter((city) => isVisible(city.lng, city.lat))
+          .slice(0, cityLimit);
+        for (const city of visibleCities) {
+          const point = projection([city.lng, city.lat]);
+          if (!point) continue;
+          const boundaryIndex = fallbackBoundaryFeatures.findIndex((feature) => (
+            feature.properties?.atlasPlaceId === city.id
+          ));
+          context.fillStyle = boundaryIndex === view.hoveredBoundaryIndex ? "#ffd36f" : "#7fdde7";
+          context.fillText(city.name.toUpperCase(), point[0], point[1]);
         }
       }
 
-      if (detail === 2 && cityBandForProgress(view.progress) >= 2) {
+      if (detail === 2) {
         fallbackFocusedAgentEntries.forEach((entry, index) => {
           if (!isVisible(entry.agent.lng, entry.agent.lat)) return;
           const point = projection([entry.agent.lng, entry.agent.lat]);
@@ -2443,7 +2489,7 @@ function CanvasWorldFallback({
       };
     };
     const hitAgent = (x: number, y: number) => {
-      if (detailForProgress(view.progress) !== 2 || cityBandForProgress(view.progress) < 2) return null;
+      if (detailForProgress(view.progress) !== 2) return null;
       let nearestIndex = -1;
       let nearestDistance = Number.POSITIVE_INFINITY;
       for (let index = 0; index < fallbackFocusedAgentEntries.length; index += 1) {
