@@ -5,7 +5,7 @@ Phase 5 replaces Atlas's sparse prototype geography with a reliable worldwide co
 ## Delivered
 
 - Dense worldwide populated-place labels sourced from GeoNames.
-- Country silhouettes from Natural Earth and progressive ADM1, ADM2, and local administrative boundaries from geoBoundaries.
+- Country silhouettes from Natural Earth and progressive ADM1, ADM2, and local administrative boundaries from a pinned geoBoundaries `gbOpen` revision.
 - U.S. incorporated-place, consolidated-city, and census-place polygons from Census TIGERweb.
 - A country-to-city zoom scale with delayed city entry, deeper city inspection, and synchronized geographic detail bands.
 - Hoverable and selectable administrative polygons whose labels, hit areas, and camera targets share the same geometry.

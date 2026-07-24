@@ -21,7 +21,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - A fixed-camera, momentum-driven pixel globe
 - Zoom-driven country and city detail, with an explicit street-view transition where supported
 - Worldwide country labels plus 234,000+ progressively loaded cities, towns, villages, and administrative seats
-- Official U.S. municipal/place polygons plus published administrative borders elsewhere, with point-only fallback where no legitimate city border exists
+- Official U.S. municipal/place polygons plus pinned published administrative borders elsewhere, with point-only fallback where no legitimate city border exists
 - Whole-country silhouette hover elevation with complete interior hit detection
 - Seamless deep-zoom transition into a global north-up OpenStreetMap vector street view
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania

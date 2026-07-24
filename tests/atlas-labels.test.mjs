@@ -298,8 +298,10 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /fallbackActiveBoundaryPayload\.features\.map\(normalizeBoundaryOrientation\)/);
   assert.doesNotMatch(experienceSource, /buildCityTerritoryGeometry|clipTerritoryPolygon|CityTerritories|fallbackCityTerritories/);
   assert.match(geographyRouteSource, /www\.geoboundaries\.org\/api\/current\/gbOpen/);
-  assert.match(geographyRouteSource, /simplifiedGeometryGeoJSON/);
-  assert.match(geographyRouteSource, /boundaryLicense/);
+  assert.match(geographyRouteSource, /media\.githubusercontent\.com\/media\/wmgeolab\/geoBoundaries/);
+  assert.match(geographyRouteSource, /GEOBOUNDARIES_REVISION/);
+  assert.match(geographyRouteSource, /_simplified\.geojson/);
+  assert.match(geographyRouteSource, /license: "CC BY 4\.0"/);
   assert.match(geographyRouteSource, /No open administrative boundary is published/);
   assert.match(geographyRouteSource, /const LOCAL_BOUNDARY_LEVELS = \["ADM3", "ADM2", "ADM1"\]/);
   assert.match(geographyRouteSource, /requestedLevel: level/);

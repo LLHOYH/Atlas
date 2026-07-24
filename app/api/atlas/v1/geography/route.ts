@@ -3,16 +3,9 @@ import { NextResponse } from "next/server";
 
 const GEOGRAPHY_LEVELS = new Set(["ADM1", "ADM2", "ADM3", "ADM4", "ADM5", "LOCAL"]);
 const GEOBOUNDARIES_API = "https://www.geoboundaries.org/api/current/gbOpen";
+const GEOBOUNDARIES_REVISION = "5c25134028196d43ce97b5071934fd0cfc92f09f";
+const GEOBOUNDARIES_MEDIA = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/${GEOBOUNDARIES_REVISION}/releaseData/gbOpen`;
 const LOCAL_BOUNDARY_LEVELS = ["ADM3", "ADM2", "ADM1"] as const;
-
-type GeoBoundariesMetadata = {
-  boundaryCanonical?: string;
-  boundaryLicense?: string;
-  boundarySource?: string;
-  boundaryYearRepresented?: string;
-  gjDownloadURL?: string;
-  simplifiedGeometryGeoJSON?: string;
-};
 
 type BoundaryCollection = GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 type BoundaryFeature = BoundaryCollection["features"][number];
@@ -48,16 +41,24 @@ function unavailable(iso: string, level: string, reason: string) {
   }, { headers: cacheHeaders });
 }
 
-async function findBoundaryMetadata(iso: string, requestedLevel: string) {
+function pinnedGeometryUrl(iso: string, level: string) {
+  return `${GEOBOUNDARIES_MEDIA}/${iso}/${level}/geoBoundaries-${iso}-${level}_simplified.geojson`;
+}
+
+async function findBoundaryGeometry(iso: string, requestedLevel: string) {
   const candidates = requestedLevel === "LOCAL" ? LOCAL_BOUNDARY_LEVELS : [requestedLevel];
   for (const level of candidates) {
     const metadataUrl = `${GEOBOUNDARIES_API}/${iso}/${level}/`;
-    const response = await fetch(metadataUrl, { headers: { Accept: "application/json" } });
+    const geometryUrl = pinnedGeometryUrl(iso, level);
+    const response = await fetch(geometryUrl, {
+      headers: { Accept: "application/geo+json, application/json" },
+    });
     if (!response.ok) continue;
     return {
       level,
       metadataUrl,
-      metadata: await response.json() as GeoBoundariesMetadata,
+      geometryUrl,
+      collection: await response.json() as BoundaryCollection,
     };
   }
   return null;
@@ -76,16 +77,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const resolved = await findBoundaryMetadata(iso, level);
+    const resolved = await findBoundaryGeometry(iso, level);
     if (!resolved) return unavailable(iso, level, "No open administrative boundary is published for this level.");
-    const { level: resolvedLevel, metadataUrl, metadata } = resolved;
-    const geometryUrl = metadata.simplifiedGeometryGeoJSON ?? metadata.gjDownloadURL;
-    if (!geometryUrl) return unavailable(iso, level, "The source did not provide a GeoJSON download.");
-
-    const geometryResponse = await fetch(geometryUrl, { headers: { Accept: "application/geo+json, application/json" } });
-    if (!geometryResponse.ok) return unavailable(iso, level, "The published boundary file is temporarily unavailable.");
-
-    const collection = await geometryResponse.json() as BoundaryCollection;
+    const { level: resolvedLevel, metadataUrl, geometryUrl, collection } = resolved;
     const features = Array.isArray(collection.features)
       ? collection.features
         .filter((feature) => feature?.geometry?.type === "Polygon" || feature?.geometry?.type === "MultiPolygon")
@@ -101,10 +95,10 @@ export async function GET(request: Request) {
         name: "geoBoundaries",
         metadataUrl,
         geometryUrl,
-        canonical: metadata.boundaryCanonical ?? null,
-        license: metadata.boundaryLicense ?? null,
-        originalSource: metadata.boundarySource ?? null,
-        yearRepresented: metadata.boundaryYearRepresented ?? null,
+        canonical: `geoBoundaries gbOpen ${iso} ${resolvedLevel}`,
+        license: "CC BY 4.0",
+        originalSource: "geoBoundaries gbOpen",
+        yearRepresented: null,
       },
       type: "FeatureCollection",
       features,
