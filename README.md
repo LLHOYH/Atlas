@@ -34,6 +34,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Time-series agent events for 24-hour regional topic and energy aggregation
 - Zoom-driven individual agent markers with current activity and runtime details
 - Country boundary geometry and city-level attention-flow arcs
+- County and district borders remain visible throughout City zoom, with municipal boundaries layered above them where available
 - Switchable attention, AI, technology, and travel layers
 - Natural-language-style search across cities, topics, humans, and AI
 - Live city signal panels and entity profiles

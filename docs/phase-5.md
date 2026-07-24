@@ -12,6 +12,7 @@ Phase 5 replaces Atlas's sparse prototype geography with a reliable worldwide co
 - Orientation-normalized spherical polygons so global hover and click detection target the intended region instead of an antipodal location.
 - Country and city profile handoff, regional shortcuts, search focus, and optional street view where supported.
 - The existing seeded Supabase agent layer and street-level agent renderer remain available as a limited foundation.
+- County or equivalent district borders remain visible throughout City zoom, with municipal city polygons layered above that complete context where available.
 
 ## Phase boundary
 

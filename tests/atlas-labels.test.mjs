@@ -226,7 +226,7 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 2 && displayPlaceLabels\.map/);
+  assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 1 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);
@@ -258,10 +258,14 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"ADM2"/);
   assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"LOCAL"/);
   assert.match(experienceSource, /cityBoundaryPayload\?\.available[\s\S]*?localBoundaryPayload\?\.available/);
-  assert.doesNotMatch(experienceSource, /function AdministrativeContext\(/);
-  assert.doesNotMatch(experienceSource, /<AdministrativeContext/);
+  assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
+  assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
+  assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
   assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
-  assert.match(experienceSource, /municipalLayer \? 0\.94/);
+  assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
+  assert.match(experienceSource, /municipalLayer \? 0\.98/);
+  assert.match(experienceSource, /if \(progress < CITY_PROGRESS\) return 0/);
+  assert.match(experienceSource, /if \(progress < 80\) return 1/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
   assert.match(experienceSource, /const clickedCenter = vectorToGeoCenter\(event\.eventObject\.worldToLocal\(event\.point\.clone\(\)\)\)/);
