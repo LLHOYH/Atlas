@@ -108,6 +108,65 @@ button {
   inset: 0;
 }
 
+.globeAgentTooltipAnchor {
+  pointer-events: none;
+}
+
+.globeAgentTooltip {
+  display: grid;
+  min-width: 132px;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid rgba(119, 221, 230, 0.2);
+  border-radius: 8px;
+  background: rgba(3, 13, 18, 0.94);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.46), 0 0 18px rgba(64, 189, 205, 0.08);
+  color: #d8e3e6;
+  font-family: var(--font-geist-mono), monospace;
+  white-space: nowrap;
+  transform: translateY(-16px);
+  backdrop-filter: blur(12px);
+}
+
+.globeAgentTooltip span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #758a91;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.globeAgentTooltip span i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.globeAgentTooltip b {
+  overflow: hidden;
+  max-width: 180px;
+  color: #eff8fa;
+  font-size: 10px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+}
+
+.globeAgentTooltip small,
+.globeAgentTooltip em {
+  overflow: hidden;
+  max-width: 180px;
+  color: #81969d;
+  font-size: 7px;
+  font-style: normal;
+  text-overflow: ellipsis;
+}
+
+.globeAgentTooltip em {
+  color: #b0c2c7;
+}
+
 .rendererHandoff {
   position: absolute;
   z-index: 1;
