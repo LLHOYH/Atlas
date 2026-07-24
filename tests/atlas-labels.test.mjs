@@ -148,7 +148,7 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /AGENT PULSE · NOW/);
   assert.match(experienceSource, /className="pulseLegend"/);
   assert.doesNotMatch(experienceSource, /className="energyLegend/);
-  assert.match(experienceSource, /LIVE AGENTS · COUNTRY \/ CITY/);
+  assert.match(experienceSource, /LIVE AGENTS PER COUNTRY/);
   assert.match(experienceSource, /className="energyMeter"/);
   assert.match(experienceSource, /densityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
@@ -201,36 +201,12 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
 });
 
-test("phase 6 begins from phase 5 geography with a live agent rendering foundation", () => {
-  assert.match(readmeSource, /Phase 6 — Global Presence Rendering · In progress/);
+test("phase 5 closes on global geography and defers worldwide presence to phase 6", () => {
+  assert.match(readmeSource, /Phase 5 — Global Administrative Geography & Dense Local Detail · Complete/);
+  assert.match(readmeSource, /Next: Phase 6 — Global Presence Rendering/);
   assert.match(phaseFiveSource, /does not claim complete worldwide agent or human location coverage/);
-  assert.match(phaseSixSource, /live agent globe foundation delivered/);
   assert.match(phaseSixSource, /show participating humans and AI agents across the living world/);
   assert.match(phaseSixSource, /Location is user-approved and approximate by default/);
-});
-
-test("phase 6 renders agent energy at country and city level before revealing individuals", () => {
-  assert.match(experienceSource, /function EnergyFlowMaterial\(/);
-  assert.match(experienceSource, /atlasFlowTime/);
-  assert.doesNotMatch(experienceSource, /function EnergyParticles\(/);
-  assert.match(experienceSource, /function LiveAgentMarkers\(/);
-  assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
-  assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
-  assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
-  assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
-  assert.match(experienceSource, /agent\.status !== "offline"/);
-  assert.match(experienceSource, /featureLiveAgentCounts/);
-  assert.match(experienceSource, /geoContains\(feature, \[agent\.lng, agent\.lat\]\)/);
-  assert.match(experienceSource, /<LiveAgentMarkers entries=\{focusedLiveAgentEntries\}/);
-  assert.match(experienceSource, /labelDetail === 2 && \(\s*<LiveAgentMarkers/);
-  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
-  assert.match(experienceSource, /globeAgentTooltip/);
-  assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
-  assert.match(experienceSource, /fallbackBoundaryAgentCounts/);
-  assert.match(experienceSource, /fallbackFocusedAgentEntries/);
-  assert.match(experienceSource, /atlasPresenceToAgent/);
-  assert.match(globalStylesSource, /\.globeAgentTooltip/);
-  assert.match(phaseSixSource, /WebGL and 2D compatibility renderers/);
 });
 
 test("zoom progress exposes only country and a deep city range", () => {
@@ -250,7 +226,7 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
   assert.doesNotMatch(globalStylesSource, /\.lodIndicator/);
-  assert.match(experienceSource, /labelDetail === 2 && displayPlaceLabels\.map/);
+  assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 2 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /useAtlasPlaces\(focusedIso3/);
   assert.doesNotMatch(experienceSource, /labelDetail === 2 && globalRegionLabels\.map/);
   assert.match(experienceSource, /if \(detail === 2\)/);
@@ -285,7 +261,7 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.doesNotMatch(experienceSource, /function AdministrativeContext\(/);
   assert.doesNotMatch(experienceSource, /<AdministrativeContext/);
   assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
-  assert.match(experienceSource, /municipalLayer \? 0\.98/);
+  assert.match(experienceSource, /municipalLayer \? 0\.94/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);
   assert.match(experienceSource, /const index = findFeatureAtPoint\(event\.point, event\.eventObject\)/);
   assert.match(experienceSource, /const clickedCenter = vectorToGeoCenter\(event\.eventObject\.worldToLocal\(event\.point\.clone\(\)\)\)/);
@@ -398,7 +374,7 @@ test("country background energy uses six live-agent levels with one top tier abo
   assert.match(experienceSource, /max: Number\.POSITIVE_INFINITY/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
   assert.match(experienceSource, /mesh\.material\.color\.copy\(densityColor\)/);
-  assert.match(experienceSource, /Area color = agents live now/);
+  assert.match(experienceSource, /Energy level = agents live now/);
 });
 
 test("country selection recenters the globe and opens an aggregated country profile", () => {
