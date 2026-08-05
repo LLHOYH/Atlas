@@ -252,6 +252,16 @@ function cityBandForProgress(progress: number) {
   return 2;
 }
 
+function dragSensitivityForProgress(progress: number) {
+  if (progress < CITY_PROGRESS) return 1;
+  const cityProgress = THREE.MathUtils.clamp(
+    (progress - CITY_PROGRESS) / (100 - CITY_PROGRESS),
+    0,
+    1,
+  );
+  return THREE.MathUtils.lerp(0.72, 0.12, cityProgress);
+}
+
 function cityAreaSelectionFromCity(city: City): CityAreaSelection {
   return {
     name: city.name,
@@ -2017,7 +2027,11 @@ function Earth({
     const dy = event.clientY - drag.current.y;
     drag.current.x = event.clientX;
     drag.current.y = event.clientY;
-    velocity.current = { x: dx * 0.0035, y: dy * 0.0028 };
+    const dragSensitivity = dragSensitivityForProgress(currentZoomProgress.current);
+    velocity.current = {
+      x: dx * 0.0035 * dragSensitivity,
+      y: dy * 0.0028 * dragSensitivity,
+    };
     orientation.current.yaw += velocity.current.x;
     orientation.current.pitch = THREE.MathUtils.clamp(
       orientation.current.pitch + velocity.current.y,
@@ -2655,8 +2669,9 @@ function CanvasWorldFallback({
         const deltaX = point.x - lastX;
         const deltaY = point.y - lastY;
         if (Math.abs(deltaX) + Math.abs(deltaY) > 1) moved = true;
-        view.lng = normalizeLongitude(view.lng - deltaX * 0.22);
-        view.lat = THREE.MathUtils.clamp(view.lat + deltaY * 0.18, -82, 82);
+        const dragSensitivity = dragSensitivityForProgress(view.progress);
+        view.lng = normalizeLongitude(view.lng - deltaX * 0.22 * dragSensitivity);
+        view.lat = THREE.MathUtils.clamp(view.lat + deltaY * 0.18 * dragSensitivity, -82, 82);
         lastX = point.x;
         lastY = point.y;
       } else {
