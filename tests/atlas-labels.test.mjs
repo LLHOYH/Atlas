@@ -221,6 +221,11 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0032, 8, 8\]\}/);
   assert.match(experienceSource, /colorWrite=\{false\}/);
   assert.doesNotMatch(experienceSource, /haloMaterial|ref=\{halos\}/);
+  assert.match(experienceSource, /function agentMarkerScaleForDistance\(distance: number\)/);
+  assert.match(experienceSource, /visibleGap \/ referenceGap, 0\.02, 18/);
+  assert.match(experienceSource, /useFrame\(\(\{ camera \}\) => \{/);
+  assert.match(experienceSource, /applyMarkerTransforms\(nextScale\)/);
+  assert.match(experienceSource, /multiplyScalar\(1\.00025\)/);
   assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
   assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
   assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
