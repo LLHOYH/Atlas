@@ -213,6 +213,8 @@ function normalizeLongitude(value: number) {
 const COUNTRY_DETAIL_DISTANCE = 6.15;
 const CITY_MAX_DISTANCE = 3.28;
 const AGENT_MARKER_RADIUS = 3.105;
+const AGENT_MARKER_GEOMETRY_RADIUS = 0.001;
+const AGENT_MARKER_SCREEN_RADIUS_PX = 3.25;
 const CITY_DEEP_ZOOM_DISTANCE = 3.1085;
 const DEEP_ZOOM_PROGRESS_PER_DOUBLING = 20;
 const DEEP_ZOOM_PROGRESS_LIMIT = 220;
@@ -267,13 +269,12 @@ function deepCityMagnificationForProgress(progress: number) {
   return Math.pow(2, (progress - 100) / DEEP_ZOOM_PROGRESS_PER_DOUBLING);
 }
 
-function agentMarkerScaleForDistance(distance: number) {
-  const referenceGap = CITY_MAX_DISTANCE - AGENT_MARKER_RADIUS;
-  const visibleGap = Math.max(
-    distance - AGENT_MARKER_RADIUS,
-    CITY_DEEP_ZOOM_DISTANCE - AGENT_MARKER_RADIUS,
-  );
-  return THREE.MathUtils.clamp(visibleGap / referenceGap, 0.02, 18);
+function agentMarkerScaleForScreenSize(cameraDistance: number, viewportHeight: number, fovDegrees: number) {
+  const worldUnitsPerPixel = 2
+    * Math.max(cameraDistance, 0.001)
+    * Math.tan(THREE.MathUtils.degToRad(fovDegrees) / 2)
+    / Math.max(viewportHeight, 1);
+  return worldUnitsPerPixel * AGENT_MARKER_SCREEN_RADIUS_PX / AGENT_MARKER_GEOMETRY_RADIUS;
 }
 
 function cityBandForProgress(progress: number) {
@@ -1451,35 +1452,17 @@ function LiveAgentMarkers({
   const cores = useRef<THREE.InstancedMesh>(null);
   const rings = useRef<THREE.InstancedMesh>(null);
   const hitTargets = useRef<THREE.InstancedMesh>(null);
-  const appliedMarkerScale = useRef(-1);
+  const markerTransformScratch = useRef({
+    matrix: new THREE.Matrix4(),
+    quaternion: new THREE.Quaternion(),
+    scale: new THREE.Vector3(),
+    worldPosition: new THREE.Vector3(),
+  });
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const markerPositions = useMemo(
     () => entries.map(({ agent }) => latLngToVector3(agent.lat, agent.lng, AGENT_MARKER_RADIUS)),
     [entries],
   );
-
-  const applyMarkerTransforms = useCallback((markerScale: number) => {
-    const coreMesh = cores.current;
-    const ringMesh = rings.current;
-    const hitMesh = hitTargets.current;
-    if (!coreMesh || !ringMesh || !hitMesh) return;
-    const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const visualScale = new THREE.Vector3();
-    const hitScale = new THREE.Vector3().setScalar(markerScale);
-    markerPositions.forEach((position, index) => {
-      const scale = markerScale * (entries[index].agent.id === hoveredAgentId ? 1.55 : 1);
-      visualScale.setScalar(scale);
-      matrix.compose(position, quaternion, visualScale);
-      coreMesh.setMatrixAt(index, matrix);
-      ringMesh.setMatrixAt(index, matrix);
-      matrix.compose(position, quaternion, hitScale);
-      hitMesh.setMatrixAt(index, matrix);
-    });
-    coreMesh.instanceMatrix.needsUpdate = true;
-    ringMesh.instanceMatrix.needsUpdate = true;
-    hitMesh.instanceMatrix.needsUpdate = true;
-  }, [entries, hoveredAgentId, markerPositions]);
 
   useLayoutEffect(() => {
     const coreMesh = cores.current;
@@ -1496,14 +1479,32 @@ function LiveAgentMarkers({
     });
     if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
     if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
-    applyMarkerTransforms(appliedMarkerScale.current > 0 ? appliedMarkerScale.current : 1);
-  }, [applyMarkerTransforms, entries]);
+  }, [entries]);
 
-  useFrame(({ camera }) => {
-    const nextScale = agentMarkerScaleForDistance(camera.position.length());
-    if (Math.abs(nextScale - appliedMarkerScale.current) < 0.012) return;
-    appliedMarkerScale.current = nextScale;
-    applyMarkerTransforms(nextScale);
+  useFrame(({ camera, size }) => {
+    const coreMesh = cores.current;
+    const ringMesh = rings.current;
+    const hitMesh = hitTargets.current;
+    if (!coreMesh || !ringMesh || !hitMesh) return;
+    ringMesh.updateWorldMatrix(true, false);
+    const effectiveFov = camera instanceof THREE.PerspectiveCamera ? camera.getEffectiveFOV() : 38;
+    const scratch = markerTransformScratch.current;
+    markerPositions.forEach((position, index) => {
+      scratch.worldPosition.copy(position).applyMatrix4(ringMesh.matrixWorld);
+      const scale = agentMarkerScaleForScreenSize(
+        camera.position.distanceTo(scratch.worldPosition),
+        size.height,
+        effectiveFov,
+      );
+      scratch.scale.setScalar(scale);
+      scratch.matrix.compose(position, scratch.quaternion, scratch.scale);
+      coreMesh.setMatrixAt(index, scratch.matrix);
+      ringMesh.setMatrixAt(index, scratch.matrix);
+      hitMesh.setMatrixAt(index, scratch.matrix);
+    });
+    coreMesh.instanceMatrix.needsUpdate = true;
+    ringMesh.instanceMatrix.needsUpdate = true;
+    hitMesh.instanceMatrix.needsUpdate = true;
   });
 
   if (!entries.length) return null;
@@ -1529,7 +1530,7 @@ function LiveAgentMarkers({
         raycast={() => undefined}
         renderOrder={10}
       >
-        <sphereGeometry args={[0.001, 10, 10]} />
+        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS, 10, 10]} />
         <meshBasicMaterial depthWrite={false} toneMapped={false} />
       </instancedMesh>
       <instancedMesh
@@ -1539,7 +1540,7 @@ function LiveAgentMarkers({
         raycast={() => undefined}
         renderOrder={11}
       >
-        <sphereGeometry args={[0.0005, 8, 8]} />
+        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * 0.5, 8, 8]} />
         <meshBasicMaterial depthWrite={false} toneMapped={false} />
       </instancedMesh>
       <instancedMesh
@@ -1560,7 +1561,7 @@ function LiveAgentMarkers({
           if (entry) onSelect(entry.city, entry.agent);
         }}
       >
-        <sphereGeometry args={[0.0032, 8, 8]} />
+        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * 3.2, 8, 8]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </instancedMesh>
       {hovered && hoveredPosition && (
