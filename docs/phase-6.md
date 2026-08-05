@@ -10,7 +10,7 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 - City-level administrative polygons remain neutral geographic context; energy color and moving surface flow are reserved for country view.
 - City zoom renders every working, online, and idle agent as a small, crisp status-colored marker at its reported approximate coordinates; decorative macro particles are not used.
 - Agent markers have no artificial city-wide display spread, translucent halo, or pulse. A separate invisible interaction target keeps tiny markers easy to hover and select.
-- Marker world scale adapts to camera distance, keeping live agents crisp and visible when City mode first opens across a whole country while preventing them from ballooning during deep zoom.
+- Agent indicators use a fixed 3.25-pixel screen radius at every City and Deep City zoom depth. Zoom changes only the distance between their reported coordinates; it never enlarges or shrinks the indicator itself.
 - City zoom continues past the full progress bar into a deep magnification range, allowing nearby agents to separate visually without introducing a new map level; the readout switches to a live magnification factor and drag sensitivity reduces as depth increases.
 - Progressive city labels remain visible from the moment the globe enters city level, while denser labels and legitimate city polygons load at deeper bands.
 - County or equivalent ADM2 borders remain as the complete geographic context beneath sparse municipal polygons, so entering the city layer never removes the surrounding borders.
