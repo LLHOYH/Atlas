@@ -998,10 +998,12 @@ button {
   letter-spacing: 0.1em;
 }
 
-.energyScale > p {
+.energyScale > p,
+.statusLegend > p {
   margin: 4px 0 0;
   color: #4f5d65;
   font-size: 6.5px;
+  line-height: 1.45;
 }
 
 .energyLevelLegend {
@@ -1061,7 +1063,7 @@ button {
 .statusLegend small i {
   width: 5px;
   height: 5px;
-  border-radius: 1px;
+  border-radius: 50%;
   box-shadow: 0 0 7px currentColor;
 }
 

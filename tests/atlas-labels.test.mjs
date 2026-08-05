@@ -148,7 +148,7 @@ test("phase 4 agent telemetry is visible from country energy through individual 
   assert.match(experienceSource, /AGENT PULSE · NOW/);
   assert.match(experienceSource, /className="pulseLegend"/);
   assert.doesNotMatch(experienceSource, /className="energyLegend/);
-  assert.match(experienceSource, /LIVE AGENTS · COUNTRY \/ CITY/);
+  assert.match(experienceSource, /LIVE AGENTS · COUNTRY ENERGY/);
   assert.match(experienceSource, /className="energyMeter"/);
   assert.match(experienceSource, /densityBarWidth/);
   assert.match(experienceSource, /className="agentRoster"/);
@@ -209,21 +209,24 @@ test("phase 6 begins from phase 5 geography with a live agent rendering foundati
   assert.match(phaseSixSource, /Location is user-approved and approximate by default/);
 });
 
-test("phase 6 renders agent energy at country and city level before revealing individuals", () => {
+test("phase 6 renders country energy and crisp individual agents at city level", () => {
   assert.match(experienceSource, /function EnergyFlowMaterial\(/);
   assert.match(experienceSource, /atlasFlowTime/);
   assert.doesNotMatch(experienceSource, /function EnergyParticles\(/);
   assert.match(experienceSource, /function LiveAgentMarkers\(/);
-  assert.match(experienceSource, /const spreadDegrees = Math\.min\(0\.22/);
-  assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0045, 10, 10\]\}/);
-  assert.match(experienceSource, /blending=\{THREE\.NormalBlending\}/);
+  assert.doesNotMatch(experienceSource, /spreadDegrees|displayCoordinates/);
+  assert.match(experienceSource, /entries\.map\(\(\{ agent \}\) => latLngToVector3\(agent\.lat, agent\.lng, 3\.105\)\)/);
+  assert.match(experienceSource, /<sphereGeometry args=\{\[0\.001, 10, 10\]\}/);
+  assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0005, 8, 8\]\}/);
+  assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0032, 8, 8\]\}/);
+  assert.match(experienceSource, /colorWrite=\{false\}/);
+  assert.doesNotMatch(experienceSource, /haloMaterial|ref=\{halos\}/);
   assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
   assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
   assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
   assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
-  assert.match(experienceSource, /featureLiveAgentCounts/);
-  assert.match(experienceSource, /geoContains\(feature, \[agent\.lng, agent\.lat\]\)/);
+  assert.doesNotMatch(experienceSource, /featureLiveAgentCounts|energyLayers/);
   assert.match(experienceSource, /<LiveAgentMarkers entries=\{focusedLiveAgentEntries\}/);
   assert.match(experienceSource, /labelDetail === 2 && \(\s*<LiveAgentMarkers/);
   assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 1 && displayPlaceLabels\.map/);
@@ -231,11 +234,12 @@ test("phase 6 renders agent energy at country and city level before revealing in
   assert.doesNotMatch(experienceSource, /distanceFactor=\{3\.2\}/);
   assert.match(globalStylesSource, /\.globeAgentTooltip \{[\s\S]*?max-width: 172px/);
   assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
-  assert.match(experienceSource, /fallbackBoundaryAgentCounts/);
+  assert.doesNotMatch(experienceSource, /fallbackBoundaryAgentCounts/);
   assert.match(experienceSource, /fallbackFocusedAgentEntries/);
   assert.match(experienceSource, /atlasPresenceToAgent/);
   assert.match(globalStylesSource, /\.globeAgentTooltip/);
   assert.match(phaseSixSource, /WebGL and 2D compatibility renderers/);
+  assert.match(phaseSixSource, /reported approximate coordinates/);
 });
 
 test("zoom progress exposes only country and a deep city range", () => {
