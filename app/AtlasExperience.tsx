@@ -1273,7 +1273,6 @@ function AdministrativeTerritories({
   detailLevel,
   boundaryKind,
   cities,
-  agents,
   countryKey,
   countryName,
   hoveredIndex,
@@ -1285,7 +1284,6 @@ function AdministrativeTerritories({
   detailLevel: DetailLevel;
   boundaryKind: BoundaryKind;
   cities: City[];
-  agents: Agent[];
   countryKey: string;
   countryName: string;
   hoveredIndex: number | null;
@@ -1299,33 +1297,6 @@ function AdministrativeTerritories({
   const municipalLayer = features.some((feature) => feature.properties?.shapeType === "CITY");
   const baseGeometry = useMemo(() => features.length ? buildBoundaryGeometry(features, ADMIN_BASE_RADIUS) : null, [features]);
   const featureBounds = useMemo(() => features.map((feature) => geoBounds(feature)), [features]);
-  const featureLiveAgentCounts = useMemo(() => features.map((feature, featureIndex) => agents.reduce((count, agent) => (
-    agent.status !== "offline"
-      && boundaryBoundsContain(featureBounds[featureIndex], agent.lng, agent.lat)
-      && geoContains(feature, [agent.lng, agent.lat])
-      ? count + 1
-      : count
-  ), 0)), [agents, featureBounds, features]);
-  const energyLayers = useMemo(() => {
-    const groups = new Map<string, {
-      density: ReturnType<typeof agentDensityLevel>;
-      hasLiveAgents: boolean;
-      features: AtlasBoundaryFeature[];
-    }>();
-    features.forEach((feature, index) => {
-      const liveAgentCount = featureLiveAgentCounts[index] ?? 0;
-      const density = agentDensityLevel(liveAgentCount);
-      const hasLiveAgents = liveAgentCount > 0;
-      const key = `${density.level}:${hasLiveAgents ? "live" : "empty"}`;
-      const group = groups.get(key) ?? { density, hasLiveAgents, features: [] };
-      group.features.push(feature);
-      groups.set(key, group);
-    });
-    return [...groups.values()].map((group) => ({
-      ...group,
-      geometry: buildBoundaryGeometry(group.features, ADMIN_BASE_RADIUS).geometry,
-    }));
-  }, [featureLiveAgentCounts, features]);
   const hoveredFeature = hoveredIndex === null ? null : features[hoveredIndex] ?? null;
   const hoveredGeometry = useMemo(
     () => hoveredFeature ? buildBoundaryGeometry([hoveredFeature], ADMIN_HOVER_RADIUS) : null,
@@ -1347,30 +1318,19 @@ function AdministrativeTerritories({
 
   return (
     <group>
-      {energyLayers.map(({ density, hasLiveAgents, geometry }) => (
-        <mesh
-          key={`${density.level}:${hasLiveAgents ? "live" : "empty"}`}
-          geometry={geometry}
-          frustumCulled={false}
-          raycast={() => undefined}
-        >
-          <EnergyFlowMaterial
-            color={hasLiveAgents ? density.color : "#082832"}
-            emissive={hasLiveAgents ? density.color : "#061c24"}
-            emissiveIntensity={hasLiveAgents ? 0.48 + density.level * 0.16 : 0.12}
-            flowColor={density.level >= 4 ? "#ffd36f" : "#6fe9df"}
-            flowStrength={hasLiveAgents ? 0.5 + density.level * 0.13 : 0}
-            flowPhase={density.level * 1.17}
-            roughness={0.62}
-            metalness={0.12}
-            transparent
-            opacity={hasLiveAgents
-              ? (municipalLayer ? 0.62 : 0.44) + density.level * 0.045
-              : municipalLayer ? 0.24 : detailLevel === 2 ? 0.13 : 0.075}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      <mesh geometry={baseGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
+        <meshStandardMaterial
+          color="#082832"
+          emissive="#061c24"
+          emissiveIntensity={0.12}
+          roughness={0.62}
+          metalness={0.12}
+          transparent
+          opacity={municipalLayer ? 0.22 : detailLevel === 2 ? 0.12 : 0.075}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
       <lineSegments geometry={baseGeometry.outline} frustumCulled={false} raycast={() => undefined}>
         <lineBasicMaterial
           color={detailLevel === 2 ? "#92e5ea" : "#659ca5"}
@@ -1456,68 +1416,45 @@ function LiveAgentMarkers({
   onSelect: (city: City, agent: Agent) => void;
 }) {
   const cores = useRef<THREE.InstancedMesh>(null);
-  const halos = useRef<THREE.InstancedMesh>(null);
-  const haloMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const rings = useRef<THREE.InstancedMesh>(null);
+  const hitTargets = useRef<THREE.InstancedMesh>(null);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
-  const markerPositions = useMemo(() => {
-    const cityEntries = new Map<string, GlobeAgentEntry[]>();
-    entries.forEach((entry) => {
-      const current = cityEntries.get(entry.city.id) ?? [];
-      current.push(entry);
-      cityEntries.set(entry.city.id, current);
-    });
-
-    const displayCoordinates = new Map<string, GeoCenter>();
-    cityEntries.forEach((group, cityId) => {
-      if (group.length <= 12) {
-        group.forEach(({ agent }) => displayCoordinates.set(agent.id, { lat: agent.lat, lng: agent.lng }));
-        return;
-      }
-
-      const phase = [...cityId].reduce((sum, character) => sum + character.charCodeAt(0), 0) * 0.137;
-      const spreadDegrees = Math.min(0.22, 0.07 + Math.sqrt(group.length) * 0.014);
-      const longitudeScale = Math.max(Math.cos(THREE.MathUtils.degToRad(group[0].city.lat)), 0.35);
-      group.forEach(({ agent, city }, index) => {
-        const radius = spreadDegrees * Math.sqrt((index + 0.5) / group.length);
-        const angle = phase + index * Math.PI * (3 - Math.sqrt(5));
-        displayCoordinates.set(agent.id, {
-          lat: city.lat + Math.sin(angle) * radius,
-          lng: city.lng + Math.cos(angle) * radius / longitudeScale,
-        });
-      });
-    });
-
-    return entries.map(({ agent }) => {
-      const coordinate = displayCoordinates.get(agent.id) ?? agent;
-      return latLngToVector3(coordinate.lat, coordinate.lng, 3.105);
-    });
-  }, [entries]);
+  const markerPositions = useMemo(
+    () => entries.map(({ agent }) => latLngToVector3(agent.lat, agent.lng, 3.105)),
+    [entries],
+  );
 
   useLayoutEffect(() => {
     const coreMesh = cores.current;
-    const haloMesh = halos.current;
-    if (!coreMesh || !haloMesh) return;
+    const ringMesh = rings.current;
+    const hitMesh = hitTargets.current;
+    if (!coreMesh || !ringMesh || !hitMesh) return;
     const matrix = new THREE.Matrix4();
-    const color = new THREE.Color();
+    const quaternion = new THREE.Quaternion();
+    const visualScale = new THREE.Vector3();
+    const hitScale = new THREE.Vector3(1, 1, 1);
+    const coreColor = new THREE.Color();
+    const ringColor = new THREE.Color();
     markerPositions.forEach((position, index) => {
-      matrix.makeTranslation(position.x, position.y, position.z);
+      const statusColor = agentStatusColors[entries[index].agent.status];
+      const scale = entries[index].agent.id === hoveredAgentId ? 1.55 : 1;
+      visualScale.setScalar(scale);
+      matrix.compose(position, quaternion, visualScale);
       coreMesh.setMatrixAt(index, matrix);
-      haloMesh.setMatrixAt(index, matrix);
-      color.set(agentStatusColors[entries[index].agent.status]);
-      coreMesh.setColorAt(index, color);
-      haloMesh.setColorAt(index, color);
+      ringMesh.setMatrixAt(index, matrix);
+      matrix.compose(position, quaternion, hitScale);
+      hitMesh.setMatrixAt(index, matrix);
+      coreColor.set(statusColor);
+      ringColor.set(statusColor).multiplyScalar(0.5);
+      coreMesh.setColorAt(index, coreColor);
+      ringMesh.setColorAt(index, ringColor);
     });
     coreMesh.instanceMatrix.needsUpdate = true;
-    haloMesh.instanceMatrix.needsUpdate = true;
+    ringMesh.instanceMatrix.needsUpdate = true;
+    hitMesh.instanceMatrix.needsUpdate = true;
     if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
-    if (haloMesh.instanceColor) haloMesh.instanceColor.needsUpdate = true;
-  }, [entries, markerPositions]);
-
-  useFrame(({ clock }) => {
-    if (haloMaterial.current) {
-      haloMaterial.current.opacity = 0.13 + (Math.sin(clock.elapsedTime * 2.4) + 1) * 0.055;
-    }
-  });
+    if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
+  }, [entries, hoveredAgentId, markerPositions]);
 
   if (!entries.length) return null;
   const hoveredIndex = hoveredAgentId === null
@@ -1536,7 +1473,27 @@ function LiveAgentMarkers({
   return (
     <group>
       <instancedMesh
-        ref={halos}
+        ref={rings}
+        args={[undefined, undefined, entries.length]}
+        frustumCulled={false}
+        raycast={() => undefined}
+        renderOrder={10}
+      >
+        <sphereGeometry args={[0.001, 10, 10]} />
+        <meshBasicMaterial depthWrite={false} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={cores}
+        args={[undefined, undefined, entries.length]}
+        frustumCulled={false}
+        raycast={() => undefined}
+        renderOrder={11}
+      >
+        <sphereGeometry args={[0.0005, 8, 8]} />
+        <meshBasicMaterial depthWrite={false} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={hitTargets}
         args={[undefined, undefined, entries.length]}
         frustumCulled={false}
         onPointerDown={(event) => event.stopPropagation()}
@@ -1553,24 +1510,8 @@ function LiveAgentMarkers({
           if (entry) onSelect(entry.city, entry.agent);
         }}
       >
-        <sphereGeometry args={[0.0045, 10, 10]} />
-        <meshBasicMaterial
-          ref={haloMaterial}
-          transparent
-          opacity={0.18}
-          depthWrite={false}
-          toneMapped={false}
-          blending={THREE.NormalBlending}
-        />
-      </instancedMesh>
-      <instancedMesh
-        ref={cores}
-        args={[undefined, undefined, entries.length]}
-        frustumCulled={false}
-        raycast={() => undefined}
-      >
-        <sphereGeometry args={[0.0018, 8, 8]} />
-        <meshBasicMaterial depthWrite={false} toneMapped={false} />
+        <sphereGeometry args={[0.0032, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </instancedMesh>
       {hovered && hoveredPosition && (
         <Html
@@ -1735,10 +1676,6 @@ function Earth({
     });
     return [...telemetryEntries, ...presenceEntries];
   }, [cities, focusedCountryKey, presenceAgents]);
-  const focusedEnergyAgents = useMemo(
-    () => focusedLiveAgentEntries.map((entry) => entry.agent),
-    [focusedLiveAgentEntries],
-  );
   const detailedPlaceLabels = useMemo(() => {
     if (labelDetail !== 2) return [];
     const labelConfig = cityLabelBand === 0
@@ -2074,7 +2011,6 @@ function Earth({
           detailLevel={labelDetail}
           boundaryKind={activeBoundaryKind}
           cities={cities}
-          agents={focusedEnergyAgents}
           countryKey={focusedCountryKey}
           countryName={focusedCountryName}
           hoveredIndex={hoveredBoundaryIndex}
@@ -2379,15 +2315,6 @@ function CanvasWorldFallback({
       }),
     ];
   }, [cities, focusedCityCountryKey, presenceAgents]);
-  const fallbackBoundaryAgentCounts = useMemo(() => fallbackBoundaryFeatures.map((feature, featureIndex) => (
-    fallbackFocusedAgentEntries.reduce((count, entry) => (
-      boundaryBoundsContain(fallbackBoundaryBounds[featureIndex], entry.agent.lng, entry.agent.lat)
-      && geoContains(feature, [entry.agent.lng, entry.agent.lat])
-        ? count + 1
-        : count
-    ), 0)
-  )), [fallbackBoundaryBounds, fallbackBoundaryFeatures, fallbackFocusedAgentEntries]);
-
   useEffect(() => {
     const element = canvas.current;
     const context = element?.getContext("2d");
@@ -2497,13 +2424,11 @@ function CanvasWorldFallback({
         });
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
-          const liveAgentCount = fallbackBoundaryAgentCounts[index] ?? 0;
-          const density = agentDensityLevel(liveAgentCount);
           context.beginPath();
           path(feature);
-          if (highlighted || liveAgentCount > 0) {
-            context.globalAlpha = highlighted ? 0.58 : 0.46 + density.level * 0.055;
-            context.fillStyle = highlighted ? "#e8b957" : density.color;
+          if (highlighted) {
+            context.globalAlpha = 0.58;
+            context.fillStyle = "#e8b957";
             context.fill();
             context.globalAlpha = 1;
           }
@@ -2567,13 +2492,14 @@ function CanvasWorldFallback({
           const hovered = view.hoveredAgentIndex === index;
           const color = agentStatusColors[entry.agent.status];
           context.beginPath();
-          context.arc(point[0], point[1], hovered ? 6.5 : 4.5, 0, Math.PI * 2);
-          context.globalAlpha = hovered ? 0.34 : 0.18;
-          context.fillStyle = color;
+          context.arc(point[0], point[1], hovered ? 3.2 : 2, 0, Math.PI * 2);
+          context.fillStyle = "rgba(2, 8, 12, 0.96)";
           context.fill();
+          context.strokeStyle = color;
+          context.lineWidth = hovered ? 1.4 : 0.9;
+          context.stroke();
           context.beginPath();
-          context.arc(point[0], point[1], hovered ? 2.8 : 2, 0, Math.PI * 2);
-          context.globalAlpha = 1;
+          context.arc(point[0], point[1], hovered ? 1.25 : 0.75, 0, Math.PI * 2);
           context.fillStyle = color;
           context.fill();
         });
@@ -2787,7 +2713,6 @@ function CanvasWorldFallback({
     countryLiveAgents,
     fallbackBoundaryFeatures,
     fallbackBoundaryBounds,
-    fallbackBoundaryAgentCounts,
     fallbackBoundaryKind,
     fallbackContextBoundaryFeatures,
     fallbackCountries,
@@ -3867,7 +3792,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
         <div className="pulseLegend" aria-label="Map legend">
           <div className="legendHeading"><span>MAP LEGEND</span><small>LIVE</small></div>
           <div className="energyScale">
-            <span>LIVE AGENTS · COUNTRY / CITY</span>
+            <span>LIVE AGENTS · COUNTRY ENERGY</span>
             <p>Area color = agents live now</p>
             <div className="energyLevelLegend">
               {agentDensityLevels.map((density) => (
@@ -3876,7 +3801,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             </div>
           </div>
           <div className="statusLegend">
-            <span>INDIVIDUAL AGENTS · DEEP CITY ZOOM</span>
+            <span>INDIVIDUAL AGENTS · CITY</span>
+            <p>One dot = one agent at its reported approximate location</p>
             <div>
               <small><i style={{ background: agentStatusColors.working, boxShadow: `0 0 7px ${agentStatusColors.working}` }} />Working</small>
               <small><i style={{ background: agentStatusColors.online, boxShadow: `0 0 7px ${agentStatusColors.online}` }} />Online</small>

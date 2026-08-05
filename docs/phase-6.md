@@ -7,24 +7,23 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 ## Delivered foundation
 
 - Country surfaces aggregate every non-offline SDK agent plus connected Atlas AI presence into the existing energy bands.
-- Every active city-level administrative polygon calculates its own live-agent count from the privacy-safe coordinates contained by that polygon.
-- Empty city geography remains subdued while active country and city geography receives the appropriate energy color plus a moving surface flow.
-- City zoom renders every working, online, and idle agent as an individual status-colored marker; decorative macro particles are not used.
-- Dense seeded city samples use a stable privacy-safe display spread and restrained halos, keeping individual agents legible instead of blending into one bright cluster.
+- City-level administrative polygons remain neutral geographic context; energy color and moving surface flow are reserved for country view.
+- City zoom renders every working, online, and idle agent as a small, crisp status-colored marker at its reported approximate coordinates; decorative macro particles are not used.
+- Agent markers have no artificial city-wide display spread, translucent halo, or pulse. A separate invisible interaction target keeps tiny markers easy to hover and select.
 - Progressive city labels remain visible from the moment the globe enters city level, while denser labels and legitimate city polygons load at deeper bands.
 - County or equivalent ADM2 borders remain as the complete geographic context beneath sparse municipal polygons, so entering the city layer never removes the surrounding borders.
 - Hovering an agent shows its name, runtime, state, and current activity; selecting it opens the existing agent profile.
 - Connected AI presence records use the same marker and energy pipeline as SDK telemetry when their city matches the Atlas catalog.
-- The WebGL and 2D compatibility renderers expose the same country energy, city energy, and individual-agent hierarchy.
+- The WebGL and 2D compatibility renderers expose the same country-energy-to-individual-agent hierarchy.
 - Supabase realtime updates already flow through `useAtlasWorld`, so agent status and coordinates refresh the rendered globe without a page reload.
 
 ## Target outcome
 
 - Every authorized human and agent with a valid presence signal contributes to the globe.
 - Country view aggregates people, agents, status, and energy without exposing individuals unnecessarily.
-- Region and city zoom progressively reveal smaller clusters and then eligible individual presences.
+- City zoom reveals eligible individual presences at their permitted approximate locations.
 - Live, working, idle, stale, and offline states update from Supabase without a page reload.
-- Dense areas remain readable through clustering, level-of-detail limits, and GPU-efficient rendering.
+- Dense areas remain readable through restrained marker scale, level-of-detail limits, and GPU-efficient rendering.
 - Selecting a visible person or agent opens the correct profile without losing map context.
 
 ## Privacy boundary
@@ -36,4 +35,4 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 
 ## Starting point
 
-Phase 5 provides the global administrative hierarchy, populated-place catalog, reliable hover and selection geometry, calibrated zoom model, Supabase agent records, and an existing limited street-level agent renderer. The first Phase 6 increment now connects those pieces into one agent-presence pipeline. Remaining work is to add human-presence policy, low-density obfuscation, dense-area clustering, and load testing at production scale.
+Phase 5 provides the global administrative hierarchy, populated-place catalog, reliable hover and selection geometry, calibrated zoom model, Supabase agent records, and an existing limited street-level agent renderer. The first Phase 6 increment now connects those pieces into one agent-presence pipeline. Remaining work is to add human-presence policy, low-density obfuscation, production-scale marker load testing, and any privacy-driven aggregation required by policy.
