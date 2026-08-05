@@ -267,6 +267,15 @@ function deepCityMagnificationForProgress(progress: number) {
   return Math.pow(2, (progress - 100) / DEEP_ZOOM_PROGRESS_PER_DOUBLING);
 }
 
+function agentMarkerScaleForDistance(distance: number) {
+  const referenceGap = CITY_MAX_DISTANCE - AGENT_MARKER_RADIUS;
+  const visibleGap = Math.max(
+    distance - AGENT_MARKER_RADIUS,
+    CITY_DEEP_ZOOM_DISTANCE - AGENT_MARKER_RADIUS,
+  );
+  return THREE.MathUtils.clamp(visibleGap / referenceGap, 0.02, 18);
+}
+
 function cityBandForProgress(progress: number) {
   if (progress < CITY_PROGRESS) return 0;
   if (progress < 80) return 1;
@@ -1442,13 +1451,14 @@ function LiveAgentMarkers({
   const cores = useRef<THREE.InstancedMesh>(null);
   const rings = useRef<THREE.InstancedMesh>(null);
   const hitTargets = useRef<THREE.InstancedMesh>(null);
+  const appliedMarkerScale = useRef(-1);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const markerPositions = useMemo(
     () => entries.map(({ agent }) => latLngToVector3(agent.lat, agent.lng, AGENT_MARKER_RADIUS)),
     [entries],
   );
 
-  useLayoutEffect(() => {
+  const applyMarkerTransforms = useCallback((markerScale: number) => {
     const coreMesh = cores.current;
     const ringMesh = rings.current;
     const hitMesh = hitTargets.current;
@@ -1456,29 +1466,45 @@ function LiveAgentMarkers({
     const matrix = new THREE.Matrix4();
     const quaternion = new THREE.Quaternion();
     const visualScale = new THREE.Vector3();
-    const hitScale = new THREE.Vector3(1, 1, 1);
-    const coreColor = new THREE.Color();
-    const ringColor = new THREE.Color();
+    const hitScale = new THREE.Vector3().setScalar(markerScale);
     markerPositions.forEach((position, index) => {
-      const statusColor = agentStatusColors[entries[index].agent.status];
-      const scale = entries[index].agent.id === hoveredAgentId ? 1.55 : 1;
+      const scale = markerScale * (entries[index].agent.id === hoveredAgentId ? 1.55 : 1);
       visualScale.setScalar(scale);
       matrix.compose(position, quaternion, visualScale);
       coreMesh.setMatrixAt(index, matrix);
       ringMesh.setMatrixAt(index, matrix);
       matrix.compose(position, quaternion, hitScale);
       hitMesh.setMatrixAt(index, matrix);
+    });
+    coreMesh.instanceMatrix.needsUpdate = true;
+    ringMesh.instanceMatrix.needsUpdate = true;
+    hitMesh.instanceMatrix.needsUpdate = true;
+  }, [entries, hoveredAgentId, markerPositions]);
+
+  useLayoutEffect(() => {
+    const coreMesh = cores.current;
+    const ringMesh = rings.current;
+    if (!coreMesh || !ringMesh) return;
+    const coreColor = new THREE.Color();
+    const ringColor = new THREE.Color();
+    entries.forEach((entry, index) => {
+      const statusColor = agentStatusColors[entry.agent.status];
       coreColor.set(statusColor);
       ringColor.set(statusColor).multiplyScalar(0.5);
       coreMesh.setColorAt(index, coreColor);
       ringMesh.setColorAt(index, ringColor);
     });
-    coreMesh.instanceMatrix.needsUpdate = true;
-    ringMesh.instanceMatrix.needsUpdate = true;
-    hitMesh.instanceMatrix.needsUpdate = true;
     if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
     if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
-  }, [entries, hoveredAgentId, markerPositions]);
+    applyMarkerTransforms(appliedMarkerScale.current > 0 ? appliedMarkerScale.current : 1);
+  }, [applyMarkerTransforms, entries]);
+
+  useFrame(({ camera }) => {
+    const nextScale = agentMarkerScaleForDistance(camera.position.length());
+    if (Math.abs(nextScale - appliedMarkerScale.current) < 0.012) return;
+    appliedMarkerScale.current = nextScale;
+    applyMarkerTransforms(nextScale);
+  });
 
   if (!entries.length) return null;
   const hoveredIndex = hoveredAgentId === null
@@ -1539,7 +1565,7 @@ function LiveAgentMarkers({
       </instancedMesh>
       {hovered && hoveredPosition && (
         <Html
-          position={hoveredPosition.clone().multiplyScalar(1.012)}
+          position={hoveredPosition.clone().multiplyScalar(1.00025)}
           center
           zIndexRange={[34, 0]}
           className="globeAgentTooltipAnchor"
