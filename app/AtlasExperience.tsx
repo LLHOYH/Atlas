@@ -212,6 +212,10 @@ function normalizeLongitude(value: number) {
 
 const COUNTRY_DETAIL_DISTANCE = 6.15;
 const CITY_MAX_DISTANCE = 3.28;
+const AGENT_MARKER_RADIUS = 3.105;
+const CITY_DEEP_ZOOM_DISTANCE = 3.1085;
+const DEEP_ZOOM_PROGRESS_PER_DOUBLING = 20;
+const DEEP_ZOOM_PROGRESS_LIMIT = 220;
 const CITY_SELECTION_DISTANCE = 3.85;
 const GLOBE_MAX_DISTANCE = 11;
 const ZOOM_SPEED_MULTIPLIER = 1.5;
@@ -230,6 +234,18 @@ function hasCompleteDeepDetail(countryKey: string) {
 }
 
 function zoomProgressForDistance(distance: number) {
+  if (distance < CITY_MAX_DISTANCE) {
+    const standardCityGap = CITY_MAX_DISTANCE - AGENT_MARKER_RADIUS;
+    const deepCityGap = Math.max(
+      distance - AGENT_MARKER_RADIUS,
+      CITY_DEEP_ZOOM_DISTANCE - AGENT_MARKER_RADIUS,
+    );
+    return Math.min(
+      100 + Math.log2(standardCityGap / deepCityGap) * DEEP_ZOOM_PROGRESS_PER_DOUBLING,
+      DEEP_ZOOM_PROGRESS_LIMIT,
+    );
+  }
+
   const thresholds = [GLOBE_MAX_DISTANCE, COUNTRY_DETAIL_DISTANCE, CITY_MAX_DISTANCE];
   const progressStops = [0, CITY_PROGRESS, 100];
   const clampedDistance = THREE.MathUtils.clamp(distance, thresholds.at(-1) ?? distance, thresholds[0]);
@@ -246,6 +262,11 @@ function zoomProgressForDistance(distance: number) {
   return progressStops.at(-1) ?? 100;
 }
 
+function deepCityMagnificationForProgress(progress: number) {
+  if (progress <= 100) return 1;
+  return Math.pow(2, (progress - 100) / DEEP_ZOOM_PROGRESS_PER_DOUBLING);
+}
+
 function cityBandForProgress(progress: number) {
   if (progress < CITY_PROGRESS) return 0;
   if (progress < 80) return 1;
@@ -254,6 +275,9 @@ function cityBandForProgress(progress: number) {
 
 function dragSensitivityForProgress(progress: number) {
   if (progress < CITY_PROGRESS) return 1;
+  if (progress > 100) {
+    return Math.max(0.012, 0.12 / Math.sqrt(deepCityMagnificationForProgress(progress)));
+  }
   const cityProgress = THREE.MathUtils.clamp(
     (progress - CITY_PROGRESS) / (100 - CITY_PROGRESS),
     0,
@@ -1420,7 +1444,7 @@ function LiveAgentMarkers({
   const hitTargets = useRef<THREE.InstancedMesh>(null);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const markerPositions = useMemo(
-    () => entries.map(({ agent }) => latLngToVector3(agent.lat, agent.lng, 3.105)),
+    () => entries.map(({ agent }) => latLngToVector3(agent.lat, agent.lng, AGENT_MARKER_RADIUS)),
     [entries],
   );
 
@@ -2364,7 +2388,10 @@ function CanvasWorldFallback({
       context.clearRect(0, 0, width, height);
 
       const maximumScale = 28;
-      const scaleMultiplier = 0.72 * Math.pow(maximumScale, view.progress / 100);
+      const standardProgress = Math.min(view.progress, 100);
+      const scaleMultiplier = 0.72
+        * Math.pow(maximumScale, standardProgress / 100)
+        * deepCityMagnificationForProgress(view.progress);
       const globeRadius = Math.min(width, height) * 0.34 * scaleMultiplier;
       projection = geoOrthographic()
         .translate([width / 2, height / 2])
@@ -2675,7 +2702,7 @@ function CanvasWorldFallback({
       view.progress = THREE.MathUtils.clamp(
         view.progress - Math.sign(event.deltaY) * progressStep,
         0,
-        100,
+        DEEP_ZOOM_PROGRESS_LIMIT,
       );
       const nextDetail = detailForProgress(view.progress);
       setFallbackCityBand(cityBandForProgress(view.progress));
@@ -2946,7 +2973,7 @@ function EarthScene({
         >
           <div className="earthCanvasLayer">
             <Canvas
-              camera={{ position: [0, 0.1, GLOBE_MAX_DISTANCE], fov: 38, near: 0.1, far: 70 }}
+              camera={{ position: [0, 0.1, GLOBE_MAX_DISTANCE], fov: 38, near: 0.001, far: 70 }}
               dpr={[1, 1.35]}
               gl={{
                 alpha: true,
@@ -2988,7 +3015,7 @@ function EarthScene({
                 enableDamping
                 dampingFactor={0.1}
                 zoomSpeed={sceneDetail >= 2 ? CITY_ZOOM_SPEED : COUNTRY_ZOOM_SPEED}
-                minDistance={CITY_MAX_DISTANCE}
+                minDistance={CITY_DEEP_ZOOM_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
               <fog attach="fog" args={["#020508", 11, 42]} />
@@ -3491,6 +3518,9 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     { level: 1 as DetailLevel, label: "Country", position: 0 },
     { level: 2 as DetailLevel, label: "City", position: CITY_PROGRESS },
   ];
+  const zoomTrackProgress = Math.min(zoomProgress, 100);
+  const deepCityMagnification = deepCityMagnificationForProgress(zoomProgress);
+  const deepCityZoomActive = zoomProgress > 100;
   const visiblePresenceFeed = useMemo(
     () => presence.configured || joined ? presence.presenceFeed : [],
     [joined, presence.configured, presence.presenceFeed],
@@ -3529,7 +3559,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const latestPulseCount = pulseTrend.at(-1)?.count ?? 0;
 
   const handleZoomChange = useCallback((progress: number) => {
-    const nextProgress = Math.round(THREE.MathUtils.clamp(progress, 0, 100));
+    const nextProgress = Math.round(THREE.MathUtils.clamp(progress, 0, DEEP_ZOOM_PROGRESS_LIMIT));
     setZoomProgress((current) => current === nextProgress ? current : nextProgress);
   }, []);
 
@@ -3850,9 +3880,9 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
       <div className="zoomIndicator glassPanel" aria-live="polite">
         <div className="zoomIndicatorHeader">
-          <span>ZOOM · {zoomProgress}%</span>
+          <span>{deepCityZoomActive ? `DEEP CITY · ${deepCityMagnification.toFixed(1)}×` : `ZOOM · ${zoomProgress}%`}</span>
           <b>{detailLabels[detailLevel].title}</b>
-          <small>MAX CITY</small>
+          <small>OPEN ZOOM</small>
         </div>
         <div
           className="zoomScale"
@@ -3860,11 +3890,14 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
           aria-label={`Map zoom level: ${detailLabels[detailLevel].title}`}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={zoomProgress}
+          aria-valuenow={zoomTrackProgress}
+          aria-valuetext={deepCityZoomActive
+            ? `Deep city zoom, ${deepCityMagnification.toFixed(1)} times magnification`
+            : `${zoomProgress} percent`}
         >
           <div className="zoomScaleTrack" aria-hidden="true">
-            <i className="zoomScaleFill" style={{ width: `${zoomProgress}%` }} />
-            <i className="zoomScaleThumb" style={{ left: `${zoomProgress}%` }} />
+            <i className="zoomScaleFill" style={{ width: `${zoomTrackProgress}%` }} />
+            <i className="zoomScaleThumb" style={{ left: `${zoomTrackProgress}%` }} />
             {zoomStops.map((stop) => (
               <i
                 key={stop.label}

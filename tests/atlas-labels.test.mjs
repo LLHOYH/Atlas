@@ -215,7 +215,7 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.doesNotMatch(experienceSource, /function EnergyParticles\(/);
   assert.match(experienceSource, /function LiveAgentMarkers\(/);
   assert.doesNotMatch(experienceSource, /spreadDegrees|displayCoordinates/);
-  assert.match(experienceSource, /entries\.map\(\(\{ agent \}\) => latLngToVector3\(agent\.lat, agent\.lng, 3\.105\)\)/);
+  assert.match(experienceSource, /entries\.map\(\(\{ agent \}\) => latLngToVector3\(agent\.lat, agent\.lng, AGENT_MARKER_RADIUS\)\)/);
   assert.match(experienceSource, /<sphereGeometry args=\{\[0\.001, 10, 10\]\}/);
   assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0005, 8, 8\]\}/);
   assert.match(experienceSource, /<sphereGeometry args=\{\[0\.0032, 8, 8\]\}/);
@@ -249,12 +249,15 @@ test("zoom progress exposes only country and a deep city range", () => {
     assert.match(experienceSource, new RegExp(`label: "${label}"`));
   }
   assert.doesNotMatch(experienceSource, /label: "Town"|label: "Streets"/);
-  assert.match(experienceSource, /<small>MAX CITY<\/small>/);
+  assert.match(experienceSource, /<small>OPEN ZOOM<\/small>/);
   assert.match(experienceSource, /const GLOBE_MAX_DISTANCE = 11/);
   assert.match(experienceSource, /const COUNTRY_DETAIL_DISTANCE = 6\.15/);
   assert.match(experienceSource, /const CITY_MAX_DISTANCE = 3\.28/);
+  assert.match(experienceSource, /const CITY_DEEP_ZOOM_DISTANCE = 3\.1085/);
+  assert.match(experienceSource, /const DEEP_ZOOM_PROGRESS_PER_DOUBLING = 20/);
+  assert.match(experienceSource, /const DEEP_ZOOM_PROGRESS_LIMIT = 220/);
   assert.match(experienceSource, /const CITY_SELECTION_DISTANCE = 3\.85/);
-  assert.match(experienceSource, /minDistance=\{CITY_MAX_DISTANCE\}/);
+  assert.match(experienceSource, /minDistance=\{CITY_DEEP_ZOOM_DISTANCE\}/);
   assert.match(globalStylesSource, /\.zoomScaleTrack/);
   assert.match(globalStylesSource, /\.zoomScaleBreakpoint/);
   assert.match(globalStylesSource, /\.zoomViewToggle/);
@@ -270,16 +273,21 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(experienceSource, /const CITY_PROGRESS = 45/);
   assert.match(experienceSource, /function dragSensitivityForProgress\(progress: number\)/);
   assert.match(experienceSource, /return THREE\.MathUtils\.lerp\(0\.72, 0\.12, cityProgress\)/);
+  assert.match(experienceSource, /0\.12 \/ Math\.sqrt\(deepCityMagnificationForProgress\(progress\)\)/);
   assert.match(experienceSource, /dx \* 0\.0035 \* dragSensitivity/);
   assert.match(experienceSource, /deltaX \* 0\.22 \* dragSensitivity/);
   assert.match(experienceSource, /cityBandForProgress\(nextZoomProgress\)/);
   assert.match(experienceSource, /\(100 - CITY_PROGRESS\) \/ \(ZOOM_SCROLLS_PER_LEVEL \* 2\)/);
   assert.match(experienceSource, /CITY_PROGRESS \/ ZOOM_SCROLLS_PER_LEVEL/);
   assert.match(experienceSource, /camera=\{\{ position: \[0, 0\.1, GLOBE_MAX_DISTANCE\]/);
+  assert.match(experienceSource, /near: 0\.001/);
   assert.match(experienceSource, /enableZoom\s+enableDamping/);
   assert.match(experienceSource, /zoomSpeed=\{sceneDetail >= 2 \? CITY_ZOOM_SPEED : COUNTRY_ZOOM_SPEED\}/);
   assert.doesNotMatch(experienceSource, /addEventListener\("wheel", onWheel, \{ passive: false, capture: true \}\)/);
   assert.doesNotMatch(experienceSource, /STREET_ENTRY_PROGRESS|TOWN_PROGRESS|streetProgressForMapZoom/);
+  assert.match(experienceSource, /DEEP CITY · \$\{deepCityMagnification\.toFixed\(1\)\}×/);
+  assert.match(experienceSource, /deepCityMagnificationForProgress\(view\.progress\)/);
+  assert.match(experienceSource, /aria-valuenow=\{zoomTrackProgress\}/);
   assert.match(experienceSource, /onZoomChange\(100\)/);
   assert.match(experienceSource, /setZoomRate\(1 \/ 600\)/);
   assert.match(experienceSource, /setWheelZoomRate\(1 \/ 1800\)/);
