@@ -127,6 +127,10 @@ type CityAreaSelection = GeoCenter & {
   cityId?: string;
   boundaryKind?: BoundaryKind;
 };
+type GlobeAgentEntry = {
+  city: City;
+  agent: Agent;
+};
 type AtlasSearchResult =
   | { id: string; kind: "country"; title: string; subtitle: string; country: CountrySelection }
   | { id: string; kind: "city"; title: string; subtitle: string; city: City }
@@ -1000,6 +1004,102 @@ function AdministrativeBoundaryContext({
   );
 }
 
+function EnergyFlowMaterial({
+  color,
+  emissive,
+  emissiveIntensity,
+  flowColor,
+  flowStrength,
+  flowPhase,
+  opacity = 1,
+  transparent = false,
+  depthWrite = true,
+  roughness = 0.58,
+  metalness = 0.14,
+}: {
+  color: string;
+  emissive: string;
+  emissiveIntensity: number;
+  flowColor: string;
+  flowStrength: number;
+  flowPhase: number;
+  opacity?: number;
+  transparent?: boolean;
+  depthWrite?: boolean;
+  roughness?: number;
+  metalness?: number;
+}) {
+  const shader = useRef<THREE.WebGLProgramParametersWithUniforms | null>(null);
+  const flowTint = useMemo(() => new THREE.Color(flowColor), [flowColor]);
+  const configureShader = useCallback((compiled: THREE.WebGLProgramParametersWithUniforms) => {
+    compiled.uniforms.atlasFlowTime = { value: 0 };
+    compiled.uniforms.atlasFlowStrength = { value: flowStrength };
+    compiled.uniforms.atlasFlowPhase = { value: flowPhase };
+    compiled.uniforms.atlasFlowColor = { value: flowTint };
+    compiled.vertexShader = compiled.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vAtlasFlowPosition;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vAtlasFlowPosition = position;`,
+      );
+    compiled.fragmentShader = compiled.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float atlasFlowTime;
+        uniform float atlasFlowStrength;
+        uniform float atlasFlowPhase;
+        uniform vec3 atlasFlowColor;
+        varying vec3 vAtlasFlowPosition;`,
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        `float atlasFlowA = pow(max(0.0, 0.5 + 0.5 * sin(
+          dot(vAtlasFlowPosition, vec3(12.0, 8.0, 5.0))
+          - atlasFlowTime * 1.45
+          + atlasFlowPhase
+        )), 9.0);
+        float atlasFlowB = pow(max(0.0, 0.5 + 0.5 * sin(
+          dot(vAtlasFlowPosition, vec3(-6.0, 11.0, 9.0))
+          - atlasFlowTime * 0.92
+          + atlasFlowPhase * 1.7
+        )), 14.0);
+        outgoingLight += atlasFlowColor * (atlasFlowA * 0.72 + atlasFlowB * 0.36) * atlasFlowStrength;
+        #include <opaque_fragment>`,
+      );
+    shader.current = compiled;
+  }, [flowPhase, flowStrength, flowTint]);
+
+  useFrame(({ clock }) => {
+    if (!shader.current) return;
+    shader.current.uniforms.atlasFlowTime.value = clock.elapsedTime;
+    shader.current.uniforms.atlasFlowStrength.value = flowStrength;
+    shader.current.uniforms.atlasFlowPhase.value = flowPhase;
+    shader.current.uniforms.atlasFlowColor.value.copy(flowTint);
+  });
+
+  return (
+    <meshStandardMaterial
+      color={color}
+      emissive={emissive}
+      emissiveIntensity={emissiveIntensity}
+      roughness={roughness}
+      metalness={metalness}
+      transparent={transparent}
+      opacity={opacity}
+      depthWrite={depthWrite}
+      side={THREE.DoubleSide}
+      onBeforeCompile={configureShader}
+      customProgramCacheKey={() => "atlas-energy-flow-v1"}
+    />
+  );
+}
+
 function CountrySurfaces({
   liveAgentsByCountry = {},
   selectedCountryKey,
@@ -1129,13 +1229,15 @@ function CountrySurfaces({
             {detailLevel >= 2 ? (
               <meshBasicMaterial color="#07303a" side={THREE.DoubleSide} />
             ) : (
-              <meshStandardMaterial
+              <EnergyFlowMaterial
                 color={density.color}
                 emissive={density.color}
                 emissiveIntensity={0.18 + density.level * 0.11}
+                flowColor={density.level >= 4 ? "#ffd36f" : "#6fe9df"}
+                flowStrength={liveAgentCount > 0 ? 0.42 + density.level * 0.12 : 0}
+                flowPhase={index * 0.73}
                 roughness={0.56}
                 metalness={0.16}
-                side={THREE.DoubleSide}
               />
             )}
           </mesh>
@@ -1161,6 +1263,7 @@ function AdministrativeTerritories({
   detailLevel,
   boundaryKind,
   cities,
+  agents,
   countryKey,
   countryName,
   hoveredIndex,
@@ -1172,6 +1275,7 @@ function AdministrativeTerritories({
   detailLevel: DetailLevel;
   boundaryKind: BoundaryKind;
   cities: City[];
+  agents: Agent[];
   countryKey: string;
   countryName: string;
   hoveredIndex: number | null;
@@ -1185,6 +1289,33 @@ function AdministrativeTerritories({
   const municipalLayer = features.some((feature) => feature.properties?.shapeType === "CITY");
   const baseGeometry = useMemo(() => features.length ? buildBoundaryGeometry(features, ADMIN_BASE_RADIUS) : null, [features]);
   const featureBounds = useMemo(() => features.map((feature) => geoBounds(feature)), [features]);
+  const featureLiveAgentCounts = useMemo(() => features.map((feature, featureIndex) => agents.reduce((count, agent) => (
+    agent.status !== "offline"
+      && boundaryBoundsContain(featureBounds[featureIndex], agent.lng, agent.lat)
+      && geoContains(feature, [agent.lng, agent.lat])
+      ? count + 1
+      : count
+  ), 0)), [agents, featureBounds, features]);
+  const energyLayers = useMemo(() => {
+    const groups = new Map<string, {
+      density: ReturnType<typeof agentDensityLevel>;
+      hasLiveAgents: boolean;
+      features: AtlasBoundaryFeature[];
+    }>();
+    features.forEach((feature, index) => {
+      const liveAgentCount = featureLiveAgentCounts[index] ?? 0;
+      const density = agentDensityLevel(liveAgentCount);
+      const hasLiveAgents = liveAgentCount > 0;
+      const key = `${density.level}:${hasLiveAgents ? "live" : "empty"}`;
+      const group = groups.get(key) ?? { density, hasLiveAgents, features: [] };
+      group.features.push(feature);
+      groups.set(key, group);
+    });
+    return [...groups.values()].map((group) => ({
+      ...group,
+      geometry: buildBoundaryGeometry(group.features, ADMIN_BASE_RADIUS).geometry,
+    }));
+  }, [featureLiveAgentCounts, features]);
   const hoveredFeature = hoveredIndex === null ? null : features[hoveredIndex] ?? null;
   const hoveredGeometry = useMemo(
     () => hoveredFeature ? buildBoundaryGeometry([hoveredFeature], ADMIN_HOVER_RADIUS) : null,
@@ -1206,19 +1337,30 @@ function AdministrativeTerritories({
 
   return (
     <group>
-      <mesh geometry={baseGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
-        <meshStandardMaterial
-          color={detailLevel === 2 ? "#1d7680" : "#245d67"}
-          emissive="#185965"
-          emissiveIntensity={0.28}
-          roughness={0.62}
-          metalness={0.12}
-          transparent
-          opacity={municipalLayer ? 0.28 : detailLevel === 2 ? 0.13 : 0.075}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {energyLayers.map(({ density, hasLiveAgents, geometry }) => (
+        <mesh
+          key={`${density.level}:${hasLiveAgents ? "live" : "empty"}`}
+          geometry={geometry}
+          frustumCulled={false}
+          raycast={() => undefined}
+        >
+          <EnergyFlowMaterial
+            color={hasLiveAgents ? density.color : "#082832"}
+            emissive={hasLiveAgents ? density.color : "#061c24"}
+            emissiveIntensity={hasLiveAgents ? 0.48 + density.level * 0.16 : 0.12}
+            flowColor={density.level >= 4 ? "#ffd36f" : "#6fe9df"}
+            flowStrength={hasLiveAgents ? 0.5 + density.level * 0.13 : 0}
+            flowPhase={density.level * 1.17}
+            roughness={0.62}
+            metalness={0.12}
+            transparent
+            opacity={hasLiveAgents
+              ? (municipalLayer ? 0.62 : 0.44) + density.level * 0.045
+              : municipalLayer ? 0.24 : detailLevel === 2 ? 0.13 : 0.075}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
       <lineSegments geometry={baseGeometry.outline} frustumCulled={false} raycast={() => undefined}>
         <lineBasicMaterial
           color={detailLevel === 2 ? "#92e5ea" : "#659ca5"}
@@ -1296,62 +1438,147 @@ function AdministrativeTerritories({
   );
 }
 
-function EnergyParticles({ cities, layer }: { cities: City[]; layer: Layer }) {
-  const points = useRef<THREE.Points>(null);
-  const geometry = useMemo(() => {
-    let seed = 1487;
-    const random = () => {
-      seed = (seed * 16807) % 2147483647;
-      return (seed - 1) / 2147483646;
-    };
-    const positions: number[] = [];
-    const colors: number[] = [];
-    cities.forEach((city) => {
-      const center = latLngToVector3(city.lat, city.lng, 3.06);
-      const normal = center.clone().normalize();
-      const tangent = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
-      const bitangent = normal.clone().cross(tangent).normalize();
-      const baseColor = new THREE.Color(city.color);
-      const particleCount = 12 + Math.round(Math.min((city.agentEnergy ?? 0) / 360, 1) * 38);
-      for (let i = 0; i < particleCount; i += 1) {
-        const spread = 0.02 + random() * 0.22;
-        const angle = random() * Math.PI * 2;
-        const lift = random() * 0.09;
-        const point = center
-          .clone()
-          .add(tangent.clone().multiplyScalar(Math.cos(angle) * spread))
-          .add(bitangent.clone().multiplyScalar(Math.sin(angle) * spread))
-          .add(normal.clone().multiplyScalar(lift));
-        positions.push(point.x, point.y, point.z);
-        colors.push(baseColor.r, baseColor.g, baseColor.b);
-      }
+function LiveAgentMarkers({
+  entries,
+  onSelect,
+}: {
+  entries: GlobeAgentEntry[];
+  onSelect: (city: City, agent: Agent) => void;
+}) {
+  const cores = useRef<THREE.InstancedMesh>(null);
+  const halos = useRef<THREE.InstancedMesh>(null);
+  const haloMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const markerPositions = useMemo(() => {
+    const cityEntries = new Map<string, GlobeAgentEntry[]>();
+    entries.forEach((entry) => {
+      const current = cityEntries.get(entry.city.id) ?? [];
+      current.push(entry);
+      cityEntries.set(entry.city.id, current);
     });
-    const result = new THREE.BufferGeometry();
-    result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    result.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    return result;
-  }, [cities]);
+
+    const displayCoordinates = new Map<string, GeoCenter>();
+    cityEntries.forEach((group, cityId) => {
+      if (group.length <= 12) {
+        group.forEach(({ agent }) => displayCoordinates.set(agent.id, { lat: agent.lat, lng: agent.lng }));
+        return;
+      }
+
+      const phase = [...cityId].reduce((sum, character) => sum + character.charCodeAt(0), 0) * 0.137;
+      const spreadDegrees = Math.min(0.22, 0.07 + Math.sqrt(group.length) * 0.014);
+      const longitudeScale = Math.max(Math.cos(THREE.MathUtils.degToRad(group[0].city.lat)), 0.35);
+      group.forEach(({ agent, city }, index) => {
+        const radius = spreadDegrees * Math.sqrt((index + 0.5) / group.length);
+        const angle = phase + index * Math.PI * (3 - Math.sqrt(5));
+        displayCoordinates.set(agent.id, {
+          lat: city.lat + Math.sin(angle) * radius,
+          lng: city.lng + Math.cos(angle) * radius / longitudeScale,
+        });
+      });
+    });
+
+    return entries.map(({ agent }) => {
+      const coordinate = displayCoordinates.get(agent.id) ?? agent;
+      return latLngToVector3(coordinate.lat, coordinate.lng, 3.105);
+    });
+  }, [entries]);
+
+  useLayoutEffect(() => {
+    const coreMesh = cores.current;
+    const haloMesh = halos.current;
+    if (!coreMesh || !haloMesh) return;
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    markerPositions.forEach((position, index) => {
+      matrix.makeTranslation(position.x, position.y, position.z);
+      coreMesh.setMatrixAt(index, matrix);
+      haloMesh.setMatrixAt(index, matrix);
+      color.set(agentStatusColors[entries[index].agent.status]);
+      coreMesh.setColorAt(index, color);
+      haloMesh.setColorAt(index, color);
+    });
+    coreMesh.instanceMatrix.needsUpdate = true;
+    haloMesh.instanceMatrix.needsUpdate = true;
+    if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
+    if (haloMesh.instanceColor) haloMesh.instanceColor.needsUpdate = true;
+  }, [entries, markerPositions]);
 
   useFrame(({ clock }) => {
-    if (points.current) {
-      const material = points.current.material as THREE.PointsMaterial;
-      material.opacity = 0.42 + Math.sin(clock.elapsedTime * 1.3) * 0.1;
+    if (haloMaterial.current) {
+      haloMaterial.current.opacity = 0.13 + (Math.sin(clock.elapsedTime * 2.4) + 1) * 0.055;
     }
   });
 
+  if (!entries.length) return null;
+  const hoveredIndex = hoveredAgentId === null
+    ? null
+    : entries.findIndex((entry) => entry.agent.id === hoveredAgentId);
+  const hovered = hoveredIndex === null ? null : entries[hoveredIndex] ?? null;
+  const hoveredPosition = hoveredIndex === null ? null : markerPositions[hoveredIndex] ?? null;
+
+  const setHoverFromEvent = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    const nextIndex = event.instanceId ?? null;
+    setHoveredAgentId(nextIndex === null ? null : entries[nextIndex]?.agent.id ?? null);
+    if (event.buttons === 0) document.body.style.cursor = nextIndex === null ? "grab" : "pointer";
+  };
+
   return (
-    <points ref={points} geometry={geometry}>
-      <pointsMaterial
-        color={layer === "Attention" ? "#ffffff" : layerColors[layer]}
-        size={0.025}
-        sizeAttenuation
-        vertexColors={layer === "Attention"}
-        transparent
-        opacity={0.5}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
+    <group>
+      <instancedMesh
+        ref={halos}
+        args={[undefined, undefined, entries.length]}
+        frustumCulled={false}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={setHoverFromEvent}
+        onPointerOut={(event) => {
+          event.stopPropagation();
+          setHoveredAgentId(null);
+          document.body.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          if (event.delta > 5 || event.instanceId === undefined) return;
+          event.stopPropagation();
+          const entry = entries[event.instanceId];
+          if (entry) onSelect(entry.city, entry.agent);
+        }}
+      >
+        <sphereGeometry args={[0.0045, 10, 10]} />
+        <meshBasicMaterial
+          ref={haloMaterial}
+          transparent
+          opacity={0.18}
+          depthWrite={false}
+          toneMapped={false}
+          blending={THREE.NormalBlending}
+        />
+      </instancedMesh>
+      <instancedMesh
+        ref={cores}
+        args={[undefined, undefined, entries.length]}
+        frustumCulled={false}
+        raycast={() => undefined}
+      >
+        <sphereGeometry args={[0.0018, 8, 8]} />
+        <meshBasicMaterial depthWrite={false} toneMapped={false} />
+      </instancedMesh>
+      {hovered && hoveredPosition && (
+        <Html
+          position={hoveredPosition.clone().multiplyScalar(1.012)}
+          center
+          distanceFactor={3.2}
+          zIndexRange={[34, 0]}
+          className="globeAgentTooltipAnchor"
+        >
+          <div className="globeAgentTooltip">
+            <span><i style={{ background: agentStatusColors[hovered.agent.status] }} /> LIVE AGENT</span>
+            <b>{hovered.agent.name}</b>
+            <small>{hovered.agent.runtime} · {hovered.agent.status.toUpperCase()}</small>
+            <em>{hovered.agent.activity}</em>
+          </div>
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -1403,7 +1630,9 @@ function Earth({
   focusRevision,
   layer,
   liveCounts = {},
+  presenceAgents = [],
   onSelect,
+  onAgentSelect,
   onCountrySelect,
   onCityAreaSelect,
   onDetailChange,
@@ -1417,7 +1646,9 @@ function Earth({
   focusRevision: number;
   layer: Layer;
   liveCounts: Record<string, number>;
+  presenceAgents: Agent[];
   onSelect: (city: City) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
   onCountrySelect: (country: CountrySelection) => void;
   onCityAreaSelect: (area: CityAreaSelection) => void;
   onDetailChange: (level: DetailLevel) => void;
@@ -1443,10 +1674,12 @@ function Earth({
     countryKey: string;
     featureId: string;
     source: "surface" | "label";
+    contextKey: string;
   } | null>(null);
   const administrativeLabelHover = useRef<{
     countryKey: string;
     featureId: string;
+    contextKey: string;
   } | null>(null);
   const focusedCountryKey = selectedCountryKey ?? countryEnergyKey(selectedCity.country);
   const focusedCountryName = countryLabelByKey.get(focusedCountryKey)?.name ?? selectedCity.country;
@@ -1474,6 +1707,29 @@ function Earth({
     counts[key] = (counts[key] ?? 0) + seededLiveAgents + (liveCounts[city.name] ?? 0);
     return counts;
   }, {}), [cities, liveCounts]);
+  const focusedLiveAgentEntries = useMemo<GlobeAgentEntry[]>(() => {
+    const focusedCities = cities.filter((city) => countryEnergyKey(city.country) === focusedCountryKey);
+    const focusedCityIds = new Set(focusedCities.map((city) => city.id));
+    const cityById = new Map(focusedCities.map((city) => [city.id, city]));
+    const telemetryEntries = focusedCities.flatMap((city) => city.agents
+      .filter((agent) => agent.status !== "offline" && Number.isFinite(agent.lat) && Number.isFinite(agent.lng))
+      .map((agent) => ({ city, agent })));
+    const presenceEntries = presenceAgents.flatMap((agent) => {
+      if (
+        agent.status === "offline"
+        || !focusedCityIds.has(agent.cityId)
+        || !Number.isFinite(agent.lat)
+        || !Number.isFinite(agent.lng)
+      ) return [];
+      const city = cityById.get(agent.cityId);
+      return city ? [{ city, agent }] : [];
+    });
+    return [...telemetryEntries, ...presenceEntries];
+  }, [cities, focusedCountryKey, presenceAgents]);
+  const focusedEnergyAgents = useMemo(
+    () => focusedLiveAgentEntries.map((entry) => entry.agent),
+    [focusedLiveAgentEntries],
+  );
   const detailedPlaceLabels = useMemo(() => {
     if (labelDetail !== 2) return [];
     const labelConfig = cityLabelBand === 0
@@ -1548,14 +1804,27 @@ function Earth({
       : [],
     [activeBoundaryPayload],
   );
+  const activeBoundaryKind = boundaryKindFor(activeBoundaryPayload?.level, activeBoundaryFeatures);
   const contextBoundaryPayload = districtBoundaryPayload?.available
     ? districtBoundaryPayload
-    : regionBoundaryPayload;
+    : regionBoundaryPayload?.available
+      ? regionBoundaryPayload
+      : null;
   const contextBoundaryFeatures = useMemo(
-    () => cityLabelBand >= 2 && contextBoundaryPayload?.available
+    () => (
+      labelDetail === 2
+      && cityLabelBand >= 2
+      && (activeBoundaryKind === "city" || activeBoundaryKind === "localadmin")
+      && contextBoundaryPayload?.available
+    )
       ? contextBoundaryPayload.features.map(normalizeBoundaryOrientation)
       : [],
-    [cityLabelBand, contextBoundaryPayload],
+    [
+      activeBoundaryKind,
+      cityLabelBand,
+      contextBoundaryPayload,
+      labelDetail,
+    ],
   );
   const activeBoundaryBounds = useMemo(
     () => activeBoundaryFeatures.map((feature) => geoBounds(feature)),
@@ -1565,8 +1834,9 @@ function Earth({
     boundaryFeatureId(feature),
     index,
   ])), [activeBoundaryFeatures]);
-  const activeBoundaryKind = boundaryKindFor(activeBoundaryPayload?.level, activeBoundaryFeatures);
+  const administrativeContextKey = `${focusedCountryKey}:${cityLabelBand}:${activeBoundaryPayload?.level ?? "none"}:${activeBoundaryFeatures.length}`;
   const hoveredBoundaryIndex = administrativeHover?.countryKey === focusedCountryKey
+    && administrativeHover.contextKey === administrativeContextKey
     ? activeBoundaryIndexById.get(administrativeHover.featureId) ?? null
     : null;
   const administrativeLabels = useMemo(() => {
@@ -1612,23 +1882,28 @@ function Earth({
 
   const handleAdministrativeLabelHover = useCallback((featureId: string, hovered: boolean) => {
     if (hovered) {
-      administrativeLabelHover.current = { countryKey: focusedCountryKey, featureId };
-      setAdministrativeHover({ countryKey: focusedCountryKey, featureId, source: "label" });
+      administrativeLabelHover.current = { countryKey: focusedCountryKey, featureId, contextKey: administrativeContextKey };
+      setAdministrativeHover({ countryKey: focusedCountryKey, featureId, source: "label", contextKey: administrativeContextKey });
       return;
     }
 
     const labelHover = administrativeLabelHover.current;
-    if (labelHover?.countryKey === focusedCountryKey && labelHover.featureId === featureId) {
+    if (
+      labelHover?.countryKey === focusedCountryKey
+      && labelHover.featureId === featureId
+      && labelHover.contextKey === administrativeContextKey
+    ) {
       administrativeLabelHover.current = null;
     }
     setAdministrativeHover((current) => (
       current?.source === "label"
         && current.countryKey === focusedCountryKey
         && current.featureId === featureId
+        && current.contextKey === administrativeContextKey
         ? null
         : current
     ));
-  }, [focusedCountryKey]);
+  }, [administrativeContextKey, focusedCountryKey]);
 
   const applyOrientation = () => {
     if (!globe.current) return;
@@ -1773,12 +2048,11 @@ function Earth({
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </mesh>
       <CountrySurfaces liveAgentsByCountry={liveAgentsByCountry} selectedCountryKey={selectedCountryKey} detailLevel={labelDetail} onSelect={onCountrySelect} />
-      <EnergyParticles cities={cities} layer={layer} />
       <mesh scale={1.055}>
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      {labelDetail === 2 && cityLabelBand >= 2 && contextBoundaryFeatures.length > 0 && (
+      {labelDetail === 2 && contextBoundaryFeatures.length > 0 && (
         <AdministrativeBoundaryContext features={contextBoundaryFeatures} />
       )}
       {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
@@ -1787,6 +2061,7 @@ function Earth({
           detailLevel={labelDetail}
           boundaryKind={activeBoundaryKind}
           cities={cities}
+          agents={focusedEnergyAgents}
           countryKey={focusedCountryKey}
           countryName={focusedCountryName}
           hoveredIndex={hoveredBoundaryIndex}
@@ -1795,7 +2070,10 @@ function Earth({
           onHoverChange={(index) => {
             setAdministrativeHover((current) => {
               const labelHover = administrativeLabelHover.current;
-              if (labelHover?.countryKey === focusedCountryKey) {
+              if (
+                labelHover?.countryKey === focusedCountryKey
+                && labelHover.contextKey === administrativeContextKey
+              ) {
                 const nextFeatureId = index === null
                   ? null
                   : boundaryFeatureId(activeBoundaryFeatures[index]);
@@ -1808,11 +2086,20 @@ function Earth({
                 current?.countryKey === focusedCountryKey
                 && current.featureId === featureId
                 && current.source === "surface"
+                && current.contextKey === administrativeContextKey
               ) return current;
-              return { countryKey: focusedCountryKey, featureId, source: "surface" };
+              return {
+                countryKey: focusedCountryKey,
+                featureId,
+                source: "surface",
+                contextKey: administrativeContextKey,
+              };
             });
           }}
         />
+      )}
+      {labelDetail === 2 && (
+        <LiveAgentMarkers entries={focusedLiveAgentEntries} onSelect={onAgentSelect} />
       )}
       {labelDetail === 1 && globalCountryLabels.map((country) => (
         <GlobeLabel
@@ -1828,6 +2115,7 @@ function Earth({
         ) ?? -1;
         const boundaryFeature = boundaryIndex >= 0 ? activeBoundaryFeatures[boundaryIndex] : null;
         const boundaryHovered = administrativeHover?.countryKey === focusedCountryKey
+          && administrativeHover.contextKey === administrativeContextKey
           && boundaryFeature !== null
           && administrativeHover.featureId === boundaryFeatureId(boundaryFeature);
         return (
@@ -1858,17 +2146,20 @@ function Earth({
         );
       })}
       {labelDetail === 2 && cityLabelBand >= 1 && displayPlaceLabels.map((city) => {
-        const directBoundaryIndex = activeBoundaryFeatures.findIndex((feature) => (
-          feature.properties?.atlasPlaceId === city.id
-        ));
+        const directBoundaryIndex = activeBoundaryKind === "city"
+          ? activeBoundaryFeatures.findIndex((feature) => feature.properties?.atlasPlaceId === city.id)
+          : -1;
         const boundaryIndex = directBoundaryIndex >= 0
           ? directBoundaryIndex
-          : activeBoundaryFeatures.findIndex((feature, featureIndex) => (
-            boundaryBoundsContain(activeBoundaryBounds[featureIndex], city.lng, city.lat)
-            && geoContains(feature, [city.lng, city.lat])
-          ));
+          : activeBoundaryKind === "city"
+            ? activeBoundaryFeatures.findIndex((feature, featureIndex) => (
+              boundaryBoundsContain(activeBoundaryBounds[featureIndex], city.lng, city.lat)
+              && geoContains(feature, [city.lng, city.lat])
+            ))
+            : -1;
         const boundaryFeature = boundaryIndex >= 0 ? activeBoundaryFeatures[boundaryIndex] : null;
         const boundaryHovered = administrativeHover?.countryKey === focusedCountryKey
+          && administrativeHover.contextKey === administrativeContextKey
           && boundaryFeature !== null
           && administrativeHover.featureId === boundaryFeatureId(boundaryFeature);
         return (
@@ -1921,7 +2212,9 @@ function CanvasWorldFallback({
   focusLocation,
   focusDistance,
   liveCounts,
+  presenceAgents,
   onSelect,
+  onAgentSelect,
   onCountrySelect,
   onCityAreaSelect,
   onDetailChange,
@@ -1933,7 +2226,9 @@ function CanvasWorldFallback({
   focusLocation: GeoCenter;
   focusDistance: number | null;
   liveCounts: Record<string, number>;
+  presenceAgents: Agent[];
   onSelect: (city: City) => void;
+  onAgentSelect: (city: City, agent: Agent) => void;
   onCountrySelect: (country: CountrySelection) => void;
   onCityAreaSelect: (area: CityAreaSelection) => void;
   onDetailChange: (level: DetailLevel) => void;
@@ -2017,14 +2312,23 @@ function CanvasWorldFallback({
       : [],
     [fallbackActiveBoundaryPayload],
   );
-  const fallbackContextBoundaryPayload = fallbackDistrictBoundaryPayload?.available
-    ? fallbackDistrictBoundaryPayload
-    : fallbackRegionBoundaryPayload;
   const fallbackContextBoundaryFeatures = useMemo(
-    () => fallbackCityBand >= 2 && fallbackContextBoundaryPayload?.available
-      ? fallbackContextBoundaryPayload.features.map(normalizeBoundaryOrientation)
+    () => (
+      fallbackDetail === 2
+      && fallbackCityBand >= 2
+      && (boundaryKindFor(fallbackActiveBoundaryPayload?.level, fallbackBoundaryFeatures) === "city"
+        || boundaryKindFor(fallbackActiveBoundaryPayload?.level, fallbackBoundaryFeatures) === "localadmin")
+      && fallbackDistrictBoundaryPayload?.available
+    )
+      ? fallbackDistrictBoundaryPayload.features.map(normalizeBoundaryOrientation)
       : [],
-    [fallbackCityBand, fallbackContextBoundaryPayload],
+    [
+      fallbackActiveBoundaryPayload?.level,
+      fallbackBoundaryFeatures,
+      fallbackCityBand,
+      fallbackDetail,
+      fallbackDistrictBoundaryPayload,
+    ],
   );
   const fallbackBoundaryBounds = useMemo(
     () => fallbackBoundaryFeatures.map((feature) => geoBounds(feature)),
@@ -2048,6 +2352,28 @@ function CanvasWorldFallback({
       .map((city) => [normalizeLabelName(city.name), city])),
     [cities, focusedCityCountryKey],
   );
+  const fallbackFocusedAgentEntries = useMemo<GlobeAgentEntry[]>(() => {
+    const focusedCities = cities.filter((city) => countryEnergyKey(city.country) === focusedCityCountryKey);
+    const cityById = new Map(focusedCities.map((city) => [city.id, city]));
+    return [
+      ...focusedCities.flatMap((city) => city.agents
+        .filter((agent) => agent.status !== "offline")
+        .map((agent) => ({ city, agent }))),
+      ...presenceAgents.flatMap((agent) => {
+        if (agent.status === "offline") return [];
+        const city = cityById.get(agent.cityId);
+        return city ? [{ city, agent }] : [];
+      }),
+    ];
+  }, [cities, focusedCityCountryKey, presenceAgents]);
+  const fallbackBoundaryAgentCounts = useMemo(() => fallbackBoundaryFeatures.map((feature, featureIndex) => (
+    fallbackFocusedAgentEntries.reduce((count, entry) => (
+      boundaryBoundsContain(fallbackBoundaryBounds[featureIndex], entry.agent.lng, entry.agent.lat)
+      && geoContains(feature, [entry.agent.lng, entry.agent.lat])
+        ? count + 1
+        : count
+    ), 0)
+  )), [fallbackBoundaryBounds, fallbackBoundaryFeatures, fallbackFocusedAgentEntries]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -2063,6 +2389,7 @@ function CanvasWorldFallback({
       progress: initialProgress,
       hoveredCountryKey: null as string | null,
       hoveredBoundaryIndex: null as number | null,
+      hoveredAgentIndex: null as number | null,
     };
     let projection = geoOrthographic();
     let frame = 0;
@@ -2157,11 +2484,13 @@ function CanvasWorldFallback({
         });
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
+          const liveAgentCount = fallbackBoundaryAgentCounts[index] ?? 0;
+          const density = agentDensityLevel(liveAgentCount);
           context.beginPath();
           path(feature);
-          if (highlighted) {
-            context.globalAlpha = 0.42;
-            context.fillStyle = "#e8b957";
+          if (highlighted || liveAgentCount > 0) {
+            context.globalAlpha = highlighted ? 0.58 : 0.46 + density.level * 0.055;
+            context.fillStyle = highlighted ? "#e8b957" : density.color;
             context.fill();
             context.globalAlpha = 1;
           }
@@ -2197,23 +2526,55 @@ function CanvasWorldFallback({
             context.fillStyle = index === view.hoveredBoundaryIndex ? "#ffd36f" : "#8abdc5";
             context.fillText(boundaryFeatureName(feature).toUpperCase(), point[0], point[1]);
           });
-        } else {
-          const visibleCities = fallbackDisplayPlaces
-            .filter((city) => isVisible(city.lng, city.lat))
-            .slice(0, 140);
-          for (const city of visibleCities) {
-            const point = projection([city.lng, city.lat]);
-            if (!point) continue;
-            const boundaryIndex = fallbackBoundaryFeatures.findIndex((feature) => (
-              feature.properties?.atlasPlaceId === city.id
-            ));
-            context.fillStyle = boundaryIndex === view.hoveredBoundaryIndex ? "#ffd36f" : "#7fdde7";
-            context.fillText(city.name.toUpperCase(), point[0], point[1]);
-          }
+        }
+        const cityLimit = cityBandForProgress(view.progress) === 0
+          ? 30
+          : cityBandForProgress(view.progress) === 1
+            ? 65
+            : 140;
+        const visibleCities = fallbackDisplayPlaces
+          .filter((city) => isVisible(city.lng, city.lat))
+          .slice(0, cityLimit);
+        for (const city of visibleCities) {
+          const point = projection([city.lng, city.lat]);
+          if (!point) continue;
+          const boundaryIndex = fallbackBoundaryFeatures.findIndex((feature) => (
+            feature.properties?.atlasPlaceId === city.id
+          ));
+          context.fillStyle = boundaryIndex === view.hoveredBoundaryIndex ? "#ffd36f" : "#7fdde7";
+          context.fillText(city.name.toUpperCase(), point[0], point[1]);
         }
       }
 
-      if (view.hoveredBoundaryIndex !== null) {
+      if (detail === 2) {
+        fallbackFocusedAgentEntries.forEach((entry, index) => {
+          if (!isVisible(entry.agent.lng, entry.agent.lat)) return;
+          const point = projection([entry.agent.lng, entry.agent.lat]);
+          if (!point) return;
+          const hovered = view.hoveredAgentIndex === index;
+          const color = agentStatusColors[entry.agent.status];
+          context.beginPath();
+          context.arc(point[0], point[1], hovered ? 6.5 : 4.5, 0, Math.PI * 2);
+          context.globalAlpha = hovered ? 0.34 : 0.18;
+          context.fillStyle = color;
+          context.fill();
+          context.beginPath();
+          context.arc(point[0], point[1], hovered ? 2.8 : 2, 0, Math.PI * 2);
+          context.globalAlpha = 1;
+          context.fillStyle = color;
+          context.fill();
+        });
+      }
+
+      if (view.hoveredAgentIndex !== null) {
+        const hovered = fallbackFocusedAgentEntries[view.hoveredAgentIndex];
+        if (hovered) {
+          context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+          context.fillStyle = agentStatusColors[hovered.agent.status];
+          context.textAlign = "left";
+          context.fillText(`${hovered.agent.name.toUpperCase()} · ${hovered.agent.status.toUpperCase()}`, 22, height - 28);
+        }
+      } else if (view.hoveredBoundaryIndex !== null) {
         const hovered = fallbackBoundaryFeatures[view.hoveredBoundaryIndex];
         if (hovered) {
           context.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -2257,6 +2618,29 @@ function CanvasWorldFallback({
         center: boundaryFeatureCenter(fallbackBoundaryFeatures[index]),
       };
     };
+    const hitAgent = (x: number, y: number) => {
+      if (detailForProgress(view.progress) !== 2) return null;
+      let nearestIndex = -1;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < fallbackFocusedAgentEntries.length; index += 1) {
+        const entry = fallbackFocusedAgentEntries[index];
+        if (!isVisible(entry.agent.lng, entry.agent.lat)) continue;
+        const point = projection([entry.agent.lng, entry.agent.lat]);
+        if (!point) continue;
+        const distance = Math.hypot(point[0] - x, point[1] - y);
+        if (distance <= 9 && distance < nearestDistance) {
+          nearestIndex = index;
+          nearestDistance = distance;
+        }
+      }
+      return nearestIndex < 0
+        ? null
+        : {
+          index: nearestIndex,
+          distance: nearestDistance,
+          entry: fallbackFocusedAgentEntries[nearestIndex],
+        };
+    };
     const onPointerDown = (event: PointerEvent) => {
       const point = pointerPosition(event);
       dragging = true;
@@ -2277,12 +2661,14 @@ function CanvasWorldFallback({
         lastX = point.x;
         lastY = point.y;
       } else {
+        const agent = hitAgent(point.x, point.y);
         const boundary = detailForProgress(view.progress) >= 2
           ? hitBoundary(point.x, point.y)
           : null;
-        view.hoveredBoundaryIndex = boundary?.index ?? null;
-        view.hoveredCountryKey = boundary ? null : hitCountry(point.x, point.y)?.key ?? null;
-        element.style.cursor = view.hoveredBoundaryIndex !== null || view.hoveredCountryKey ? "pointer" : "grab";
+        view.hoveredAgentIndex = agent?.index ?? null;
+        view.hoveredBoundaryIndex = agent ? null : boundary?.index ?? null;
+        view.hoveredCountryKey = agent || boundary ? null : hitCountry(point.x, point.y)?.key ?? null;
+        element.style.cursor = view.hoveredAgentIndex !== null || view.hoveredBoundaryIndex !== null || view.hoveredCountryKey ? "pointer" : "grab";
       }
       requestDraw();
     };
@@ -2294,6 +2680,11 @@ function CanvasWorldFallback({
       if (moved) return;
 
       if (detailForProgress(view.progress) >= 2) {
+        const agent = hitAgent(point.x, point.y);
+        if (agent) {
+          onAgentSelect(agent.entry.city, agent.entry.agent);
+          return;
+        }
         const boundary = hitBoundary(point.x, point.y);
         if (boundary) {
           view.lng = boundary.center.lng;
@@ -2382,16 +2773,19 @@ function CanvasWorldFallback({
     countryLiveAgents,
     fallbackBoundaryFeatures,
     fallbackBoundaryBounds,
+    fallbackBoundaryAgentCounts,
     fallbackBoundaryKind,
     fallbackContextBoundaryFeatures,
     fallbackCountries,
     fallbackCityByName,
     fallbackDisplayPlaces,
+    fallbackFocusedAgentEntries,
     focusDistance,
     focusLocation.lat,
     focusLocation.lng,
     focusedCityCountryKey,
     onCityAreaSelect,
+    onAgentSelect,
     onCountrySelect,
     onDetailChange,
     onSelect,
@@ -2437,6 +2831,7 @@ function EarthScene({
   streetViewRequested,
   layer,
   liveCounts = {},
+  presenceAgents = [],
   onSelect,
   onCountrySelect,
   onCityAreaSelect,
@@ -2454,6 +2849,7 @@ function EarthScene({
   streetViewRequested: boolean;
   layer: Layer;
   liveCounts: Record<string, number>;
+  presenceAgents: Agent[];
   onSelect: (city: City) => void;
   onCountrySelect: (country: CountrySelection) => void;
   onCityAreaSelect: (area: CityAreaSelection) => void;
@@ -2593,7 +2989,9 @@ function EarthScene({
       focusLocation={focusLocation}
       focusDistance={globeFocusDistance}
       liveCounts={liveCounts}
+      presenceAgents={presenceAgents}
       onSelect={selectActivityCity}
+      onAgentSelect={onAgentSelect}
       onCountrySelect={selectActivityCountry}
       onCityAreaSelect={onCityAreaSelect}
       onDetailChange={handleSceneDetailChange}
@@ -2634,7 +3032,9 @@ function EarthScene({
                   focusRevision={viewRevision}
                   layer={layer}
                   liveCounts={liveCounts}
+                  presenceAgents={presenceAgents}
                   onSelect={selectActivityCity}
+                  onAgentSelect={onAgentSelect}
                   onCountrySelect={selectActivityCountry}
                   onCityAreaSelect={onCityAreaSelect}
                   onDetailChange={handleSceneDetailChange}
@@ -2744,6 +3144,29 @@ function atlasPresenceToSignal(presence: AtlasPresence): Signal {
     topic: presence.topic,
     status: presence.controlState,
     detail: presence.detail,
+  };
+}
+
+function atlasPresenceToAgent(presence: AtlasPresence, city: City): Agent {
+  const inactive = presence.status === "Offline" || presence.activity === "Offline";
+  const idle = presence.status === "Away" || ["Idle", "Sleeping"].includes(presence.activity);
+  const working = presence.status === "Focused" || (!inactive && !idle && presence.activity !== "Custom");
+  const status: Agent["status"] = inactive ? "offline" : idle ? "idle" : working ? "working" : "online";
+  return {
+    id: `presence-${presence.id}`,
+    cityId: city.id,
+    name: presence.displayName,
+    runtime: "Atlas Presence",
+    packageName: "atlas-presence",
+    packageVersion: "live",
+    status,
+    activity: presence.activity,
+    topic: presence.topic,
+    detail: presence.detail,
+    lat: presence.latitude,
+    lng: presence.longitude,
+    energy: status === "working" ? 80 : status === "online" ? 55 : status === "idle" ? 25 : 0,
+    lastSeenAt: presence.updatedAt,
   };
 }
 
@@ -3133,6 +3556,11 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
     () => presence.configured || joined ? presence.presenceFeed : [],
     [joined, presence.configured, presence.presenceFeed],
   );
+  const connectedAtlasAgents = useMemo(() => visiblePresenceFeed.flatMap((item) => {
+    if (item.entityKind !== "ai") return [];
+    const city = cities.find((candidate) => normalizeLabelName(candidate.name) === normalizeLabelName(item.city));
+    return city ? [atlasPresenceToAgent(item, city)] : [];
+  }), [cities, visiblePresenceFeed]);
 
   const liveCounts = useMemo(() => visiblePresenceFeed.reduce<Record<string, number>>((counts, item) => {
     if (item.entityKind !== "ai" || item.status === "Offline" || item.activity === "Offline") return counts;
@@ -3350,6 +3778,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
           streetViewRequested={streetViewRequested}
           layer={layer}
           liveCounts={liveCounts}
+          presenceAgents={connectedAtlasAgents}
           onSelect={focusCity}
           onCountrySelect={focusCountry}
           onCityAreaSelect={focusCityArea}
@@ -3424,8 +3853,8 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
         <div className="pulseLegend" aria-label="Map legend">
           <div className="legendHeading"><span>MAP LEGEND</span><small>LIVE</small></div>
           <div className="energyScale">
-            <span>LIVE AGENTS PER COUNTRY</span>
-            <p>Energy level = agents live now</p>
+            <span>LIVE AGENTS · COUNTRY / CITY</span>
+            <p>Area color = agents live now</p>
             <div className="energyLevelLegend">
               {agentDensityLevels.map((density) => (
                 <small key={density.level}><i style={{ background: density.color, boxShadow: `0 0 7px ${density.color}` }} /><b>{density.label}</b></small>
@@ -3433,7 +3862,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
             </div>
           </div>
           <div className="statusLegend">
-            <span>AGENT STATUS</span>
+            <span>INDIVIDUAL AGENTS · DEEP CITY ZOOM</span>
             <div>
               <small><i style={{ background: agentStatusColors.working, boxShadow: `0 0 7px ${agentStatusColors.working}` }} />Working</small>
               <small><i style={{ background: agentStatusColors.online, boxShadow: `0 0 7px ${agentStatusColors.online}` }} />Online</small>
