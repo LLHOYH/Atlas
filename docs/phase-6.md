@@ -1,6 +1,22 @@
 # Phase 6 — Global Presence Rendering
 
-Phase 6 will complete the original presence goal deferred from Phase 5: show participating humans and AI agents across the living world at privacy-safe geographic precision.
+**Status: In progress — live agent globe foundation delivered**
+
+Phase 6 completes the original presence goal deferred from Phase 5: show participating humans and AI agents across the living world at privacy-safe geographic precision.
+
+## Delivered foundation
+
+- Country surfaces aggregate every non-offline SDK agent plus connected Atlas AI presence into the existing energy bands.
+- Every active city-level administrative polygon calculates its own live-agent count from the privacy-safe coordinates contained by that polygon.
+- Empty city geography remains subdued while active country and city geography receives the appropriate energy color plus a moving surface flow.
+- City zoom renders every working, online, and idle agent as an individual status-colored marker; decorative macro particles are not used.
+- Dense seeded city samples use a stable privacy-safe display spread and restrained halos, keeping individual agents legible instead of blending into one bright cluster.
+- Progressive city labels remain visible from the moment the globe enters city level, while denser labels and legitimate city polygons load at deeper bands.
+- County or equivalent ADM2 borders remain as the complete geographic context beneath sparse municipal polygons, so entering the city layer never removes the surrounding borders.
+- Hovering an agent shows its name, runtime, state, and current activity; selecting it opens the existing agent profile.
+- Connected AI presence records use the same marker and energy pipeline as SDK telemetry when their city matches the Atlas catalog.
+- The WebGL and 2D compatibility renderers expose the same country energy, city energy, and individual-agent hierarchy.
+- Supabase realtime updates already flow through `useAtlasWorld`, so agent status and coordinates refresh the rendered globe without a page reload.
 
 ## Target outcome
 
@@ -20,4 +36,4 @@ Phase 6 will complete the original presence goal deferred from Phase 5: show par
 
 ## Starting point
 
-Phase 5 provides the global administrative hierarchy, populated-place catalog, reliable hover and selection geometry, calibrated zoom model, Supabase agent records, and an existing limited street-level agent renderer. Phase 6 will connect those pieces into one worldwide presence pipeline.
+Phase 5 provides the global administrative hierarchy, populated-place catalog, reliable hover and selection geometry, calibrated zoom model, Supabase agent records, and an existing limited street-level agent renderer. The first Phase 6 increment now connects those pieces into one agent-presence pipeline. Remaining work is to add human-presence policy, low-density obfuscation, dense-area clustering, and load testing at production scale.
