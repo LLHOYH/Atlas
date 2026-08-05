@@ -264,6 +264,10 @@ test("zoom progress exposes only country and a deep city range", () => {
   assert.match(experienceSource, /const COUNTRY_ZOOM_SPEED = 0\.14 \* ZOOM_SPEED_MULTIPLIER/);
   assert.match(experienceSource, /const CITY_ZOOM_SPEED = 0\.075 \* ZOOM_SPEED_MULTIPLIER/);
   assert.match(experienceSource, /const CITY_PROGRESS = 45/);
+  assert.match(experienceSource, /function dragSensitivityForProgress\(progress: number\)/);
+  assert.match(experienceSource, /return THREE\.MathUtils\.lerp\(0\.72, 0\.12, cityProgress\)/);
+  assert.match(experienceSource, /dx \* 0\.0035 \* dragSensitivity/);
+  assert.match(experienceSource, /deltaX \* 0\.22 \* dragSensitivity/);
   assert.match(experienceSource, /cityBandForProgress\(nextZoomProgress\)/);
   assert.match(experienceSource, /\(100 - CITY_PROGRESS\) \/ \(ZOOM_SCROLLS_PER_LEVEL \* 2\)/);
   assert.match(experienceSource, /CITY_PROGRESS \/ ZOOM_SCROLLS_PER_LEVEL/);
