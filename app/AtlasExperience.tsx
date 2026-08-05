@@ -1566,7 +1566,6 @@ function LiveAgentMarkers({
         <Html
           position={hoveredPosition.clone().multiplyScalar(1.012)}
           center
-          distanceFactor={3.2}
           zIndexRange={[34, 0]}
           className="globeAgentTooltipAnchor"
         >

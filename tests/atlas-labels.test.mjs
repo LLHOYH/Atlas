@@ -228,6 +228,8 @@ test("phase 6 renders agent energy at country and city level before revealing in
   assert.match(experienceSource, /labelDetail === 2 && \(\s*<LiveAgentMarkers/);
   assert.match(experienceSource, /labelDetail === 2 && cityLabelBand >= 1 && displayPlaceLabels\.map/);
   assert.match(experienceSource, /globeAgentTooltip/);
+  assert.doesNotMatch(experienceSource, /distanceFactor=\{3\.2\}/);
+  assert.match(globalStylesSource, /\.globeAgentTooltip \{[\s\S]*?max-width: 172px/);
   assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
   assert.match(experienceSource, /fallbackBoundaryAgentCounts/);
   assert.match(experienceSource, /fallbackFocusedAgentEntries/);
