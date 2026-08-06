@@ -220,7 +220,7 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.match(experienceSource, /const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1\.35/);
   assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS, 12, 12\]\}/);
   assert.doesNotMatch(experienceSource, /AGENT_MARKER_GEOMETRY_RADIUS \* 0\.5/);
-  assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS \* AGENT_MARKER_HIT_RADIUS_MULTIPLIER, 8, 8\]\}/);
+  assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_RADIUS \+ 0\.0005, 96, 64\]\}/);
   assert.match(experienceSource, /colorWrite=\{false\}/);
   assert.doesNotMatch(experienceSource, /haloMaterial|ref=\{halos\}/);
   assert.match(experienceSource, /function agentMarkerScaleForScreenSize\(cameraDistance: number, viewportHeight: number, fovDegrees: number\)/);
@@ -243,6 +243,11 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.match(globalStylesSource, /\.globeAgentTooltip \{[\s\S]*?max-width: 172px/);
   assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
   assert.match(experienceSource, /onPointerOver=\{setHoverFromEvent\}/);
+  assert.match(experienceSource, /function LiveAgentMarkers[\s\S]*?useThree\(\(state\) => state\.size\)/);
+  assert.match(experienceSource, /const agentIndexFromPointer = \(event: ThreeEvent<PointerEvent>\)/);
+  assert.match(experienceSource, /scratch\.projectedPosition\.copy\(scratch\.worldPosition\)\.project\(event\.camera\)/);
+  assert.match(experienceSource, /scratch\.projectedPosition\.x - event\.pointer\.x/);
+  assert.doesNotMatch(experienceSource, /const hitTargets = useRef<THREE\.InstancedMesh>/);
   assert.match(experienceSource, /ADMIN_BASE_RADIUS \+ 0\.004/);
   assert.match(experienceSource, /pointerEventsThrough=\{focusedLiveAgentEntries\.length > 0\}/);
   assert.match(globalStylesSource, /\.mapLabel--pointer-through \{[\s\S]*?pointer-events: none/);

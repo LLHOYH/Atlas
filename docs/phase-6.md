@@ -9,7 +9,7 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 - Country surfaces aggregate every non-offline SDK agent plus connected Atlas AI presence into the existing energy bands.
 - City-level administrative polygons remain neutral geographic context; energy color and moving surface flow are reserved for country view.
 - City zoom renders every working, online, and idle agent as a small, crisp status-colored marker at its reported approximate coordinates; decorative macro particles are not used.
-- Agent markers have no artificial city-wide display spread, translucent halo, border ring, or pulse. Each marker is one opaque, high-contrast status circle with a separate invisible interaction target.
+- Agent markers have no artificial city-wide display spread, translucent halo, border ring, or pulse. Each marker is one opaque, high-contrast status circle. Pointer selection is resolved in screen pixels across the globe surface rather than through fragile per-instance raycasting.
 - Agent indicators use a fixed 12.5-pixel screen radius at every City and Deep City zoom depth. Zoom changes only the distance between their reported coordinates; it never enlarges or shrinks the indicator itself.
 - Agent interaction takes precedence over administrative surfaces and labels, so an agent remains hoverable and selectable when its coordinates overlap a city.
 - City zoom continues past the full progress bar into a deep magnification range, allowing nearby agents to separate visually without introducing a new map level. Wheel sensitivity scales down with magnification, agent-focus camera travel eases through deep zoom, and the live readout advances without jumping directly to the maximum.

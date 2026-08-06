@@ -2,7 +2,7 @@
 
 import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, QuadraticBezierLine, Stars } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import { geoArea, geoBounds, geoCentroid, geoContains, geoDistance, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
@@ -1459,12 +1459,18 @@ function LiveAgentMarkers({
   onSelect: (city: City, agent: Agent) => void;
 }) {
   const markers = useRef<THREE.InstancedMesh>(null);
-  const hitTargets = useRef<THREE.InstancedMesh>(null);
+  const viewportSize = useThree((state) => state.size);
   const markerTransformScratch = useRef({
     matrix: new THREE.Matrix4(),
     quaternion: new THREE.Quaternion(),
     scale: new THREE.Vector3(),
     worldPosition: new THREE.Vector3(),
+  });
+  const pointerPickScratch = useRef({
+    worldPosition: new THREE.Vector3(),
+    projectedPosition: new THREE.Vector3(),
+    surfaceNormal: new THREE.Vector3(),
+    towardCamera: new THREE.Vector3(),
   });
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const markerPositions = useMemo(
@@ -1486,8 +1492,7 @@ function LiveAgentMarkers({
 
   useFrame(({ camera, size }) => {
     const markerMesh = markers.current;
-    const hitMesh = hitTargets.current;
-    if (!markerMesh || !hitMesh) return;
+    if (!markerMesh) return;
     markerMesh.updateWorldMatrix(true, false);
     const effectiveFov = camera instanceof THREE.PerspectiveCamera ? camera.getEffectiveFOV() : 38;
     const scratch = markerTransformScratch.current;
@@ -1501,10 +1506,8 @@ function LiveAgentMarkers({
       scratch.scale.setScalar(scale);
       scratch.matrix.compose(position, scratch.quaternion, scratch.scale);
       markerMesh.setMatrixAt(index, scratch.matrix);
-      hitMesh.setMatrixAt(index, scratch.matrix);
     });
     markerMesh.instanceMatrix.needsUpdate = true;
-    hitMesh.instanceMatrix.needsUpdate = true;
   });
 
   if (!entries.length) return null;
@@ -1514,11 +1517,41 @@ function LiveAgentMarkers({
   const hovered = hoveredIndex === null ? null : entries[hoveredIndex] ?? null;
   const hoveredPosition = hoveredIndex === null ? null : markerPositions[hoveredIndex] ?? null;
 
+  const agentIndexFromPointer = (event: ThreeEvent<PointerEvent>) => {
+    const scratch = pointerPickScratch.current;
+    const hitRadius = AGENT_MARKER_SCREEN_RADIUS_PX * AGENT_MARKER_HIT_RADIUS_MULTIPLIER;
+    let nearestIndex: number | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    markerPositions.forEach((position, index) => {
+      scratch.worldPosition.copy(position);
+      event.eventObject.localToWorld(scratch.worldPosition);
+      scratch.surfaceNormal.copy(scratch.worldPosition).normalize();
+      scratch.towardCamera.copy(event.camera.position).sub(scratch.worldPosition).normalize();
+      if (scratch.surfaceNormal.dot(scratch.towardCamera) <= 0.035) return;
+
+      scratch.projectedPosition.copy(scratch.worldPosition).project(event.camera);
+      if (scratch.projectedPosition.z < -1 || scratch.projectedPosition.z > 1) return;
+      const distance = Math.hypot(
+        (scratch.projectedPosition.x - event.pointer.x) * viewportSize.width * 0.5,
+        (scratch.projectedPosition.y - event.pointer.y) * viewportSize.height * 0.5,
+      );
+      if (distance <= hitRadius && distance < nearestDistance) {
+        nearestIndex = index;
+        nearestDistance = distance;
+      }
+    });
+
+    return nearestIndex;
+  };
+
   const setHoverFromEvent = (event: ThreeEvent<PointerEvent>) => {
-    event.stopPropagation();
-    const nextIndex = event.instanceId ?? null;
+    const nextIndex = agentIndexFromPointer(event);
     setHoveredAgentId(nextIndex === null ? null : entries[nextIndex]?.agent.id ?? null);
-    if (event.buttons === 0) document.body.style.cursor = nextIndex === null ? "grab" : "pointer";
+    if (nextIndex !== null) {
+      event.stopPropagation();
+      if (event.buttons === 0) document.body.style.cursor = "pointer";
+    }
   };
 
   return (
@@ -1533,28 +1566,28 @@ function LiveAgentMarkers({
         <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS, 12, 12]} />
         <meshBasicMaterial depthWrite={false} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh
-        ref={hitTargets}
-        args={[undefined, undefined, entries.length]}
-        frustumCulled={false}
-        onPointerDown={(event) => event.stopPropagation()}
+      <mesh
+        onPointerDown={(event) => {
+          if (agentIndexFromPointer(event) !== null) event.stopPropagation();
+        }}
         onPointerOver={setHoverFromEvent}
         onPointerMove={setHoverFromEvent}
-        onPointerOut={(event) => {
-          event.stopPropagation();
+        onPointerOut={() => {
           setHoveredAgentId(null);
           document.body.style.cursor = "grab";
         }}
         onClick={(event) => {
-          if (event.delta > 5 || event.instanceId === undefined) return;
+          if (event.delta > 5) return;
+          const agentIndex = agentIndexFromPointer(event);
+          if (agentIndex === null) return;
           event.stopPropagation();
-          const entry = entries[event.instanceId];
+          const entry = entries[agentIndex];
           if (entry) onSelect(entry.city, entry.agent);
         }}
       >
-        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * AGENT_MARKER_HIT_RADIUS_MULTIPLIER, 8, 8]} />
+        <sphereGeometry args={[AGENT_MARKER_RADIUS + 0.0005, 96, 64]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
-      </instancedMesh>
+      </mesh>
       {hovered && hoveredPosition && (
         <Html
           position={hoveredPosition.clone().multiplyScalar(1.00025)}
