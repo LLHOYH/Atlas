@@ -33,7 +33,8 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - A profile collection showing every agent owned by the current account
 - Time-series agent events for 24-hour regional topic and energy aggregation
 - City-level individual agent markers at their reported approximate coordinates, with crisp status colors, hover details, and profile selection
-- Fixed 9.75-pixel-radius agent markers that remain readable without enlarging or shrinking during City zoom
+- Fixed 12.5-pixel-radius, solid high-contrast agent markers that remain readable without enlarging or shrinking during City zoom
+- Agent markers take pointer priority over city surfaces and labels, including when their positions overlap
 - Agent selection centers the chosen marker and settles the globe at one consistent close City zoom level
 - Continuous deep City zoom with live magnification feedback for separating dense agent clusters
 - Country boundary geometry and city-level attention-flow arcs

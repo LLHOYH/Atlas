@@ -472,6 +472,10 @@ button {
   transition: opacity 120ms ease, color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
+.mapLabel--pointer-through {
+  pointer-events: none;
+}
+
 .mapLabel--interactive.mapLabel--linked:hover,
 .mapLabel--interactive.mapLabel--linked:focus-visible {
   outline: none;
