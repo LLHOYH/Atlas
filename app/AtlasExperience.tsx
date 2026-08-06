@@ -119,6 +119,7 @@ function latLngToVector3(lat: number, lng: number, radius: number) {
 type LabelKind = "country" | "region" | "city";
 type GeoCenter = { lat: number; lng: number };
 type CountrySelection = GeoCenter & { name: string; key: string; distance: number };
+type AgentFocusTarget = GeoCenter & { agentId: string; distance: number };
 type BoundaryKind = "region" | "district" | "localadmin" | "city";
 type CityAreaSelection = GeoCenter & {
   name: string;
@@ -214,8 +215,10 @@ const COUNTRY_DETAIL_DISTANCE = 6.15;
 const CITY_MAX_DISTANCE = 3.28;
 const AGENT_MARKER_RADIUS = 3.105;
 const AGENT_MARKER_GEOMETRY_RADIUS = 0.001;
-const AGENT_MARKER_SCREEN_RADIUS_PX = 3.25;
+const AGENT_MARKER_SCREEN_RADIUS_PX = 9.75;
+const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1.25;
 const CITY_DEEP_ZOOM_DISTANCE = 3.1085;
+const AGENT_FOCUS_DISTANCE = CITY_DEEP_ZOOM_DISTANCE;
 const DEEP_ZOOM_PROGRESS_PER_DOUBLING = 20;
 const DEEP_ZOOM_PROGRESS_LIMIT = 220;
 const CITY_SELECTION_DISTANCE = 3.85;
@@ -1561,7 +1564,7 @@ function LiveAgentMarkers({
           if (entry) onSelect(entry.city, entry.agent);
         }}
       >
-        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * 3.2, 8, 8]} />
+        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * AGENT_MARKER_HIT_RADIUS_MULTIPLIER, 8, 8]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} />
       </instancedMesh>
       {hovered && hoveredPosition && (
@@ -2817,6 +2820,7 @@ class GlobeRendererBoundary extends Component<
 function EarthScene({
   cities,
   selectedCity,
+  agentTarget,
   cityAreaTarget,
   countryTarget,
   viewTarget,
@@ -2835,6 +2839,7 @@ function EarthScene({
 }: {
   cities: City[];
   selectedCity: City;
+  agentTarget: AgentFocusTarget | null;
   cityAreaTarget: CityAreaSelection | null;
   countryTarget: CountrySelection | null;
   viewTarget: RegionView | null;
@@ -2858,8 +2863,9 @@ function EarthScene({
   const streetCenter = streetState?.cityId === selectedCity.id
     ? streetState.center
     : null;
-  const focusLocation = viewTarget ?? cityAreaTarget ?? countryTarget ?? { lat: selectedCity.lat, lng: selectedCity.lng };
-  const globeFocusDistance = viewTarget?.distance
+  const focusLocation = agentTarget ?? viewTarget ?? cityAreaTarget ?? countryTarget ?? { lat: selectedCity.lat, lng: selectedCity.lng };
+  const globeFocusDistance = agentTarget?.distance
+    ?? viewTarget?.distance
     ?? (cityAreaTarget ? CITY_SELECTION_DISTANCE : null)
     ?? countryTarget?.distance
     ?? null;
@@ -3516,6 +3522,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const [selectedCityId, setSelectedCityId] = useState(cities[0].id);
   const [selectedCityArea, setSelectedCityArea] = useState<CityAreaSelection | null>(() => cityAreaSelectionFromCity(cities[0]));
   const [selectedCountry, setSelectedCountry] = useState<CountrySelection | null>(null);
+  const [agentFocusTarget, setAgentFocusTarget] = useState<AgentFocusTarget | null>(null);
   const [streetViewRequested, setStreetViewRequested] = useState(false);
   const [regionViewId, setRegionViewId] = useState<RegionViewId | null>(null);
   const [regionViewRevision, setRegionViewRevision] = useState(0);
@@ -3535,7 +3542,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
   const joined = presence.connected;
   const selectedCity = cities.find((city) => city.id === selectedCityId) ?? cities[0];
   const activeRegionView = regionViews.find((view) => view.id === regionViewId) ?? null;
-  const activeFocusLocation = activeRegionView ?? selectedCityArea ?? selectedCountry ?? selectedCity;
+  const activeFocusLocation = agentFocusTarget ?? activeRegionView ?? selectedCityArea ?? selectedCountry ?? selectedCity;
   const streetViewAvailable = Boolean(
     selectedCityArea?.cityId === selectedCity.id
     && hasCompleteDeepDetail(selectedCityArea.countryKey)
@@ -3693,6 +3700,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
   const focusCity = useCallback((city: City) => {
     setRegionViewRevision((revision) => revision + 1);
+    setAgentFocusTarget(null);
     setRegionViewId(null);
     setSelectedCountry(null);
     setSelectedCityId(city.id);
@@ -3703,6 +3711,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
   const focusCityArea = useCallback((area: CityAreaSelection) => {
     setRegionViewRevision((revision) => revision + 1);
+    setAgentFocusTarget(null);
     setRegionViewId(null);
     setSelectedCountry(null);
     setSelectedCityArea(area);
@@ -3713,6 +3722,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
   const focusCountry = useCallback((country: CountrySelection) => {
     setRegionViewRevision((revision) => revision + 1);
+    setAgentFocusTarget(null);
     setRegionViewId(null);
     setSelectedCountry(country);
     setSelectedCityArea(null);
@@ -3724,6 +3734,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
   const chooseRegionView = (nextViewId: RegionViewId) => {
     setRegionViewRevision((revision) => revision + 1);
+    setAgentFocusTarget(null);
     setRegionViewId(nextViewId);
     setSelectedCountry(null);
     setSelectedCityArea(null);
@@ -3749,6 +3760,12 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
 
   const chooseAgent = useCallback((city: City, agent: Agent) => {
     focusCity(city);
+    setAgentFocusTarget({
+      agentId: agent.id,
+      lat: agent.lat,
+      lng: agent.lng,
+      distance: AGENT_FOCUS_DISTANCE,
+    });
     setProfile(atlasAgentToSignal(agent));
   }, [focusCity]);
 
@@ -3767,6 +3784,7 @@ function AtlasWorldExperience({ cities, liveAgentHistory }: { cities: City[]; li
         <EarthScene
           cities={cities}
           selectedCity={selectedCity}
+          agentTarget={agentFocusTarget}
           cityAreaTarget={selectedCityArea}
           countryTarget={selectedCountry}
           viewTarget={activeRegionView}
