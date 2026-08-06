@@ -82,10 +82,10 @@ const layerColors: Record<Layer, string> = {
 };
 
 const agentStatusColors = {
-  working: "#f0c66f",
-  online: "#67e9bc",
-  idle: "#a68cff",
-  offline: "#52616b",
+  working: "#ffca3a",
+  online: "#22f2a8",
+  idle: "#a970ff",
+  offline: "#7f98aa",
 } as const;
 
 const agentDensityLevels = [
@@ -215,8 +215,8 @@ const COUNTRY_DETAIL_DISTANCE = 6.15;
 const CITY_MAX_DISTANCE = 3.28;
 const AGENT_MARKER_RADIUS = 3.105;
 const AGENT_MARKER_GEOMETRY_RADIUS = 0.001;
-const AGENT_MARKER_SCREEN_RADIUS_PX = 9.75;
-const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1.25;
+const AGENT_MARKER_SCREEN_RADIUS_PX = 12.5;
+const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1.35;
 const CITY_DEEP_ZOOM_DISTANCE = 3.1085;
 const AGENT_FOCUS_DISTANCE = CITY_DEEP_ZOOM_DISTANCE;
 const DEEP_ZOOM_PROGRESS_PER_DOUBLING = 20;
@@ -318,6 +318,7 @@ function GlobeLabel({
   color,
   onSelect,
   onHoverChange,
+  pointerEventsThrough = false,
 }: {
   label: string;
   kind: LabelKind;
@@ -325,6 +326,7 @@ function GlobeLabel({
   color?: string;
   onSelect?: () => void;
   onHoverChange?: (hovered: boolean) => void;
+  pointerEventsThrough?: boolean;
 }) {
   const anchor = useRef<THREE.Group>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -352,7 +354,7 @@ function GlobeLabel({
       <Html transform sprite center distanceFactor={distanceFactor} zIndexRange={[8, 0]}>
         <div
           ref={content}
-          className={`mapLabel mapLabel--${kind} ${onSelect ? "mapLabel--interactive" : ""} ${onHoverChange ? "mapLabel--linked" : ""}`}
+          className={`mapLabel mapLabel--${kind} ${onSelect ? "mapLabel--interactive" : ""} ${onHoverChange ? "mapLabel--linked" : ""} ${pointerEventsThrough ? "mapLabel--pointer-through" : ""}`}
           style={color ? { color } : undefined}
           role={onSelect ? "button" : undefined}
           tabIndex={onSelect ? 0 : undefined}
@@ -1438,7 +1440,7 @@ function AdministrativeTerritories({
           }
         }}
       >
-        <sphereGeometry args={[ADMIN_HOVER_RADIUS + 0.015, 96, 64]} />
+        <sphereGeometry args={[ADMIN_BASE_RADIUS + 0.004, 96, 64]} />
         <meshBasicMaterial transparent opacity={0} colorWrite={false} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
     </group>
@@ -1452,8 +1454,7 @@ function LiveAgentMarkers({
   entries: GlobeAgentEntry[];
   onSelect: (city: City, agent: Agent) => void;
 }) {
-  const cores = useRef<THREE.InstancedMesh>(null);
-  const rings = useRef<THREE.InstancedMesh>(null);
+  const markers = useRef<THREE.InstancedMesh>(null);
   const hitTargets = useRef<THREE.InstancedMesh>(null);
   const markerTransformScratch = useRef({
     matrix: new THREE.Matrix4(),
@@ -1468,32 +1469,26 @@ function LiveAgentMarkers({
   );
 
   useLayoutEffect(() => {
-    const coreMesh = cores.current;
-    const ringMesh = rings.current;
-    if (!coreMesh || !ringMesh) return;
-    const coreColor = new THREE.Color();
-    const ringColor = new THREE.Color();
+    const markerMesh = markers.current;
+    if (!markerMesh) return;
+    const markerColor = new THREE.Color();
     entries.forEach((entry, index) => {
       const statusColor = agentStatusColors[entry.agent.status];
-      coreColor.set(statusColor);
-      ringColor.set(statusColor).multiplyScalar(0.5);
-      coreMesh.setColorAt(index, coreColor);
-      ringMesh.setColorAt(index, ringColor);
+      markerColor.set(statusColor);
+      markerMesh.setColorAt(index, markerColor);
     });
-    if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
-    if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
+    if (markerMesh.instanceColor) markerMesh.instanceColor.needsUpdate = true;
   }, [entries]);
 
   useFrame(({ camera, size }) => {
-    const coreMesh = cores.current;
-    const ringMesh = rings.current;
+    const markerMesh = markers.current;
     const hitMesh = hitTargets.current;
-    if (!coreMesh || !ringMesh || !hitMesh) return;
-    ringMesh.updateWorldMatrix(true, false);
+    if (!markerMesh || !hitMesh) return;
+    markerMesh.updateWorldMatrix(true, false);
     const effectiveFov = camera instanceof THREE.PerspectiveCamera ? camera.getEffectiveFOV() : 38;
     const scratch = markerTransformScratch.current;
     markerPositions.forEach((position, index) => {
-      scratch.worldPosition.copy(position).applyMatrix4(ringMesh.matrixWorld);
+      scratch.worldPosition.copy(position).applyMatrix4(markerMesh.matrixWorld);
       const scale = agentMarkerScaleForScreenSize(
         camera.position.distanceTo(scratch.worldPosition),
         size.height,
@@ -1501,12 +1496,10 @@ function LiveAgentMarkers({
       );
       scratch.scale.setScalar(scale);
       scratch.matrix.compose(position, scratch.quaternion, scratch.scale);
-      coreMesh.setMatrixAt(index, scratch.matrix);
-      ringMesh.setMatrixAt(index, scratch.matrix);
+      markerMesh.setMatrixAt(index, scratch.matrix);
       hitMesh.setMatrixAt(index, scratch.matrix);
     });
-    coreMesh.instanceMatrix.needsUpdate = true;
-    ringMesh.instanceMatrix.needsUpdate = true;
+    markerMesh.instanceMatrix.needsUpdate = true;
     hitMesh.instanceMatrix.needsUpdate = true;
   });
 
@@ -1527,23 +1520,13 @@ function LiveAgentMarkers({
   return (
     <group>
       <instancedMesh
-        ref={rings}
+        ref={markers}
         args={[undefined, undefined, entries.length]}
         frustumCulled={false}
         raycast={() => undefined}
-        renderOrder={10}
+        renderOrder={20}
       >
-        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS, 10, 10]} />
-        <meshBasicMaterial depthWrite={false} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh
-        ref={cores}
-        args={[undefined, undefined, entries.length]}
-        frustumCulled={false}
-        raycast={() => undefined}
-        renderOrder={11}
-      >
-        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS * 0.5, 8, 8]} />
+        <sphereGeometry args={[AGENT_MARKER_GEOMETRY_RADIUS, 12, 12]} />
         <meshBasicMaterial depthWrite={false} toneMapped={false} />
       </instancedMesh>
       <instancedMesh
@@ -1551,6 +1534,7 @@ function LiveAgentMarkers({
         args={[undefined, undefined, entries.length]}
         frustumCulled={false}
         onPointerDown={(event) => event.stopPropagation()}
+        onPointerOver={setHoverFromEvent}
         onPointerMove={setHoverFromEvent}
         onPointerOut={(event) => {
           event.stopPropagation();
@@ -2127,6 +2111,7 @@ function Earth({
             label={area.name}
             kind="region"
             position={area.position}
+            pointerEventsThrough={focusedLiveAgentEntries.length > 0}
             color={boundaryHovered ? "#ffd36f" : undefined}
             onHoverChange={boundaryFeature ? (hovered) => {
               const featureId = boundaryFeatureId(boundaryFeature);
@@ -2171,6 +2156,7 @@ function Earth({
             label={city.name}
             kind="city"
             position={city.position}
+            pointerEventsThrough={focusedLiveAgentEntries.length > 0}
             color={boundaryHovered ? "#ffd36f" : undefined}
             onHoverChange={boundaryFeature ? (hovered) => {
               const featureId = boundaryFeatureId(boundaryFeature);
@@ -2542,21 +2528,13 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2) {
-        fallbackFocusedAgentEntries.forEach((entry, index) => {
+        fallbackFocusedAgentEntries.forEach((entry) => {
           if (!isVisible(entry.agent.lng, entry.agent.lat)) return;
           const point = projection([entry.agent.lng, entry.agent.lat]);
           if (!point) return;
-          const hovered = view.hoveredAgentIndex === index;
           const color = agentStatusColors[entry.agent.status];
           context.beginPath();
-          context.arc(point[0], point[1], hovered ? 3.2 : 2, 0, Math.PI * 2);
-          context.fillStyle = "rgba(2, 8, 12, 0.96)";
-          context.fill();
-          context.strokeStyle = color;
-          context.lineWidth = hovered ? 1.4 : 0.9;
-          context.stroke();
-          context.beginPath();
-          context.arc(point[0], point[1], hovered ? 1.25 : 0.75, 0, Math.PI * 2);
+          context.arc(point[0], point[1], AGENT_MARKER_SCREEN_RADIUS_PX, 0, Math.PI * 2);
           context.fillStyle = color;
           context.fill();
         });
@@ -2624,7 +2602,7 @@ function CanvasWorldFallback({
         const point = projection([entry.agent.lng, entry.agent.lat]);
         if (!point) continue;
         const distance = Math.hypot(point[0] - x, point[1] - y);
-        if (distance <= 9 && distance < nearestDistance) {
+        if (distance <= AGENT_MARKER_SCREEN_RADIUS_PX * AGENT_MARKER_HIT_RADIUS_MULTIPLIER && distance < nearestDistance) {
           nearestIndex = index;
           nearestDistance = distance;
         }

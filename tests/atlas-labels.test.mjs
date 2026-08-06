@@ -216,10 +216,10 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.match(experienceSource, /function LiveAgentMarkers\(/);
   assert.doesNotMatch(experienceSource, /spreadDegrees|displayCoordinates/);
   assert.match(experienceSource, /entries\.map\(\(\{ agent \}\) => latLngToVector3\(agent\.lat, agent\.lng, AGENT_MARKER_RADIUS\)\)/);
-  assert.match(experienceSource, /const AGENT_MARKER_SCREEN_RADIUS_PX = 9\.75/);
-  assert.match(experienceSource, /const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1\.25/);
-  assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS, 10, 10\]\}/);
-  assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS \* 0\.5, 8, 8\]\}/);
+  assert.match(experienceSource, /const AGENT_MARKER_SCREEN_RADIUS_PX = 12\.5/);
+  assert.match(experienceSource, /const AGENT_MARKER_HIT_RADIUS_MULTIPLIER = 1\.35/);
+  assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS, 12, 12\]\}/);
+  assert.doesNotMatch(experienceSource, /AGENT_MARKER_GEOMETRY_RADIUS \* 0\.5/);
   assert.match(experienceSource, /<sphereGeometry args=\{\[AGENT_MARKER_GEOMETRY_RADIUS \* AGENT_MARKER_HIT_RADIUS_MULTIPLIER, 8, 8\]\}/);
   assert.match(experienceSource, /colorWrite=\{false\}/);
   assert.doesNotMatch(experienceSource, /haloMaterial|ref=\{halos\}/);
@@ -242,6 +242,12 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.doesNotMatch(experienceSource, /distanceFactor=\{3\.2\}/);
   assert.match(globalStylesSource, /\.globeAgentTooltip \{[\s\S]*?max-width: 172px/);
   assert.match(experienceSource, /onSelect\(entry\.city, entry\.agent\)/);
+  assert.match(experienceSource, /onPointerOver=\{setHoverFromEvent\}/);
+  assert.match(experienceSource, /ADMIN_BASE_RADIUS \+ 0\.004/);
+  assert.match(experienceSource, /pointerEventsThrough=\{focusedLiveAgentEntries\.length > 0\}/);
+  assert.match(globalStylesSource, /\.mapLabel--pointer-through \{[\s\S]*?pointer-events: none/);
+  assert.match(experienceSource, /context\.arc\(point\[0\], point\[1\], AGENT_MARKER_SCREEN_RADIUS_PX/);
+  assert.doesNotMatch(experienceSource, /context\.strokeStyle = color/);
   assert.match(experienceSource, /type AgentFocusTarget = GeoCenter & \{ agentId: string; distance: number \}/);
   assert.match(experienceSource, /const AGENT_FOCUS_DISTANCE = CITY_DEEP_ZOOM_DISTANCE/);
   assert.match(experienceSource, /agentTarget: AgentFocusTarget \| null/);
