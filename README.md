@@ -36,7 +36,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Fixed 12.5-pixel-radius, solid high-contrast agent markers that remain readable without enlarging or shrinking during City zoom
 - Agent markers take pointer priority over city surfaces and labels, including when their positions overlap
 - Agent selection centers the chosen marker and settles the globe at one consistent close City zoom level
-- Continuous deep City zoom with live magnification feedback for separating dense agent clusters
+- Continuous deep City zoom with magnification-scaled wheel sensitivity and live feedback for separating dense agent clusters without sudden jumps
 - Country boundary geometry and city-level attention-flow arcs
 - County and district borders remain visible throughout City zoom, with municipal boundaries layered above them where available
 - Switchable attention, AI, technology, and travel layers

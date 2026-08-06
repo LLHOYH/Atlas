@@ -272,6 +272,10 @@ function deepCityMagnificationForProgress(progress: number) {
   return Math.pow(2, (progress - 100) / DEEP_ZOOM_PROGRESS_PER_DOUBLING);
 }
 
+function cityZoomSpeedForProgress(progress: number) {
+  return CITY_ZOOM_SPEED / Math.max(1, deepCityMagnificationForProgress(progress));
+}
+
 function agentMarkerScaleForScreenSize(cameraDistance: number, viewportHeight: number, fovDegrees: number) {
   const worldUnitsPerPixel = 2
     * Math.max(cameraDistance, 0.001)
@@ -1922,14 +1926,17 @@ function Earth({
   useFrame(({ camera }, delta) => {
     if (!globe.current) return;
     if (focusDistanceTarget.current !== null) {
+      const focusingDeepCity = focusDistanceTarget.current < CITY_MAX_DISTANCE
+        && camera.position.length() < CITY_MAX_DISTANCE;
       const nextDistance = THREE.MathUtils.damp(
         camera.position.length(),
         focusDistanceTarget.current,
-        9,
+        focusingDeepCity ? 2.8 : 9,
         delta,
       );
       camera.position.setLength(nextDistance);
-      if (Math.abs(nextDistance - focusDistanceTarget.current) < 0.006) {
+      const settleDistance = focusingDeepCity ? 0.00002 : 0.006;
+      if (Math.abs(nextDistance - focusDistanceTarget.current) < settleDistance) {
         camera.position.setLength(focusDistanceTarget.current);
         focusDistanceTarget.current = null;
       }
@@ -2837,6 +2844,7 @@ function EarthScene({
   const [streetState, setStreetState] = useState<{ cityId: string; center: GeoCenter } | null>(null);
   const [streetRendererActive, setStreetRendererActive] = useState(false);
   const [sceneDetail, setSceneDetail] = useState<DetailLevel>(1);
+  const [sceneZoomProgress, setSceneZoomProgress] = useState(() => zoomProgressForDistance(GLOBE_MAX_DISTANCE));
   const [rendererAvailability, setRendererAvailability] = useState<"checking" | "available" | "unavailable">("checking");
   const streetCenter = streetState?.cityId === selectedCity.id
     ? streetState.center
@@ -2913,6 +2921,11 @@ function EarthScene({
     onDetailChange(level);
   }, [onDetailChange]);
 
+  const handleSceneZoomChange = useCallback((progress: number) => {
+    setSceneZoomProgress((current) => Math.abs(current - progress) < 0.25 ? current : progress);
+    onZoomChange(progress);
+  }, [onZoomChange]);
+
   const selectActivityCity = useCallback((city: City) => {
     setStreetState(null);
     setStreetRendererActive(false);
@@ -2972,7 +2985,7 @@ function EarthScene({
       onCountrySelect={selectActivityCountry}
       onCityAreaSelect={onCityAreaSelect}
       onDetailChange={handleSceneDetailChange}
-      onZoomChange={onZoomChange}
+      onZoomChange={handleSceneZoomChange}
     />
   );
 
@@ -3015,7 +3028,7 @@ function EarthScene({
                   onCountrySelect={selectActivityCountry}
                   onCityAreaSelect={onCityAreaSelect}
                   onDetailChange={handleSceneDetailChange}
-                  onZoomChange={onZoomChange}
+                  onZoomChange={handleSceneZoomChange}
                 />
               </Suspense>
               <OrbitControls
@@ -3025,7 +3038,7 @@ function EarthScene({
                 enableZoom
                 enableDamping
                 dampingFactor={0.1}
-                zoomSpeed={sceneDetail >= 2 ? CITY_ZOOM_SPEED : COUNTRY_ZOOM_SPEED}
+                zoomSpeed={sceneDetail >= 2 ? cityZoomSpeedForProgress(sceneZoomProgress) : COUNTRY_ZOOM_SPEED}
                 minDistance={CITY_DEEP_ZOOM_DISTANCE}
                 maxDistance={GLOBE_MAX_DISTANCE}
               />
