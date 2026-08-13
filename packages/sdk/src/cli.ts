@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import process from "node:process";
+import { createInterface } from "node:readline";
 import { AtlasClient } from "./client.js";
 import { draftsFromHook, type AtlasRuntime } from "./adapters.js";
+import { AtlasRuntimeBridge } from "./runtime.js";
 import { readAtlasConfig, writeAtlasConfig } from "./config.js";
 import { installJsonIntegration, installPersistentRuntime, integrationSnippet } from "./installers.js";
 import { DEFAULT_ATLAS_ENDPOINT, openAtlasVerificationPage, pollAtlasDeviceSetup, startAtlasDeviceSetup } from "./device.js";
@@ -27,7 +29,7 @@ async function stdinJson() {
 
 async function configuredClient(runtimeOverride?: string) {
   const config = await readAtlasConfig();
-  if (!config) throw new Error("Atlas is not registered. Run `atlas register` first.");
+  if (!config) throw new Error("Atlas is not connected. Run `atlas setup <runtime>` first.");
   return {
     config,
     client: new AtlasClient({
@@ -132,6 +134,49 @@ async function hook(runtime: AtlasRuntime) {
   }
 }
 
+async function pipe(runtime: AtlasRuntime) {
+  if (!["codex", "claude-code", "hermes", "openclaw", "custom"].includes(runtime)) {
+    throw new Error("Choose a runtime: codex, claude-code, hermes, openclaw, or custom");
+  }
+  const { config, client } = await configuredClient(runtime);
+  const bridge = new AtlasRuntimeBridge({
+    client,
+    runtime,
+    defaultSessionId: option("session") ?? "pipe",
+    defaultTopic: config.defaultTopic,
+    defaultActivity: config.defaultActivity,
+    heartbeatIntervalMs: Number(option("heartbeat") ?? 30_000),
+  });
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => shutdownPromise ??= (async () => {
+    lines.close();
+    await bridge.stop();
+    await client.flush();
+  })();
+  const onSigint = () => { void shutdown().finally(() => process.exit(130)); };
+  const onSigterm = () => { void shutdown().finally(() => process.exit(143)); };
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const result = await bridge.handleHook(JSON.parse(line));
+        if (process.argv.includes("--ack")) {
+          process.stdout.write(`${JSON.stringify({ handled: result.handled, events: result.deliveries.length })}\n`);
+        }
+      } catch (error) {
+        process.stderr.write(`Atlas ignored an invalid hook envelope: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    }
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
+    await shutdown();
+  }
+}
+
 async function updateState(kind: "status" | "topic" | "activity", value: string) {
   const { client } = await configuredClient();
   if (kind === "status" && atlasStatuses.includes(value as AtlasStatus)) {
@@ -146,11 +191,12 @@ async function updateState(kind: "status" | "topic" | "activity", value: string)
 }
 
 function help() {
-  process.stdout.write(`Atlas SDK 0.1\n\n`);
+  process.stdout.write(`Atlas SDK 0.2\n\n`);
   process.stdout.write(`atlas setup codex|claude-code|hermes|openclaw|custom [--name NAME] [--endpoint URL]\n`);
   process.stdout.write(`atlas register --endpoint URL --access-token TOKEN --name NAME --runtime RUNTIME --city CITY_ID\n`);
   process.stdout.write(`atlas install codex|claude-code\n`);
   process.stdout.write(`atlas hook codex|claude-code|hermes|openclaw\n`);
+  process.stdout.write(`atlas pipe codex|claude-code|hermes|openclaw|custom [--heartbeat MS] [--session ID]\n`);
   process.stdout.write(`atlas status online|working|idle|offline\n`);
   process.stdout.write(`atlas topic <category>\n`);
   process.stdout.write(`atlas activity <category>\n`);
@@ -164,6 +210,7 @@ async function main() {
   if (command === "setup") return setup(argument as AtlasRuntime);
   if (command === "register") return register();
   if (command === "hook") return hook(argument as AtlasRuntime);
+  if (command === "pipe") return pipe(argument as AtlasRuntime);
   if (command === "install" && (argument === "codex" || argument === "claude-code")) {
     const path = await installJsonIntegration(argument);
     process.stdout.write(`Installed Atlas hooks in ${path}\n`);
@@ -179,7 +226,7 @@ async function main() {
   }
   if (command === "diagnose") {
     const config = await readAtlasConfig();
-    if (!config) throw new Error("Atlas is not registered.");
+    if (!config) throw new Error("Atlas is not connected.");
     const { client } = await configuredClient();
     const delivered = await client.flush();
     process.stdout.write(`Atlas configured for ${config.agentId}; flushed ${delivered} queued event(s).\n`);

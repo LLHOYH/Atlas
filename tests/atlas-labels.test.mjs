@@ -201,10 +201,10 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
 });
 
-test("phase 6 begins from phase 5 geography with a live agent rendering foundation", () => {
-  assert.match(readmeSource, /Phase 6 — Global Presence Rendering · In progress/);
+test("completed phase 6 hands its live agent rendering foundation to phase 7", () => {
+  assert.match(readmeSource, /Phase 7 — Agent Runtime SDK · In progress/);
   assert.match(phaseFiveSource, /does not claim complete worldwide agent or human location coverage/);
-  assert.match(phaseSixSource, /live agent globe foundation delivered/);
+  assert.match(phaseSixSource, /Status: Completed/);
   assert.match(phaseSixSource, /show participating humans and AI agents across the living world/);
   assert.match(phaseSixSource, /Location is user-approved and approximate by default/);
 });

@@ -10,7 +10,7 @@ Atlas is an interactive product prototype for exploring global attention through
 
 Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 completed the first global presence renderer: country energy plus individual working, online, and idle agents at city zoom. Phase 7 turns the npm SDK into the durable runtime bridge for Codex, Claude Code, Hermes, OpenClaw, and custom agents.
 
-[`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
+[`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) is the current public registry release. The Phase 7 source prepares `0.2.0` with a long-lived runtime bridge, ordered hook delivery, automatic heartbeats, graceful offline reporting, and a persistent JSON hook pipe for agent hosts. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
 The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless email sign-in, Postgres persistence, row-level security, presence heartbeats, history, and realtime map updates are enabled once the project credentials and providers are configured.
 
@@ -27,6 +27,8 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Live-agent energy colors and moving flow across country surfaces
 - Persistent county/district borders beneath legitimate city polygons at deep city zoom
 - Privacy-safe `atlas-ai-sdk` lifecycle client with offline delivery
+- Long-lived SDK runtime bridge with session recovery, heartbeats, state updates, and graceful shutdown
+- Persistent newline-delimited hook pipe for Hermes, OpenClaw, and other process-oriented integrations
 - Automatic Codex, Claude Code, Hermes, and OpenClaw lifecycle normalization
 - Hashed installation credentials and authenticated batch ingestion
 - Browser-approved device setup that links agents to the signed-in human profile

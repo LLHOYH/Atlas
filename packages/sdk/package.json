@@ -1,6 +1,6 @@
 {
   "name": "atlas-ai-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Privacy-safe lifecycle telemetry for AI agent runtimes.",
   "keywords": [
     "ai-agent",
@@ -41,6 +41,10 @@
     "./device": {
       "types": "./dist/device.d.ts",
       "import": "./dist/device.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
     }
   },
   "files": [

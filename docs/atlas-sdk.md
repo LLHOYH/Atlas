@@ -1,4 +1,4 @@
-# Atlas SDK 0.1
+# Atlas SDK 0.2
 
 The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks. The model does not need a prompt instructing it to report status, and a failure to reach Atlas never blocks the agent.
 
@@ -13,6 +13,8 @@ The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks
 7. The SDK hashes the host session identifier, writes the event to its local queue, and attempts a short batch delivery.
 8. Supabase records the private raw event, updates the current agent/session snapshot, and appends a sanitized public map event.
 
+For a long-running runtime or plugin, `AtlasRuntimeBridge` maintains the session around this flow. It recovers a missing start event, keeps multiple host sessions distinct, sends periodic heartbeats, serializes state changes in order, and reports active sessions offline at shutdown. Only the normalized Atlas draft reaches `AtlasClient`; the native hook envelope is discarded after translation.
+
 ## Lifecycle mapping
 
 | Atlas event | Typical host event | Result |
@@ -25,6 +27,32 @@ The Atlas SDK instruments an AI-agent host through deterministic lifecycle hooks
 | `session.ended` | `SessionEnd`, `on_session_end`, `session_end` | Agent becomes offline |
 
 The adapter reads event names, session identifiers, and tool names. It deliberately ignores prompt text, tool arguments, outputs, paths, commands, URLs, and conversation history.
+
+## Runtime bridge
+
+```ts
+import { createAtlasAgent, createAtlasRuntimeBridge } from "atlas-ai-sdk";
+
+const client = createAtlasAgent({
+  endpoint: process.env.ATLAS_ENDPOINT!,
+  token: process.env.ATLAS_AGENT_TOKEN!,
+  installationId: process.env.ATLAS_INSTALLATION_ID!,
+  runtime: "hermes",
+});
+
+const runtime = createAtlasRuntimeBridge({ client, runtime: "hermes" });
+await runtime.handleHook(hermesHookEnvelope);
+await runtime.stop();
+```
+
+Plugin hosts can import the bridge from either `atlas-ai-sdk` or `atlas-ai-sdk/runtime`. Process-oriented hosts can stream one JSON hook envelope per line:
+
+```bash
+atlas pipe hermes --heartbeat 30000
+atlas pipe openclaw --heartbeat 30000 --ack
+```
+
+The persistent pipe closes all active sessions when stdin closes or the process receives `SIGINT`/`SIGTERM`. Network failures remain non-blocking because each normalized event enters the local queue before delivery.
 
 ## Device setup
 
@@ -59,7 +87,7 @@ The current Atlas project endpoint is:
 https://zobmelejpoedfjqnvgjm.supabase.co/functions/v1/atlas-ingest
 ```
 
-## Next release
+## Next increments
 
 - Native Hermes and OpenClaw marketplace installers.
 - Installation pause, revoke, rename, and delete controls.

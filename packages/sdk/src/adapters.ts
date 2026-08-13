@@ -1,4 +1,14 @@
-import type { AtlasActivity, AtlasEventDraft, AtlasTopic } from "./protocol.js";
+import {
+  atlasActivities,
+  atlasEventTypes,
+  atlasStatuses,
+  atlasTopics,
+  type AtlasActivity,
+  type AtlasEventDraft,
+  type AtlasEventType,
+  type AtlasStatus,
+  type AtlasTopic,
+} from "./protocol.js";
 
 export type AtlasRuntime = "codex" | "claude-code" | "hermes" | "openclaw" | "custom";
 
@@ -45,6 +55,23 @@ export function activityForTool(name: string): AtlasActivity {
   return "working";
 }
 
+function controlledValue<T extends readonly string[]>(value: unknown, values: T): T[number] | undefined {
+  return typeof value === "string" && values.includes(value) ? value as T[number] : undefined;
+}
+
+function customDraft(input: HookRecord, name: string, session: string): AtlasEventDraft | undefined {
+  const event = controlledValue(name, atlasEventTypes) as AtlasEventType | undefined;
+  if (!event) return undefined;
+  return {
+    event,
+    sessionId: session,
+    status: controlledValue(input.status, atlasStatuses) as AtlasStatus | undefined,
+    activity: controlledValue(input.activity, atlasActivities) as AtlasActivity | undefined,
+    topic: controlledValue(input.topic, atlasTopics) as AtlasTopic | undefined,
+    occurredAt: string(input.occurred_at) ?? string(input.occurredAt),
+  };
+}
+
 export function draftsFromHook(
   runtime: AtlasRuntime,
   rawInput: unknown,
@@ -53,6 +80,10 @@ export function draftsFromHook(
   const input = record(rawInput);
   const name = hookName(input);
   const session = sessionId(input);
+  if (runtime === "custom") {
+    const draft = customDraft(input, name, session);
+    return draft ? [draft] : [];
+  }
   const base = { sessionId: session, topic: defaults.topic ?? "other" as AtlasTopic };
   const toolActivity = activityForTool(toolName(input));
   const lookup: Record<AtlasRuntime, Record<string, AtlasEventDraft>> = {

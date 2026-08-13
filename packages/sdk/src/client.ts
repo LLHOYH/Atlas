@@ -41,13 +41,14 @@ export class AtlasClient {
   private readonly timeoutMs: number;
   private sequence = 0;
   private flushing = false;
-  private state: { status: AtlasStatus; activity: AtlasActivity; topic: AtlasTopic };
+  private readonly defaultState: { status: AtlasStatus; activity: AtlasActivity; topic: AtlasTopic };
+  private readonly sessionStates = new Map<string, typeof this.defaultState>();
 
   constructor(private readonly options: AtlasClientOptions) {
     this.queue = options.queue ?? new FileEventQueue(atlasQueuePath());
     this.request = options.fetch ?? fetch;
     this.timeoutMs = options.requestTimeoutMs ?? 2_000;
-    this.state = {
+    this.defaultState = {
       status: "online",
       activity: options.defaultActivity ?? "working",
       topic: options.defaultTopic ?? "other",
@@ -55,16 +56,20 @@ export class AtlasClient {
   }
 
   async emit(draft: AtlasEventDraft): Promise<AtlasDelivery> {
-    this.state = {
-      status: draft.status ?? this.state.status,
-      activity: draft.activity ?? this.state.activity,
-      topic: draft.topic ?? this.state.topic,
+    const rawSessionId = draft.sessionId ?? "default";
+    const previousState = this.sessionStates.get(rawSessionId) ?? this.defaultState;
+    const nextState = {
+      status: draft.status ?? previousState.status,
+      activity: draft.activity ?? previousState.activity,
+      topic: draft.topic ?? previousState.topic,
     };
+    if (draft.event === "session.ended") this.sessionStates.delete(rawSessionId);
+    else this.sessionStates.set(rawSessionId, nextState);
     const next = sanitizeAtlasEvent({
       schema_version: ATLAS_PROTOCOL_VERSION,
       event_id: eventId(),
       installation_id: this.options.installationId,
-      session_id: hashSessionId(this.options.installationId, draft.sessionId ?? "default"),
+      session_id: hashSessionId(this.options.installationId, rawSessionId),
       sequence: this.sequence++,
       event: draft.event,
       occurred_at: draft.occurredAt ?? new Date().toISOString(),
@@ -73,7 +78,7 @@ export class AtlasClient {
         version: this.options.runtimeVersion ?? "unknown",
         adapter_version: ATLAS_SDK_VERSION,
       },
-      state: this.state,
+      state: nextState,
     });
     await this.queue.enqueue(next);
     const delivered = (await this.flush()) > 0;
