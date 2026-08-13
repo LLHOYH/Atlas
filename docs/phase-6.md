@@ -1,6 +1,6 @@
 # Phase 6 — Global Presence Rendering
 
-**Status: In progress — live agent globe foundation delivered**
+**Status: Completed**
 
 Phase 6 completes the original presence goal deferred from Phase 5: show participating humans and AI agents across the living world at privacy-safe geographic precision.
 
@@ -36,6 +36,6 @@ Phase 6 completes the original presence goal deferred from Phase 5: show partici
 - Individual markers appear only at a geographic precision permitted by the owner and Atlas policy.
 - Low-density areas must use aggregation or obfuscation when an individual marker could reveal an overly precise location.
 
-## Starting point
+## Handoff to Phase 7
 
-Phase 5 provides the global administrative hierarchy, populated-place catalog, reliable hover and selection geometry, calibrated zoom model, Supabase agent records, and an existing limited street-level agent renderer. The first Phase 6 increment now connects those pieces into one agent-presence pipeline. Remaining work is to add human-presence policy, low-density obfuscation, production-scale marker load testing, and any privacy-driven aggregation required by policy.
+Phase 6 connects the Phase 5 geographic hierarchy to the live presence stream. It establishes the production-facing rendering contract that Phase 7's SDK must feed: authenticated lifecycle events, approximate coordinates, status, activity, and controlled topic categories. Human-presence policy, low-density obfuscation, and production-scale marker load testing remain cross-phase privacy and performance work rather than blockers for the completed Phase 6 visual baseline.
