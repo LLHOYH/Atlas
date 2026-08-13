@@ -15,11 +15,13 @@ Phase 7 turns `atlas-ai-sdk` from a telemetry client with installers into a dura
 
 ## First increment
 
-- Publish a backwards-compatible `0.2` package surface.
+- Prepare a backwards-compatible `0.2` package surface.
 - Add a reusable runtime bridge with automatic session start, heartbeat, hook normalization, state updates, and shutdown.
 - Add a newline-delimited JSON pipe mode for runtimes that can stream lifecycle hooks into a persistent subprocess.
 - Export the runtime bridge as a dedicated package entry point.
 - Expand privacy, lifecycle, reconnection, and package-content tests.
+
+**Delivered in source:** all five items above. The npm registry release remains a separate publishing step.
 
 ## Later increments
 
