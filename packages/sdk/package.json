@@ -23,7 +23,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "atlas": "./dist/cli.js"
+    "atlas": "dist/cli.js"
   },
   "exports": {
     ".": {
