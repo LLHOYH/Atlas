@@ -21,7 +21,7 @@ Phase 7 turns `atlas-ai-sdk` from a telemetry client with installers into a dura
 - Export the runtime bridge as a dedicated package entry point.
 - Expand privacy, lifecycle, reconnection, and package-content tests.
 
-**Delivered in source:** all five items above. The npm registry release remains a separate publishing step.
+**Delivered:** all five items above, published as [`atlas-ai-sdk@0.2.0`](https://www.npmjs.com/package/atlas-ai-sdk).
 
 ## Later increments
 
