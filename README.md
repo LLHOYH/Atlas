@@ -6,9 +6,9 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 7 — Agent Runtime SDK · In progress**
+**Phase 8 — Map Clarity & Interaction Polish · In progress**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 completed the first global presence renderer: country energy plus individual working, online, and idle agents at city zoom. Phase 7 turns the npm SDK into the durable runtime bridge for Codex, Claude Code, Hermes, OpenClaw, and custom agents.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 completed the first global presence renderer: country energy plus individual working, online, and idle agents at city zoom. Phase 7 delivered the durable npm runtime bridge for Codex, Claude Code, Hermes, OpenClaw, and custom agents. Phase 8 improves geographic clarity and interaction fidelity without changing the underlying published boundary data.
 
 [`atlas-ai-sdk@0.2.0`](https://www.npmjs.com/package/atlas-ai-sdk) is the current public registry release. It provides a long-lived runtime bridge, ordered hook delivery, automatic heartbeats, graceful offline reporting, and a persistent JSON hook pipe for agent hosts. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
@@ -25,7 +25,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Direct continent tabs for North America, South America, Europe, Africa, Asia, and Oceania
 - Database-backed agent snapshots with online, working, idle, and offline status
 - Live-agent energy colors and moving flow across country surfaces
-- Persistent county/district borders beneath legitimate city polygons at deep city zoom
+- One active administrative hierarchy per city zoom band, preventing nested county, district, and municipal outlines from being drawn together
 - Privacy-safe `atlas-ai-sdk` lifecycle client with offline delivery
 - Long-lived SDK runtime bridge with session recovery, heartbeats, state updates, and graceful shutdown
 - Persistent newline-delimited hook pipe for Hermes, OpenClaw, and other process-oriented integrations
@@ -40,7 +40,7 @@ The world catalog now comes from Supabase. Google/GitHub OAuth, passwordless ema
 - Agent selection centers the chosen marker and settles the globe at one consistent close City zoom level
 - Continuous deep City zoom with magnification-scaled wheel sensitivity and live feedback for separating dense agent clusters without sudden jumps
 - Country boundary geometry and city-level attention-flow arcs
-- County and district borders remain visible throughout City zoom, with municipal boundaries layered above them where available
+- Crisp single-pass city and local-admin outlines, with a separate gold treatment only for the actively hovered area
 - Switchable attention, AI, technology, and travel layers
 - Natural-language-style search across cities, topics, humans, and AI
 - Live city signal panels and entity profiles
@@ -101,4 +101,4 @@ npm run geo:places
 
 The baseline world pulse and ambient profiles are realistic seeded database records. Authenticated presence broadcasts are layered into that world live.
 
-Country geometry and macro labels are generated from Natural Earth data. Dense populated-place labels come from [GeoNames](https://www.geonames.org/) under CC BY 4.0. City zoom now follows a worldwide administrative hierarchy: [geoBoundaries](https://www.geoboundaries.org/) `gbOpen` ADM1 regions appear first, ADM2 districts appear closer, and the deepest published local level (up to ADM3) is selected without inventing geometry. U.S. city shapes use the Census Bureau's [TIGERweb consolidated-city, incorporated-place, and census-place layers](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer); their labels, hover hit areas, and camera targets derive from the same polygon. Legal municipalities do not tile all land, so rural gaps remain only at the true municipal layer while the region and district layers provide complete geographic context. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.
+Country geometry and macro labels are generated from Natural Earth data. Dense populated-place labels come from [GeoNames](https://www.geonames.org/) under CC BY 4.0. City zoom follows a worldwide administrative hierarchy: [geoBoundaries](https://www.geoboundaries.org/) `gbOpen` ADM1 regions appear first, ADM2 districts appear closer, and the deepest published local level (up to ADM3) is selected without inventing geometry. Atlas renders only the active hierarchy at each zoom band so nested administrative levels do not create overlapping borders. U.S. city shapes use the Census Bureau's [TIGERweb consolidated-city, incorporated-place, and census-place layers](https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Places_CouSub_ConCity_SubMCD/MapServer); their labels, hover hit areas, and camera targets derive from the same polygon. Legal municipalities do not tile all land, so rural gaps remain at the true municipal layer. Deep street detail uses OpenFreeMap's OpenMapTiles-compatible vector service with data from OpenStreetMap; attribution is shown in the map.

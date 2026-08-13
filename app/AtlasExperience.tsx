@@ -681,7 +681,6 @@ type CountryPoint = { lng: number; lat: number };
 const COUNTRY_BOTTOM_RADIUS = 3.003;
 const COUNTRY_TOP_RADIUS = 3.026;
 const COUNTRY_HOVER_RADIUS = 3.22;
-const ADMIN_CONTEXT_RADIUS = 3.044;
 const ADMIN_BASE_RADIUS = 3.052;
 const ADMIN_HOVER_RADIUS = 3.078;
 const CITY_LABEL_RADIUS = ADMIN_BASE_RADIUS + 0.006;
@@ -969,9 +968,20 @@ function appendBoundaryTriangle(
   }
 }
 
+function boundarySegmentKey(start: { lng: number; lat: number }, end: { lng: number; lat: number }) {
+  const pointKey = (point: { lng: number; lat: number }) => {
+    const longitude = ((point.lng + 180) % 360 + 360) % 360 - 180;
+    return `${longitude.toFixed(5)},${point.lat.toFixed(5)}`;
+  };
+  const startKey = pointKey(start);
+  const endKey = pointKey(end);
+  return startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+}
+
 function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number) {
   const positions: number[] = [];
   const outlinePositions: number[] = [];
+  const seenOutlineSegments = new Set<string>();
 
   for (const feature of features) {
     for (const rings of boundaryPolygons(feature)) {
@@ -989,8 +999,13 @@ function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number)
       }
       for (const ring of rings) {
         for (let index = 0; index < ring.length; index += 1) {
-          const start = sphericalDirection(ring[index]);
-          const end = sphericalDirection(ring[(index + 1) % ring.length]);
+          const startPoint = ring[index];
+          const endPoint = ring[(index + 1) % ring.length];
+          const segmentKey = boundarySegmentKey(startPoint, endPoint);
+          if (seenOutlineSegments.has(segmentKey)) continue;
+          seenOutlineSegments.add(segmentKey);
+          const start = sphericalDirection(startPoint);
+          const end = sphericalDirection(endPoint);
           const divisions = Math.max(1, Math.ceil(start.angleTo(end) / 0.045));
           for (let division = 0; division < divisions; division += 1) {
             const from = start.clone().lerp(end, division / divisions).normalize().multiplyScalar(radius + 0.002);
@@ -1010,51 +1025,6 @@ function buildBoundaryGeometry(features: AtlasBoundaryFeature[], radius: number)
   outline.setAttribute("position", new THREE.Float32BufferAttribute(outlinePositions, 3));
   outline.computeBoundingSphere();
   return { geometry, outline };
-}
-
-function AdministrativeBoundaryContext({
-  features,
-}: {
-  features: AtlasBoundaryFeature[];
-}) {
-  const boundaryGeometry = useMemo(
-    () => features.length ? buildBoundaryGeometry(features, ADMIN_CONTEXT_RADIUS) : null,
-    [features],
-  );
-
-  if (!boundaryGeometry) return null;
-  return (
-    <group renderOrder={4}>
-      <lineSegments
-        geometry={boundaryGeometry.outline}
-        frustumCulled={false}
-        raycast={() => undefined}
-        renderOrder={4}
-      >
-        <lineBasicMaterial
-          color="#78d3dc"
-          transparent
-          opacity={0.7}
-          depthWrite={false}
-        />
-      </lineSegments>
-      <lineSegments
-        geometry={boundaryGeometry.outline}
-        scale={1.00055}
-        frustumCulled={false}
-        raycast={() => undefined}
-        renderOrder={5}
-      >
-        <lineBasicMaterial
-          color="#4ab7c5"
-          transparent
-          opacity={0.22}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </lineSegments>
-    </group>
-  );
 }
 
 function EnergyFlowMaterial({
@@ -1382,11 +1352,6 @@ function AdministrativeTerritories({
           depthWrite={false}
         />
       </lineSegments>
-      {municipalLayer && (
-        <lineSegments geometry={baseGeometry.outline} scale={1.0007} frustumCulled={false} raycast={() => undefined}>
-          <lineBasicMaterial color="#58c6d4" transparent opacity={0.34} depthWrite={false} blending={THREE.AdditiveBlending} />
-        </lineSegments>
-      )}
       {hoveredFeature && hoveredGeometry && (
         <group>
           <mesh geometry={hoveredGeometry.geometry} frustumCulled={false} raycast={() => undefined}>
@@ -1826,27 +1791,6 @@ function Earth({
     [activeBoundaryPayload],
   );
   const activeBoundaryKind = boundaryKindFor(activeBoundaryPayload?.level, activeBoundaryFeatures);
-  const contextBoundaryPayload = districtBoundaryPayload?.available
-    ? districtBoundaryPayload
-    : regionBoundaryPayload?.available
-      ? regionBoundaryPayload
-      : null;
-  const contextBoundaryFeatures = useMemo(
-    () => (
-      labelDetail === 2
-      && cityLabelBand >= 2
-      && (activeBoundaryKind === "city" || activeBoundaryKind === "localadmin")
-      && contextBoundaryPayload?.available
-    )
-      ? contextBoundaryPayload.features.map(normalizeBoundaryOrientation)
-      : [],
-    [
-      activeBoundaryKind,
-      cityLabelBand,
-      contextBoundaryPayload,
-      labelDetail,
-    ],
-  );
   const activeBoundaryBounds = useMemo(
     () => activeBoundaryFeatures.map((feature) => geoBounds(feature)),
     [activeBoundaryFeatures],
@@ -2080,9 +2024,6 @@ function Earth({
         <sphereGeometry args={[3, 96, 96]} />
         <meshBasicMaterial color="#3cc5d7" transparent opacity={0.045} blending={THREE.AdditiveBlending} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      {labelDetail === 2 && contextBoundaryFeatures.length > 0 && (
-        <AdministrativeBoundaryContext features={contextBoundaryFeatures} />
-      )}
       {labelDetail === 2 && activeBoundaryFeatures.length > 0 && (
         <AdministrativeTerritories
           features={activeBoundaryFeatures}
@@ -2341,24 +2282,6 @@ function CanvasWorldFallback({
       : [],
     [fallbackActiveBoundaryPayload],
   );
-  const fallbackContextBoundaryFeatures = useMemo(
-    () => (
-      fallbackDetail === 2
-      && fallbackCityBand >= 2
-      && (boundaryKindFor(fallbackActiveBoundaryPayload?.level, fallbackBoundaryFeatures) === "city"
-        || boundaryKindFor(fallbackActiveBoundaryPayload?.level, fallbackBoundaryFeatures) === "localadmin")
-      && fallbackDistrictBoundaryPayload?.available
-    )
-      ? fallbackDistrictBoundaryPayload.features.map(normalizeBoundaryOrientation)
-      : [],
-    [
-      fallbackActiveBoundaryPayload?.level,
-      fallbackBoundaryFeatures,
-      fallbackCityBand,
-      fallbackDetail,
-      fallbackDistrictBoundaryPayload,
-    ],
-  );
   const fallbackBoundaryBounds = useMemo(
     () => fallbackBoundaryFeatures.map((feature) => geoBounds(feature)),
     [fallbackBoundaryFeatures],
@@ -2498,13 +2421,6 @@ function CanvasWorldFallback({
       }
 
       if (detail === 2) {
-        fallbackContextBoundaryFeatures.forEach((feature) => {
-          context.beginPath();
-          path(feature);
-          context.strokeStyle = "rgba(120, 211, 220, 0.68)";
-          context.lineWidth = 0.78;
-          context.stroke();
-        });
         fallbackBoundaryFeatures.forEach((feature, index) => {
           const highlighted = index === view.hoveredBoundaryIndex;
           context.beginPath();
@@ -2789,7 +2705,6 @@ function CanvasWorldFallback({
     fallbackBoundaryFeatures,
     fallbackBoundaryBounds,
     fallbackBoundaryKind,
-    fallbackContextBoundaryFeatures,
     fallbackCountries,
     fallbackCityByName,
     fallbackDisplayPlaces,

@@ -58,6 +58,8 @@ const seedSource = await readFile(
 const readmeSource = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const phaseFiveSource = await readFile(new URL("../docs/phase-5.md", import.meta.url), "utf8");
 const phaseSixSource = await readFile(new URL("../docs/phase-6.md", import.meta.url), "utf8");
+const phaseSevenSource = await readFile(new URL("../docs/phase-7.md", import.meta.url), "utf8");
+const phaseEightSource = await readFile(new URL("../docs/phase-8.md", import.meta.url), "utf8");
 
 test("world map labels cover countries, regions, and major cities globally", () => {
   assert.ok(labelData.countries.length >= 170);
@@ -201,12 +203,16 @@ test("phase 5 renders dense Supabase agents in a capped street view", () => {
   assert.doesNotMatch(experienceSource, /earthCanvasLayer streetMode/);
 });
 
-test("completed phase 6 hands its live agent rendering foundation to phase 7", () => {
-  assert.match(readmeSource, /Phase 7 — Agent Runtime SDK · In progress/);
+test("completed phase 7 hands its runtime foundation to phase 8", () => {
+  assert.match(readmeSource, /Phase 8 — Map Clarity & Interaction Polish · In progress/);
   assert.match(phaseFiveSource, /does not claim complete worldwide agent or human location coverage/);
   assert.match(phaseSixSource, /Status: Completed/);
   assert.match(phaseSixSource, /show participating humans and AI agents across the living world/);
   assert.match(phaseSixSource, /Location is user-approved and approximate by default/);
+  assert.match(phaseSevenSource, /Status: Completed/);
+  assert.match(phaseSevenSource, /atlas-ai-sdk@0\.2\.0/);
+  assert.match(phaseEightSource, /Status: In progress/);
+  assert.match(phaseEightSource, /Render exactly one administrative hierarchy at a time/);
 });
 
 test("phase 6 renders country energy and crisp individual agents at city level", () => {
@@ -229,10 +235,7 @@ test("phase 6 renders country energy and crisp individual agents at city level",
   assert.match(experienceSource, /camera\.position\.distanceTo\(scratch\.worldPosition\)/);
   assert.doesNotMatch(experienceSource, /hoveredAgentId \? 1\.55|hoveredAgentId \? 1\.5/);
   assert.match(experienceSource, /multiplyScalar\(1\.00025\)/);
-  assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
-  assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
-  assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
-  assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
+  assert.doesNotMatch(experienceSource, /AdministrativeBoundaryContext|contextBoundaryFeatures|fallbackContextBoundaryFeatures/);
   assert.match(experienceSource, /agent\.status !== "offline"/);
   assert.doesNotMatch(experienceSource, /featureLiveAgentCounts|energyLayers/);
   assert.match(experienceSource, /<LiveAgentMarkers entries=\{focusedLiveAgentEntries\}/);
@@ -333,12 +336,11 @@ test("city detail unifies municipal polygons, centered labels, hover, and select
   assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"ADM2"/);
   assert.match(experienceSource, /useAtlasBoundaries\([\s\S]*?"LOCAL"/);
   assert.match(experienceSource, /cityBoundaryPayload\?\.available[\s\S]*?localBoundaryPayload\?\.available/);
-  assert.match(experienceSource, /function AdministrativeBoundaryContext\(/);
-  assert.match(experienceSource, /<AdministrativeBoundaryContext features=\{contextBoundaryFeatures\}/);
-  assert.match(experienceSource, /const contextBoundaryPayload = districtBoundaryPayload\?\.available/);
-  assert.doesNotMatch(experienceSource, /fallbackContextFeatures/);
-  assert.match(experienceSource, /fallbackContextBoundaryFeatures/);
+  assert.doesNotMatch(experienceSource, /AdministrativeBoundaryContext|contextBoundaryFeatures|fallbackContextBoundaryFeatures/);
   assert.match(experienceSource, /municipalLayer \? 0\.98/);
+  assert.doesNotMatch(experienceSource, /scale=\{1\.0007\}/);
+  assert.match(experienceSource, /const seenOutlineSegments = new Set<string>\(\)/);
+  assert.match(experienceSource, /if \(seenOutlineSegments\.has\(segmentKey\)\) continue/);
   assert.match(experienceSource, /if \(progress < CITY_PROGRESS\) return 0/);
   assert.match(experienceSource, /if \(progress < 80\) return 1/);
   assert.match(experienceSource, /geoContains\(features\[index\]/);

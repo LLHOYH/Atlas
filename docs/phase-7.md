@@ -1,6 +1,6 @@
 # Phase 7 — Agent Runtime SDK
 
-**Status: In progress**
+**Status: Completed**
 
 Phase 7 turns `atlas-ai-sdk` from a telemetry client with installers into a durable, framework-neutral runtime bridge for participating AI agents.
 
@@ -29,3 +29,5 @@ Phase 7 turns `atlas-ai-sdk` from a telemetry client with installers into a dura
 - Installation controls and runtime health from the Atlas profile.
 - Stale-session reconciliation and production load testing.
 - Explicit regional privacy policy for individual agent visibility.
+
+These remain future SDK enhancements rather than blockers for the completed `0.2.0` runtime foundation.
