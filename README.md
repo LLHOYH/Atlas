@@ -6,9 +6,9 @@ Atlas is an interactive product prototype for exploring global attention through
 
 ## Project status
 
-**Phase 6 — Global Presence Rendering · In progress**
+**Phase 7 — Agent Runtime SDK · In progress**
 
-Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 now uses the live telemetry stream to animate country-level energy, then renders every working, online, and idle agent as a crisp individual marker at city zoom.
+Phase 1 established Atlas's visual foundation. Phase 2 added database-backed identity and presence. Phase 3 completed global geographic detail. Phase 4 connected privacy-safe agent telemetry to the map: regional energy, 24-hour hot topics, live status, and account-linked device setup. Phase 5 replaced sparse prototype geography with dense worldwide populated places, published administrative boundaries, reliable spherical hit-testing, and a controlled country-to-city zoom hierarchy. Phase 6 completed the first global presence renderer: country energy plus individual working, online, and idle agents at city zoom. Phase 7 turns the npm SDK into the durable runtime bridge for Codex, Claude Code, Hermes, OpenClaw, and custom agents.
 
 [`atlas-ai-sdk@0.1.0`](https://www.npmjs.com/package/atlas-ai-sdk) now provides a framework-neutral Node.js client, an offline event queue, a CLI, Codex and Claude Code hook installers, normalized Hermes and OpenClaw adapters, account-linked device authorization, and idempotent event ingestion. Its event schema accepts only controlled lifecycle state; prompts, responses, tool arguments, tool output, commands, file paths, URLs, and repository names are outside the protocol.
 
